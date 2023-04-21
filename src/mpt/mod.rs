@@ -28,6 +28,8 @@ use std::{
     cmp::max,
     iter::{self, once},
 };
+use ethers_core::k256::U256;
+use serde_with::Bytes;
 
 #[cfg(test)]
 mod tests;
@@ -229,6 +231,165 @@ pub struct MPTFixedKeyInput {
 
     pub value_max_byte_len: usize,
     pub max_depth: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct MPTUnFixedKeyInput {
+    // claim specification: (path, value)
+    /// A Merkle-Patricia Trie is a mapping `path => value`
+    ///
+    /// As an example, the MPT transaction trie of Ethereum has
+    /// `path = rlp(transaction_index) => value = rlp(transaction)`
+    pub path: Vec<u8>,//rlp(transaction_index)
+    pub value: Vec<u8>,//rlp(transaction)
+    pub root_hash: H256,// transactions_hash
+
+    pub proof: Vec<Vec<u8>>,
+
+    pub slot_is_empty: bool,
+
+    pub value_max_byte_len: usize,
+    pub max_depth: usize,
+}
+
+impl MPTUnFixedKeyInput{
+    pub fn assign<F: Field>(self, ctx: &mut Context<F>) -> MPTFixedKeyProof<F> {
+        let Self {
+            path,
+            mut value,
+            root_hash,
+            mut proof,
+            value_max_byte_len,
+            max_depth,
+            slot_is_empty,
+        } = self;
+        let depth = proof.len();
+        let key_byte_len = path.len();
+        //assert!(depth <= max_depth - usize::from(slot_is_empty));
+
+        let bytes_to_nibbles = |bytes: &[u8]| {
+            let mut nibbles = Vec::with_capacity(bytes.len() * 2);
+            for byte in bytes {
+                nibbles.push(byte >> 4);
+                nibbles.push(byte & 0xf);
+            }
+            nibbles
+        };
+        let hex_len = |byte_len: usize, is_odd: bool| 2 * byte_len + usize::from(is_odd) - 2;
+
+        let path_nibbles = bytes_to_nibbles(&*path);
+        let mut path_idx = 0;
+
+        // below "key" and "path" are used interchangeably, sorry for confusion
+        // if slot_is_empty, leaf is dummy, but with value 0x0 to make constraints pass (assuming claimed value is also 0x0)
+        let mut leaf = if slot_is_empty { NULL_LEAF.clone() } else { proof.pop().unwrap() };
+        let (_, max_leaf_bytes) = max_leaf_lens(key_byte_len, value_max_byte_len);
+
+        let (_, max_ext_bytes) = max_ext_lens(key_byte_len);
+        let max_branch_bytes = MAX_BRANCH_LENS.1;
+        let max_node_bytes = max(max_ext_bytes, max_branch_bytes);
+
+        let mut key_frag = Vec::with_capacity(max_depth);
+        let mut nodes = Vec::with_capacity(max_depth - 1);
+        let mut process_node = |node: &[u8]| {
+            let decode = Rlp::new(node);
+            let node_type = decode.item_count().unwrap() == 2;
+            if node_type {
+                let encoded_path = decode.at(0).unwrap().data().unwrap();
+                let byte_len = encoded_path.len();
+                let encoded_nibbles = bytes_to_nibbles(encoded_path);
+                let is_odd = encoded_nibbles[0] == 1u8 || encoded_nibbles[0] == 3u8;
+                let mut frag = encoded_nibbles[2 - usize::from(is_odd)..].to_vec();
+                path_idx += frag.len();
+                frag.resize(2 * key_byte_len, 0);
+                key_frag.push((frag, byte_len, is_odd));
+            } else {
+                let mut frag = vec![0u8; 2 * key_byte_len];
+                frag[0] = path_nibbles[path_idx];
+                key_frag.push((frag, 1, true));
+                path_idx += 1;
+            }
+            node_type
+        };
+        for mut node in proof {
+            let node_type = process_node(&node);
+            node.resize(max_node_bytes, 0);
+            nodes.push((node, node_type));
+        }
+        let mut dummy_branch = DUMMY_BRANCH.clone();
+        dummy_branch.resize(max_node_bytes, 0);
+        nodes.resize(max_depth - 1, (dummy_branch, false));
+
+        process_node(&leaf);
+        leaf.resize(max_leaf_bytes, 0);
+
+        // if slot_is_empty, we make modify key_frag so it still concatenates to `path`
+        if slot_is_empty {
+            // remove just added leaf frag
+            key_frag.pop().unwrap();
+            if key_frag.is_empty() {
+                let nibbles = bytes_to_nibbles(&*path); // that means proof was empty
+
+                key_frag = vec![(nibbles, 33, false)];
+            } else {
+                // the last frag in non-inclusion doesn't match path
+                key_frag.pop().unwrap();
+                let hex_len = key_frag
+                    .iter()
+                    .map(|(_, byte_len, is_odd)| hex_len(*byte_len, *is_odd))
+                    .sum::<usize>();
+                let mut remaining = path_nibbles[hex_len..].to_vec();
+                let is_odd = remaining.len() % 2 == 1;
+                let byte_len = (remaining.len() + 2 - usize::from(is_odd)) / 2;
+                remaining.resize(2 * key_byte_len, 0);
+                key_frag.push((remaining, byte_len, is_odd));
+            }
+        }
+        key_frag.resize(max_depth, (vec![0u8; 2 * key_byte_len], 0, false));
+
+        // assign all values
+        let value_byte_len = ctx.load_witness(F::from(value.len() as u64));
+        let depth = ctx.load_witness(F::from(depth as u64));
+        let mut load_bytes =
+            |bytes: &[u8]| ctx.assign_witnesses(bytes.iter().map(|x| F::from(*x as u64)));
+        let key_bytes = load_bytes(&*path);
+        value.resize(value_max_byte_len, 0);
+        let value_bytes = load_bytes(&value);
+        let root_hash_bytes = load_bytes(root_hash.as_bytes());
+        let leaf_bytes = load_bytes(&leaf);
+        let nodes = nodes
+            .into_iter()
+            .map(|(node_bytes, node_type)| {
+                let rlp_bytes = ctx.assign_witnesses(node_bytes.iter().map(|x| F::from(*x as u64)));
+                let node_type = ctx.load_witness(F::from(node_type));
+                MPTNode { rlp_bytes, node_type }
+            })
+            .collect_vec();
+        let key_frag = key_frag
+            .into_iter()
+            .map(|(nibbles, byte_len, is_odd)| {
+                let nibbles = ctx.assign_witnesses(nibbles.iter().map(|x| F::from(*x as u64)));
+                let byte_len = ctx.load_witness(F::from(byte_len as u64));
+                let is_odd = ctx.load_witness(F::from(is_odd));
+                MPTKeyFragment { nibbles, is_odd, byte_len }
+            })
+            .collect_vec();
+
+        let slot_is_empty = ctx.load_witness(F::from(slot_is_empty));
+
+        MPTFixedKeyProof {
+            key_bytes,
+            value_bytes,
+            value_byte_len,
+            root_hash_bytes,
+            leaf_bytes,
+            nodes,
+            depth,
+            key_frag,
+            max_depth,
+            slot_is_empty,
+        }
+    }
 }
 
 /* // TODO

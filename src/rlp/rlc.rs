@@ -331,6 +331,8 @@ impl<F: ScalarField> RlcChip<F> {
         if pow_bits == 0 {
             pow_bits = 1;
         }
+        println!("pow_bits = {}", pow_bits);
+        println!("gamma_pow_cached = {}",self.gamma_pow_cached().len());
         assert!(pow_bits <= self.gamma_pow_cached().len());
 
         let bits = gate.num_to_bits(ctx_gate, pow, pow_bits);
