@@ -84,7 +84,7 @@ pub fn test_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
     merkle_proof.push(proof_three);
     let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof,Network::Mainnet);
     let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(),None);
-    println!("instance:{:?}", circuit.assigned_instances);
+    println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())
 }

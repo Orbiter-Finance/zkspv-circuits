@@ -205,7 +205,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         );
 
         // check MPT inclusion
-        // transaction_index(RLP(index)) => Keccak(RLP([nonce,gasPrice,gasLimit,to,value,data,v,r,s])) Todo 现在value是hash格式，要改
+        // transaction_index = (RLP(index)) => Keccak(RLP([nonce,gasPrice,gasLimit,to,value,data,v,r,s])) Todo 现在value是hash格式，要改
         let mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, transaction_proofs);
 
         EthTransactionTraceWitness { array_witness, mpt_witness }
