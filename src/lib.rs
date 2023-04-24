@@ -10,9 +10,11 @@ pub mod rlp;
 pub mod storage;
 pub mod util;
 pub mod transaction;
+pub mod track_block;
 
 #[cfg(feature = "providers")]
 pub mod providers;
+
 
 use crate::rlp::{
     builder::{RlcThreadBreakPoints, RlcThreadBuilder},

@@ -42,7 +42,6 @@ fn get_test_circuit(
     let block_number;
     match network {
         Network::Mainnet => {
-            // cryptopunks
             addr = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB".parse::<Address>().unwrap();
             block_number = 16356350;
             //block_number = 0xf929e6;

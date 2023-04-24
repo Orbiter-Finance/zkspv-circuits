@@ -1,5 +1,5 @@
 [package]
-name = "test"
+name = "zk_spv"
 version = "0.1.1"
 edition = "2021"
 autobins = false

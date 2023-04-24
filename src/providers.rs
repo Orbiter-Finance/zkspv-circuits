@@ -33,6 +33,7 @@ use std::{
 };
 use tokio::runtime::Runtime;
 use crate::mpt::MPTUnFixedKeyInput;
+use crate::track_block::EthTrackBlockInput;
 use crate::transaction::{EthBlockTransactionInput, EthTransactionInput};
 
 pub const MAINNET_PROVIDER_URL: &str = "https://mainnet.infura.io/v3/";
@@ -41,11 +42,30 @@ pub const GOERLI_PROVIDER_URL: &str = "https://goerli.infura.io/v3/";
 const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 114;
 const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
 
-const TRANSACTION_PROOF_VALUE_MAX_BYTE_LEN:usize=90000;
-fn get_field_rlp(value: u32) ->Vec<u8>{
+const TRANSACTION_PROOF_VALUE_MAX_BYTE_LEN: usize = 90000;
+
+fn get_field_rlp(value: u32) -> Vec<u8> {
     let mut rlp: RlpStream = RlpStream::new_list(1);
     rlp.append(&value);
     rlp.out().into()
+}
+
+pub fn get_block_storage_track(
+    provider: &Provider<Http>,
+    one_block_number: u32,
+    two_block_number: u32,
+) -> EthTrackBlockInput {
+    let rt = Runtime::new().unwrap();
+    let block = rt.block_on(provider.get_block(one_block_number as u64)).unwrap().unwrap();
+    let block_hash = block.hash.unwrap();
+    println!("block hash: {:?}", block_hash);
+    let block_header = get_block_rlp(&block);
+    EthTrackBlockInput {
+        block,
+        block_number:one_block_number,
+        block_hash,
+        block_header,
+    }
 }
 
 pub fn get_block_storage_input_transaction(
@@ -53,7 +73,7 @@ pub fn get_block_storage_input_transaction(
     block_number: u32,
     transaction_index: u32,
     transaction_rlp: Vec<u8>,
-    merkle_proof:Vec<Bytes>,
+    merkle_proof: Vec<Bytes>,
     transaction_pf_max_depth: usize,
 ) -> EthBlockTransactionInput {
     let rt = Runtime::new().unwrap();
@@ -79,17 +99,17 @@ pub fn get_block_storage_input_transaction(
     //         }
     //         )
     // }).collect();
-    let transaction_proofs=MPTUnFixedKeyInput{
-        path:transaction_key,
-        value:transaction_rlp,
+    let transaction_proofs = MPTUnFixedKeyInput {
+        path: transaction_key,
+        value: transaction_rlp,
         root_hash: block.transactions_root,
-        proof:merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
+        proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
         slot_is_empty,
         value_max_byte_len: TRANSACTION_PROOF_VALUE_MAX_BYTE_LEN,
         max_depth: transaction_pf_max_depth,
     };
 
-    EthBlockTransactionInput{
+    EthBlockTransactionInput {
         block,
         block_number,
         block_hash,

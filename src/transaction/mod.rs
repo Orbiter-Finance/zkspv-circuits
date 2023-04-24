@@ -170,7 +170,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             block_hash: block_hash_hi_lo.try_into().unwrap(),
             block_number,
             index: transaction_index,
-            // slots_values: ,
+            // slots_values,
             transaction_is_empty: transaction_witness.mpt_witness.slot_is_empty,
         };
         (EthBlockTransactionTraceWitness { block_witness, transaction_witness }, digest)

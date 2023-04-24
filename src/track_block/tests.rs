@@ -1,0 +1,49 @@
+use std::env::set_var;
+use ethers_providers::{Http, Provider};
+use crate::Network;
+use crate::rlp::builder::RlcThreadBuilder;
+use crate::track_block::EthTrackBlockCircuit;
+use crate::util::EthConfigParams;
+use crate::providers::{GOERLI_PROVIDER_URL, MAINNET_PROVIDER_URL};
+use crate::halo2_proofs::{
+    dev::MockProver,
+    halo2curves::bn256::{Bn256, Fr, G1Affine},
+    plonk::*,
+    poly::commitment::ParamsProver,
+    poly::kzg::{
+        commitment::KZGCommitmentScheme,
+        multiopen::{ProverSHPLONK, VerifierSHPLONK},
+        strategy::SingleStrategy,
+    },
+    transcript::{
+        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+    },
+};
+fn get_test_circuit(
+    one_block_number: u32,
+    two_block_number: u32,
+    network: Network
+) -> EthTrackBlockCircuit {
+    let infura_id = "870df3c2a62e4b8a81d466ef1b1cbefd";
+    let provider_url = match network {
+        Network::Mainnet => format!("{MAINNET_PROVIDER_URL}{infura_id}"),
+        Network::Goerli => format!("{GOERLI_PROVIDER_URL}{infura_id}"),
+    };
+    let provider = Provider::<Http>::try_from(provider_url.as_str())
+        .expect("could not instantiate HTTP Provider");
+    EthTrackBlockCircuit::from_provider(&provider, one_block_number, two_block_number, Network::Mainnet)
+}
+
+#[test]
+pub fn test_track_block() ->Result<(), Box<dyn std::error::Error>>{
+    let params = EthConfigParams::from_path("configs/tests/track_block.json");
+    set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
+    let k = params.degree;
+    let one_block_number = 17113952;
+    let two_block_number = 17113952;
+    let input = get_test_circuit(one_block_number, two_block_number,Network::Mainnet);
+    let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(),None);
+    println!("instance:{:?}", circuit.instance());
+    MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
+    Ok(())
+}
