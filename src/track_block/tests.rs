@@ -20,8 +20,7 @@ use crate::halo2_proofs::{
     },
 };
 fn get_test_circuit(
-    one_block_number: u32,
-    two_block_number: u32,
+    block_number_interval: Vec<u64>,
     network: Network
 ) -> EthTrackBlockCircuit {
     let infura_id = "870df3c2a62e4b8a81d466ef1b1cbefd";
@@ -31,7 +30,7 @@ fn get_test_circuit(
     };
     let provider = Provider::<Http>::try_from(provider_url.as_str())
         .expect("could not instantiate HTTP Provider");
-    EthTrackBlockCircuit::from_provider(&provider, one_block_number, two_block_number, Network::Mainnet)
+    EthTrackBlockCircuit::from_provider(&provider,block_number_interval, Network::Mainnet)
 }
 
 #[test]
@@ -40,8 +39,9 @@ pub fn test_track_block() ->Result<(), Box<dyn std::error::Error>>{
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let k = params.degree;
     let one_block_number = 17113952;
-    let two_block_number = 17113952;
-    let input = get_test_circuit(one_block_number, two_block_number,Network::Mainnet);
+    let two_block_number = 17113953;
+    let block_number_interval = vec![one_block_number, two_block_number];
+    let input = get_test_circuit(block_number_interval,Network::Mainnet);
     let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(),None);
     println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();

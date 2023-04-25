@@ -1,4 +1,4 @@
-use std::{cell::RefCell, env::var, iter};
+use std::{cell::RefCell, env::var};
 use ethers_core::types::{Block, H256};
 use ethers_providers::{Http, Provider};
 use halo2_base::{AssignedValue, Context};
@@ -8,11 +8,11 @@ use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
 use crate::block_header::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, MAINNET_BLOCK_HEADER_RLP_MAX_BYTES};
-use crate::keccak::{FixedLenRLCs, KeccakChip, VarLenRLCs,FnSynthesize};
+use crate::keccak::{FixedLenRLCs, KeccakChip, VarLenRLCs, FnSynthesize};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::FIRST_PHASE;
 use crate::rlp::RlpChip;
-use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed,EthConfigParams};
+use crate::util::{AssignedH256, bytes_be_to_u128, EthConfigParams};
 
 mod tests;
 
@@ -21,18 +21,17 @@ mod tests;
 
 #[derive(Clone, Debug)]
 pub struct EthTrackBlockTraceWitness<F: Field> {
-    pub block_witness: EthBlockHeaderTraceWitness<F>,
+    pub block_witness: Vec<EthBlockHeaderTraceWitness<F>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct EthTrackBlockTrace<F: Field> {
-    pub block_trace: EthBlockHeaderTrace<F>,
+    pub block_trace: Vec<EthBlockHeaderTrace<F>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct EIP1186ResponseDigest<F: Field> {
-    pub parent_hash: AssignedH256<F>,
-    pub child_hash: AssignedH256<F>,
+    pub last_block_hash: AssignedH256<F>,
 }
 
 
@@ -55,7 +54,6 @@ pub trait EthTrackBlockChip<F: Field> {
     ) -> EthTrackBlockTrace<F>
         where
             Self: EthBlockHeaderChip<F>;
-
 }
 
 impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
@@ -69,39 +67,54 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         where
             Self: EthBlockHeaderChip<F>, {
         let ctx = thread_pool.main(FIRST_PHASE);
-        let mut block_header = input.block_header;
-        let max_len = match network {
-            Network::Goerli => GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
-            Network::Mainnet => MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
-        };
-        block_header.resize(max_len, 0);
-        // It has been checked whether keccak(rlp(block_header)) is equal to block_hash.
-        // Therefore, there is no need to declare the qualification repeatedly.
-        let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
-        let parent_hash = &block_witness.get("parent_hash").field_cells;
-        // let parent_hash =bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
+        let mut parent_hash:Vec<AssignedValue<F>> = Vec::new();
+        let mut block_witness = Vec::with_capacity(input.block_header.len());
+        for (i,value) in input.block_header.iter().enumerate() {
+            let mut block_header = value.to_vec();
+            let max_len = match network {
+                Network::Goerli => GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
+                Network::Mainnet => MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
+            };
+            block_header.resize(max_len, 0);
 
-        // Todo test
-        let child_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
+            // It has been checked whether keccak(rlp(block_header)) is equal to block_hash.
+            // Therefore, there is no need to declare the qualification repeatedly.
+            let block_witness_temp = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
+            // The parent hash of the current block
+            let parent_hash_element = bytes_be_to_u128(ctx, self.gate(), &block_witness_temp.get("parent_hash").field_cells);
+
+            let child_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness_temp.block_hash);
 
 
-        // compute block number from big-endian bytes
-        let block_num_bytes = &block_witness.get("number").field_cells;
-        let block_num_len = block_witness.get("number").field_len;
-        let block_number =
-            bytes_be_var_to_fixed(ctx, self.gate(), block_num_bytes, block_num_len, 4);
-        let block_number = bytes_be_to_uint(ctx, self.gate(), &block_number, 4);
+            // compute block number from big-endian bytes
+            // let block_num_bytes = &block_witness.get("number").field_cells;
+            // let block_num_len = block_witness.get("number").field_len;
+            // let block_number =
+            //     bytes_be_var_to_fixed(ctx, self.gate(), block_num_bytes, block_num_len, 4);
+            // let block_number = bytes_be_to_uint(ctx, self.gate(), &block_number, 4);
 
-        // verify parent_hash and child_hash
-        for (parent_hash, child_hash) in parent_hash.iter().zip(child_hash.iter()) {
-            ctx.constrain_equal(parent_hash, child_hash);
+            // verify block.parent_hash and local parent_hash
+            if i!=0 {
+                for (parent_hash_element, parent_hash) in parent_hash_element.iter().zip(parent_hash.iter()) {
+                    ctx.constrain_equal(parent_hash_element, parent_hash);
+                }
+            }
+
+            // Save the block hash of the current block as the parent hash
+            parent_hash = child_hash.to_vec();
+
+            block_witness.push(block_witness_temp);
         }
 
-        let digest = EIP1186ResponseDigest {
-            parent_hash: parent_hash.to_vec().try_into().unwrap(),
-            child_hash:child_hash.try_into().unwrap(), };
 
-        (EthTrackBlockTraceWitness{block_witness},digest)
+
+        let digest = EIP1186ResponseDigest {
+            last_block_hash: parent_hash.try_into().unwrap(),
+        };
+
+        // parent_hash.clear();
+
+        (EthTrackBlockTraceWitness { block_witness }, digest)
     }
 
     fn parse_track_block_proof_from_block_phase1(
@@ -111,19 +124,25 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
     ) -> EthTrackBlockTrace<F>
         where
             Self: EthBlockHeaderChip<F> {
-        let block_trace = self.decompose_block_header_phase1(thread_pool.rlc_ctx_pair(), witness.block_witness);
-        EthTrackBlockTrace{block_trace}
+        let mut block_trace = Vec::with_capacity(witness.block_witness.len());
+        for i in witness.block_witness {
+            let block_witness = i;
+            let block_trace_element = self.decompose_block_header_phase1(thread_pool.rlc_ctx_pair(), block_witness);
+            block_trace.push(block_trace_element);
+        }
+
+        EthTrackBlockTrace { block_trace }
     }
 }
 
 
 #[derive(Clone, Debug)]
 pub struct EthTrackBlockInput {
-    pub block: Block<H256>,
-    pub block_number: u32,
-    pub block_hash: H256,
+    pub block: Vec<Block<H256>>,
+    pub block_number: Vec<u64>,
+    pub block_hash: Vec<H256>,
     // provided for convenience, actual block_hash is computed from block_header
-    pub block_header: Vec<u8>,
+    pub block_header: Vec<Vec<u8>>,
 }
 
 impl EthTrackBlockInput {
@@ -134,7 +153,7 @@ impl EthTrackBlockInput {
 
 #[derive(Clone, Debug)]
 pub struct EthTrackBlockInputAssigned {
-    pub block_header: Vec<u8>,
+    pub block_header: Vec<Vec<u8>>,
 }
 
 #[derive(Clone, Debug)]
@@ -146,16 +165,14 @@ pub struct EthTrackBlockCircuit {
 impl EthTrackBlockCircuit {
     pub fn from_provider(
         provider: &Provider<Http>,
-        one_block_number: u32,
-        two_block_number: u32,
+        block_number_interval: Vec<u64>,
         network: Network,
     ) -> Self {
         use crate::providers::get_block_storage_track;
 
         let inputs = get_block_storage_track(
             provider,
-            one_block_number,
-            two_block_number,
+            block_number_interval,
         );
         Self { inputs, network }
     }
@@ -180,17 +197,16 @@ impl EthTrackBlockCircuit {
             input, self.network);
 
         let EIP1186ResponseDigest {
-            parent_hash,
-            child_hash,
+            last_block_hash,
         } = digest;
 
-        let assigned_instances = parent_hash
+        let assigned_instances = last_block_hash
             .into_iter()
-            .chain(child_hash.into_iter().collect_vec())
+            // .chain(child_hash.into_iter().collect_vec())
             .collect_vec();
         {
             let ctx = builder.gate_builder.main(FIRST_PHASE);
-            // range.gate.assert_is_const(ctx, &parent_hash, &child_hash);
+            // range.gate.assert_is_const(ctx, &last_block_hash, &child_hash);
         }
         let circuit = EthCircuitBuilder::new(
             assigned_instances,
@@ -217,4 +233,4 @@ impl EthTrackBlockCircuit {
         }
         circuit
     }
-    }
+}

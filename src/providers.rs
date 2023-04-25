@@ -52,17 +52,27 @@ fn get_field_rlp(value: u32) -> Vec<u8> {
 
 pub fn get_block_storage_track(
     provider: &Provider<Http>,
-    one_block_number: u32,
-    two_block_number: u32,
+    block_number_interval: Vec<u64>,
 ) -> EthTrackBlockInput {
-    let rt = Runtime::new().unwrap();
-    let block = rt.block_on(provider.get_block(one_block_number as u64)).unwrap().unwrap();
-    let block_hash = block.hash.unwrap();
-    println!("block hash: {:?}", block_hash);
-    let block_header = get_block_rlp(&block);
+    let  rt = Runtime::new().unwrap();
+    let mut block = Vec::with_capacity(block_number_interval.len());
+    let mut block_number = Vec::with_capacity(block_number_interval.len());
+    let mut block_hash = Vec::with_capacity(block_number_interval.len());
+    let mut block_header = Vec::with_capacity(block_number_interval.len());
+    for i in block_number_interval {
+        let block_element = rt.block_on(provider.get_block(i)).unwrap().unwrap();
+        let block_element_hash = block_element.hash.unwrap();
+        println!("block hash: {:?}", block_element_hash);
+        let block_element_header = get_block_rlp(&block_element);
+        block.push(block_element);
+        block_number.push(i);
+        block_hash.push(block_element_hash);
+        block_header.push(block_element_header);
+    }
+
     EthTrackBlockInput {
         block,
-        block_number:one_block_number,
+        block_number,
         block_hash,
         block_header,
     }
