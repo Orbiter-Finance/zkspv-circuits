@@ -62,7 +62,7 @@ pub fn get_block_storage_track(
     for i in block_number_interval {
         let block_element = rt.block_on(provider.get_block(i)).unwrap().unwrap();
         let block_element_hash = block_element.hash.unwrap();
-        println!("block hash: {:?}", block_element_hash);
+        // println!("block hash: {:?}", block_element_hash);
         let block_element_header = get_block_rlp(&block_element);
         block.push(block_element);
         block_number.push(i);

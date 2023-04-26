@@ -38,9 +38,11 @@ pub fn test_track_block() ->Result<(), Box<dyn std::error::Error>>{
     let params = EthConfigParams::from_path("configs/tests/track_block.json");
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let k = params.degree;
-    let one_block_number = 17113952;
-    let two_block_number = 17113953;
-    let block_number_interval = vec![one_block_number, two_block_number];
+    let mut block_number_interval = vec![];
+    for i in 17113952..17114152{
+        block_number_interval.push(i as u64);
+    }
+
     let input = get_test_circuit(block_number_interval,Network::Mainnet);
     let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(),None);
     println!("instance:{:?}", circuit.instance());

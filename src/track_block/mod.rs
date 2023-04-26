@@ -17,6 +17,7 @@ use crate::util::{AssignedH256, bytes_be_to_u128, EthConfigParams};
 mod tests;
 
 // Currently only available for L1
+// 200 blocks take about an hour
 
 
 #[derive(Clone, Debug)]
@@ -202,12 +203,7 @@ impl EthTrackBlockCircuit {
 
         let assigned_instances = last_block_hash
             .into_iter()
-            // .chain(child_hash.into_iter().collect_vec())
             .collect_vec();
-        {
-            let ctx = builder.gate_builder.main(FIRST_PHASE);
-            // range.gate.assert_is_const(ctx, &last_block_hash, &child_hash);
-        }
         let circuit = EthCircuitBuilder::new(
             assigned_instances,
             builder,
