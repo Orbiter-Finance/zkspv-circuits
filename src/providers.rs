@@ -62,7 +62,6 @@ pub fn get_block_storage_track(
     for i in block_number_interval {
         let block_element = rt.block_on(provider.get_block(i)).unwrap().unwrap();
         let block_element_hash = block_element.hash.unwrap();
-        // println!("block hash: {:?}", block_element_hash);
         let block_element_header = get_block_rlp(&block_element);
         block.push(block_element);
         block_number.push(i);
@@ -90,9 +89,9 @@ pub fn get_block_storage_input_transaction(
     let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
     let block_hash = block.hash.unwrap();
     let block_header = get_block_rlp(&block);
-    let transaction_index = U256::from(transaction_index);
+    let transaction_key_u256 = U256::from(transaction_index);
 
-    let transaction_key = get_field_rlp(transaction_index.as_u32());
+    let transaction_key = get_field_rlp(transaction_key_u256.as_u32());
     let slot_is_empty = false;
     // let transaction_proofs=merkle_proof.into_iter().map(|proof|{
     //     let path = proof.key;

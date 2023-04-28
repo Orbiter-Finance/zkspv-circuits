@@ -1,5 +1,5 @@
 // Copied from uniswap-v3-oracles/circuits/src/bin/v3_twap_proof.rs
-use axiom_eth::{
+use zk_spv::{
     storage::helpers::{StorageScheduler, StorageTask},
     util::scheduler::{evm_wrapper::Wrapper::ForEvm, Scheduler},
     Network,

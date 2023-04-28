@@ -1,6 +1,6 @@
 #[cfg(feature = "display")]
 use ark_std::{end_timer, start_timer};
-use axiom_eth::{
+use zk_spv::{
     block_header::helpers::{BlockHeaderScheduler, CircuitType, Finality, Task},
     util::scheduler::Scheduler,
     Network,

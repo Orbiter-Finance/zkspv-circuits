@@ -86,14 +86,6 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
 
             let child_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness_temp.block_hash);
 
-
-            // compute block number from big-endian bytes
-            // let block_num_bytes = &block_witness.get("number").field_cells;
-            // let block_num_len = block_witness.get("number").field_len;
-            // let block_number =
-            //     bytes_be_var_to_fixed(ctx, self.gate(), block_num_bytes, block_num_len, 4);
-            // let block_number = bytes_be_to_uint(ctx, self.gate(), &block_number, 4);
-
             // verify block.parent_hash and local parent_hash
             if i!=0 {
                 for (parent_hash_element, parent_hash) in parent_hash_element.iter().zip(parent_hash.iter()) {
@@ -112,8 +104,6 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         let digest = EIP1186ResponseDigest {
             last_block_hash: parent_hash.try_into().unwrap(),
         };
-
-        // parent_hash.clear();
 
         (EthTrackBlockTraceWitness { block_witness }, digest)
     }

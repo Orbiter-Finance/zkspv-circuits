@@ -44,18 +44,18 @@ fn get_test_circuit(
         Network::Mainnet => {
             addr = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB".parse::<Address>().unwrap();
             block_number = 16356350;
-            //block_number = 0xf929e6;
         }
         Network::Goerli => {
             addr = "0xf2d1f94310823fe26cfa9c9b6fd152834b8e7849".parse::<Address>().unwrap();
-            block_number = 0x713d54;
+            block_number = 0x82e239;
         }
     }
-    EthBlockTransactionCircuit::from_provider(&provider, block_number, transaction_index,transaction_rlp, merkle_proof, 3, Network::Mainnet)
+    EthBlockTransactionCircuit::from_provider(&provider, block_number, transaction_index,transaction_rlp, merkle_proof, 3, network)
 }
 
 #[test]
 pub fn test_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
+    // merkle tree 、transaction_rlp
     let params = EthConfigParams::from_path("configs/tests/storage.json");
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let k = params.degree;
@@ -77,11 +77,8 @@ pub fn test_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
     let proof_three_bytes = hex::decode(&proof_three_str[2..]).unwrap();
     let proof_three = Bytes::from(proof_three_bytes);
 
-    let mut merkle_proof :Vec<Bytes> = Vec::new();
-    merkle_proof.push(proof_one);
-    merkle_proof.push(proof_two);
-    merkle_proof.push(proof_three);
-    let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof,Network::Mainnet);
+    let merkle_proof :Vec<Bytes> = vec![proof_one,proof_two,proof_three];
+    let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof,Network::Goerli);
     let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(),None);
     println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();

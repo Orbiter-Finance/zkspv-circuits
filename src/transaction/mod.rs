@@ -145,6 +145,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         block_header.resize(max_len, 0);
         let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
         let transaction_root = &block_witness.get("transactions_root").field_cells;
+        println!("transaction_root: {:?}", transaction_root);
         let block_hash_hi_lo = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
 
         // compute block number from big-endian bytes
@@ -200,12 +201,12 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let array_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
             transaction_proofs.value_bytes.clone(),
-            &[33, 33, 33, 21, 33, 1073, 33, 33, 33],
+            &[32, 32, 32, 20, 32, 100000, 32, 32, 32],//Maximum number of bytes per field. For example, the uint256 is 32 bytes.
             false,
         );
 
         // check MPT inclusion
-        // transaction_index = (RLP(index)) => Keccak(RLP([nonce,gasPrice,gasLimit,to,value,data,v,r,s])) Todo 现在value是hash格式，要改
+        // transaction_index = (RLP(index)) => Keccak(RLP([nonce,gasPrice,gasLimit,to,value,data,v,r,s])) Todo Now value is in hash format, to change
         let mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, transaction_proofs);
 
         EthTransactionTraceWitness { array_witness, mpt_witness }
@@ -298,7 +299,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
 
 #[derive(Clone, Debug)]
 pub struct EthTransactionInput {
-    pub transaction_index: U256,
+    pub transaction_index: u32,
     pub transaction_proofs: MPTUnFixedKeyInput, // key proof
 }
 
@@ -314,9 +315,7 @@ pub struct EthBlockTransactionInput {
 
 impl EthTransactionInput {
     pub fn assign<F: Field>(self, ctx: &mut Context<F>) -> EthTransactionInputAssigned<F> {
-        let mut test:Vec<F> = Vec::with_capacity(1);
-        test.extend(encode_u256_to_field::<F>(&self.transaction_index));
-        let transaction_index = test[0].try_into().unwrap();
+        let transaction_index = (F::from(self.transaction_index as u64)).try_into().unwrap();
         let transaction_index = ctx.load_witness(transaction_index);
         let transaction_proofs = self.transaction_proofs.assign(ctx);
 
