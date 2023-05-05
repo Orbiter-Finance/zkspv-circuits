@@ -26,7 +26,6 @@ use hex::FromHex;
 use rand_core::OsRng;
 use std::{env::set_var, fs::File, marker::PhantomData};
 use test_log::test;
-use crate::util::AssignedH256;
 
 fn block_header_test_circuit<F: Field>(
     mut builder: RlcThreadBuilder<F>,
@@ -63,7 +62,7 @@ fn block_header_test_circuit<F: Field>(
         let config_params: EthConfigParams = serde_json::from_str(
             var("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
         )
-        .unwrap();
+            .unwrap();
         circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
     }
     circuit
@@ -184,7 +183,7 @@ pub fn test_one_mainnet_header_prover() -> Result<(), Box<dyn std::error::Error>
         Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
         SingleStrategy<'_, Bn256>,
     >(verifier_params, pk.get_vk(), strategy, &[&[&[]]], &mut transcript)
-    .unwrap();
+        .unwrap();
     end_timer!(verify_time);
 
     Ok(())
@@ -265,7 +264,7 @@ pub fn test_multi_goerli_header_prover() {
         Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
         _,
     >(&params, &pk, &[circuit], &[&[&instance]], OsRng, &mut transcript)
-    .unwrap();
+        .unwrap();
     let proof = transcript.finalize();
     end_timer!(pf_time);
 
@@ -280,7 +279,7 @@ pub fn test_multi_goerli_header_prover() {
         Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
         SingleStrategy<'_, Bn256>,
     >(verifier_params, pk.get_vk(), strategy, &[&[&instance]], &mut transcript)
-    .unwrap();
+        .unwrap();
     end_timer!(verify_time);
 }
 

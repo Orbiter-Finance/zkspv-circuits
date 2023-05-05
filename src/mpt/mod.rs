@@ -28,8 +28,6 @@ use std::{
     cmp::max,
     iter::{self, once},
 };
-use ethers_core::k256::U256;
-use serde_with::Bytes;
 
 #[cfg(test)]
 mod tests;
@@ -240,8 +238,10 @@ pub struct MPTUnFixedKeyInput {
     ///
     /// As an example, the MPT transaction trie of Ethereum has
     /// `path = rlp(transaction_index) => value = rlp(transaction)`
-    pub path: Vec<u8>,//rlp(transaction_index)
-    pub value: Vec<u8>,//rlp(transaction)
+    pub path: Vec<u8>,
+    //rlp(transaction_index)
+    pub value: Vec<u8>,
+    //rlp(transaction)
     pub root_hash: H256,// transactions_hash
 
     pub proof: Vec<Vec<u8>>,
@@ -252,7 +252,7 @@ pub struct MPTUnFixedKeyInput {
     pub max_depth: usize,
 }
 
-impl MPTUnFixedKeyInput{
+impl MPTUnFixedKeyInput {
     pub fn assign<F: Field>(self, ctx: &mut Context<F>) -> MPTFixedKeyProof<F> {
         let Self {
             path,
@@ -1069,6 +1069,7 @@ impl<'chip, F: Field> EthChip<'chip, F> {
                     node_hash_rlc.rlc_val =
                         self.gate().mul_not(ctx_gate, slot_is_empty, node_hash_rlc.rlc_val);
                 }
+
                 let is_match = rlc_is_equal(ctx_gate, self.gate(), match_hash_rlc, node_hash_rlc);
                 matches.push(is_match);
             }
@@ -1082,6 +1083,7 @@ impl<'chip, F: Field> EthChip<'chip, F> {
                 once(Constant(F::zero())).chain(match_sums.into_iter().map(Existing)),
                 depth_minus_one_indicator.clone(),
             );
+
             ctx_gate.constrain_equal(&match_cnt, &depth_minus_one);
         }
         // if slot_is_empty: check that nodes[depth - 1] points to null if it is branch node
@@ -1281,7 +1283,6 @@ impl MPTFixedKeyInput {
         let mut dummy_branch = DUMMY_BRANCH.clone();
         dummy_branch.resize(max_node_bytes, 0);
         nodes.resize(max_depth - 1, (dummy_branch, false));
-
         process_node(&leaf);
         leaf.resize(max_leaf_bytes, 0);
 

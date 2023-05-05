@@ -44,8 +44,8 @@ const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
 
 const TRANSACTION_PROOF_VALUE_MAX_BYTE_LEN: usize = 90000;
 
-fn get_field_rlp(value: u32) -> Vec<u8> {
-    let mut rlp: RlpStream = RlpStream::new_list(1);
+fn get_buffer_rlp(value: u32) -> Vec<u8> {
+    let mut rlp: RlpStream = RlpStream::new();
     rlp.append(&value);
     rlp.out().into()
 }
@@ -91,7 +91,7 @@ pub fn get_block_storage_input_transaction(
     let block_header = get_block_rlp(&block);
     let transaction_key_u256 = U256::from(transaction_index);
 
-    let transaction_key = get_field_rlp(transaction_key_u256.as_u32());
+    let transaction_key = get_buffer_rlp(transaction_key_u256.as_u32());
     let slot_is_empty = false;
     // let transaction_proofs=merkle_proof.into_iter().map(|proof|{
     //     let path = proof.key;

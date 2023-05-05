@@ -1,5 +1,5 @@
-use std::{cell::RefCell, env::var, iter};
-use ethers_core::types::{ Block, Bytes, H256, U256};
+use std::{cell::RefCell, env::var};
+use ethers_core::types::{Block, Bytes, H256};
 use ethers_providers::{Http, Provider};
 use halo2_base::{AssignedValue, Context};
 use halo2_base::gates::builder::GateThreadBuilder;
@@ -10,12 +10,12 @@ use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
 use crate::block_header::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, MAINNET_BLOCK_HEADER_RLP_MAX_BYTES};
-use crate::keccak::{FixedLenRLCs, KeccakChip, VarLenRLCs,FnSynthesize};
-use crate::mpt::{AssignedBytes, MPTFixedKeyInput, MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
+use crate::keccak::{FixedLenRLCs, KeccakChip, VarLenRLCs, FnSynthesize};
+use crate::mpt::{AssignedBytes, MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
-use crate::rlp::rlc::{FIRST_PHASE, RLC_PHASE, RlcContextPair, RlcTrace};
-use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, encode_h256_to_field, encode_u256_to_field, uint_to_bytes_be,EthConfigParams};
+use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
+use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, uint_to_bytes_be, EthConfigParams};
 
 mod tests;
 
@@ -145,7 +145,6 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         block_header.resize(max_len, 0);
         let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
         let transaction_root = &block_witness.get("transactions_root").field_cells;
-        println!("transaction_root: {:?}", transaction_root);
         let block_hash_hi_lo = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
 
         // compute block number from big-endian bytes
@@ -156,17 +155,17 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let block_number = bytes_be_to_uint(ctx, self.gate(), &block_number, 4);
 
         // verify transaction proof
-        let transaction_index_bytes = uint_to_bytes_be(ctx, self.range(), &transaction_index, 3);
+        let transaction_index_bytes = uint_to_bytes_be(ctx, self.range(), &transaction_index, input.transaction.transaction_proofs.key_bytes.len());
 
         // drop ctx
         let transaction_witness = self.parse_eip1186_proof_phase0(
             thread_pool,
             keccak,
             transaction_root,
-            transaction_index_bytes,
+            input.transaction.transaction_proofs.key_bytes.to_vec(),
             input.transaction.transaction_proofs,
         );
-       // let slots_values= input.transaction.transaction_proofs.value_bytes.into_iter().collect();
+        // let slots_values= input.transaction.transaction_proofs.value_bytes.into_iter().collect();
         let digest = EIP1186ResponseDigest {
             block_hash: block_hash_hi_lo.try_into().unwrap(),
             block_number,
@@ -185,12 +184,12 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         where
             Self: EthBlockHeaderChip<F> {
         let block_trace = self.decompose_block_header_phase1(thread_pool.rlc_ctx_pair(), witness.block_witness);
-        let transaction_trace = self.parse_eip1186_proof_phase1(thread_pool,witness.transaction_witness);
-        EthBlockTransactionTrace{block_trace, transaction_trace}
+        let transaction_trace = self.parse_eip1186_proof_phase1(thread_pool, witness.transaction_witness);
+        EthBlockTransactionTrace { block_trace, transaction_trace }
     }
 
     fn parse_transaction_proof_phase0(&self, ctx: &mut Context<F>, keccak: &mut KeccakChip<F>, transactions_root: &[AssignedValue<F>], transaction_index: AssignedBytes<F>, transaction_proofs: MPTFixedKeyProof<F>) -> EthTransactionTraceWitness<F> {
-        assert!(transaction_index.len() >= 1); //transaction_index len ≈ 1- ♾+
+        assert!(transaction_index.len() >= 1);
 
         // check MPT root is transactions_root
         for (pf_root, root) in transaction_proofs.root_hash_bytes.iter().zip(transactions_root.iter()) {
@@ -204,10 +203,12 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             &[32, 32, 32, 20, 32, 100000, 32, 32, 32],//Maximum number of bytes per field. For example, the uint256 is 32 bytes.
             false,
         );
+        // println!("array_witness: {:?}", &array_witness.field_witness[0].field_cells);
 
         // check MPT inclusion
-        // transaction_index = (RLP(index)) => Keccak(RLP([nonce,gasPrice,gasLimit,to,value,data,v,r,s])) Todo Now value is in hash format, to change
+        // transaction_index = (RLP(index)) => Keccak(RLP([nonce,gasPrice,gasLimit,to,value,data,v,r,s]))
         let mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, transaction_proofs);
+        // println!("mpt_witness: {:?}",mpt_witness.key_hexs);
 
         EthTransactionTraceWitness { array_witness, mpt_witness }
     }
@@ -276,9 +277,9 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
     ) -> EthTransactionTrace<F> {
         let (ctx_gate, ctx_rlc) = thread_pool.rlc_ctx_pair();
         let copy_witness = &witness.clone();
-        let transaction_trace = self.parse_transaction_proof_phase1((ctx_gate, ctx_rlc),witness);
+        let transaction_trace = self.parse_transaction_proof_phase1((ctx_gate, ctx_rlc), witness);
 
-        let max_len = (2*&copy_witness.mpt_witness.key_byte_len).max(copy_witness.array_witness.rlp_array.len());
+        let max_len = (2 * &copy_witness.mpt_witness.key_byte_len).max(copy_witness.array_witness.rlp_array.len());
         let cache_bits = bit_length(max_len as u64);
         // let ctxs: Vec<(Context<F>, Context<F>)> = vec![*(t1, a1)];
         self.rlc().load_rlc_cache((ctx_gate, ctx_rlc), self.gate(), cache_bits);

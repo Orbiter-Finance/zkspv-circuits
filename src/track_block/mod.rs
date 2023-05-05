@@ -3,7 +3,7 @@ use ethers_core::types::{Block, H256};
 use ethers_providers::{Http, Provider};
 use halo2_base::{AssignedValue, Context};
 use halo2_base::gates::builder::GateThreadBuilder;
-use halo2_base::gates::{GateInstructions, RangeChip};
+use halo2_base::gates::{RangeChip};
 use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
@@ -68,9 +68,9 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         where
             Self: EthBlockHeaderChip<F>, {
         let ctx = thread_pool.main(FIRST_PHASE);
-        let mut parent_hash:Vec<AssignedValue<F>> = Vec::new();
+        let mut parent_hash: Vec<AssignedValue<F>> = Vec::new();
         let mut block_witness = Vec::with_capacity(input.block_header.len());
-        for (i,value) in input.block_header.iter().enumerate() {
+        for (i, value) in input.block_header.iter().enumerate() {
             let mut block_header = value.to_vec();
             let max_len = match network {
                 Network::Goerli => GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
@@ -87,7 +87,7 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
             let child_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness_temp.block_hash);
 
             // verify block.parent_hash and local parent_hash
-            if i!=0 {
+            if i != 0 {
                 for (parent_hash_element, parent_hash) in parent_hash_element.iter().zip(parent_hash.iter()) {
                     ctx.constrain_equal(parent_hash_element, parent_hash);
                 }
@@ -98,7 +98,6 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
 
             block_witness.push(block_witness_temp);
         }
-
 
 
         let digest = EIP1186ResponseDigest {

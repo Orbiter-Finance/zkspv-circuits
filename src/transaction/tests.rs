@@ -1,27 +1,14 @@
 use std::env::set_var;
-use ethers_core::types::{Address, Bytes, H256};
+use ethers_core::types::{Bytes};
 use ethers_providers::{Http, Provider};
-use rlp::RlpStream;
-use tokio::runtime::Runtime;
-use crate::mpt::MPTUnFixedKeyInput;
 use crate::Network;
 use crate::providers::{GOERLI_PROVIDER_URL, MAINNET_PROVIDER_URL};
 use crate::rlp::builder::RlcThreadBuilder;
-use crate::transaction::{EthBlockTransactionCircuit, EthBlockTransactionInput, EthTransactionInput};
+use crate::transaction::{EthBlockTransactionCircuit};
 use crate::util::EthConfigParams;
 use crate::halo2_proofs::{
     dev::MockProver,
-    halo2curves::bn256::{Bn256, Fr, G1Affine},
-    plonk::*,
-    poly::commitment::ParamsProver,
-    poly::kzg::{
-        commitment::KZGCommitmentScheme,
-        multiopen::{ProverSHPLONK, VerifierSHPLONK},
-        strategy::SingleStrategy,
-    },
-    transcript::{
-        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-    },
+    halo2curves::bn256::{Fr},
 };
 
 
@@ -29,7 +16,7 @@ fn get_test_circuit(
     transaction_index: u32,
     transaction_rlp: Vec<u8>,
     merkle_proof: Vec<Bytes>,
-    network: Network
+    network: Network,
 ) -> EthBlockTransactionCircuit {
     let infura_id = "870df3c2a62e4b8a81d466ef1b1cbefd";
     let provider_url = match network {
@@ -38,24 +25,20 @@ fn get_test_circuit(
     };
     let provider = Provider::<Http>::try_from(provider_url.as_str())
         .expect("could not instantiate HTTP Provider");
-    let addr;
     let block_number;
     match network {
         Network::Mainnet => {
-            addr = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB".parse::<Address>().unwrap();
             block_number = 16356350;
         }
         Network::Goerli => {
-            addr = "0xf2d1f94310823fe26cfa9c9b6fd152834b8e7849".parse::<Address>().unwrap();
             block_number = 0x82e239;
         }
     }
-    EthBlockTransactionCircuit::from_provider(&provider, block_number, transaction_index,transaction_rlp, merkle_proof, 3, network)
+    EthBlockTransactionCircuit::from_provider(&provider, block_number, transaction_index, transaction_rlp, merkle_proof, 3, network)
 }
 
 #[test]
 pub fn test_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
-    // merkle tree 、transaction_rlp
     let params = EthConfigParams::from_path("configs/tests/storage.json");
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let k = params.degree;
@@ -77,9 +60,9 @@ pub fn test_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
     let proof_three_bytes = hex::decode(&proof_three_str[2..]).unwrap();
     let proof_three = Bytes::from(proof_three_bytes);
 
-    let merkle_proof :Vec<Bytes> = vec![proof_one,proof_two,proof_three];
-    let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof,Network::Goerli);
-    let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(),None);
+    let merkle_proof: Vec<Bytes> = vec![proof_one, proof_two, proof_three];
+    let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof, Network::Goerli);
+    let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(), None);
     println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())

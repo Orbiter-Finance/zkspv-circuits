@@ -7,21 +7,12 @@ use crate::util::EthConfigParams;
 use crate::providers::{GOERLI_PROVIDER_URL, MAINNET_PROVIDER_URL};
 use crate::halo2_proofs::{
     dev::MockProver,
-    halo2curves::bn256::{Bn256, Fr, G1Affine},
-    plonk::*,
-    poly::commitment::ParamsProver,
-    poly::kzg::{
-        commitment::KZGCommitmentScheme,
-        multiopen::{ProverSHPLONK, VerifierSHPLONK},
-        strategy::SingleStrategy,
-    },
-    transcript::{
-        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-    },
+    halo2curves::bn256::{Fr},
 };
+
 fn get_test_circuit(
     block_number_interval: Vec<u64>,
-    network: Network
+    network: Network,
 ) -> EthTrackBlockCircuit {
     let infura_id = "870df3c2a62e4b8a81d466ef1b1cbefd";
     let provider_url = match network {
@@ -30,21 +21,21 @@ fn get_test_circuit(
     };
     let provider = Provider::<Http>::try_from(provider_url.as_str())
         .expect("could not instantiate HTTP Provider");
-    EthTrackBlockCircuit::from_provider(&provider,block_number_interval, Network::Mainnet)
+    EthTrackBlockCircuit::from_provider(&provider, block_number_interval, Network::Mainnet)
 }
 
 #[test]
-pub fn test_track_block() ->Result<(), Box<dyn std::error::Error>>{
+pub fn test_track_block() -> Result<(), Box<dyn std::error::Error>> {
     let params = EthConfigParams::from_path("configs/tests/track_block.json");
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let k = params.degree;
     let mut block_number_interval = vec![];
-    for i in 17113952..17114152{
+    for i in 17113952..17114152 {
         block_number_interval.push(i as u64);
     }
 
-    let input = get_test_circuit(block_number_interval,Network::Mainnet);
-    let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(),None);
+    let input = get_test_circuit(block_number_interval, Network::Mainnet);
+    let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(), None);
     println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())
