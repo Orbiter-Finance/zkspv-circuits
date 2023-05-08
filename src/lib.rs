@@ -15,7 +15,7 @@ pub mod track_block;
 
 #[cfg(feature = "providers")]
 pub mod providers;
-
+pub mod r#type;
 
 
 use crate::rlp::{

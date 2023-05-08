@@ -33,6 +33,7 @@ use std::{
 };
 use tokio::runtime::Runtime;
 use crate::mpt::MPTUnFixedKeyInput;
+use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::{EthBlockTransactionInput, EthTransactionInput};
 
@@ -43,6 +44,7 @@ const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 114;
 const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
 
 const TRANSACTION_PROOF_VALUE_MAX_BYTE_LEN: usize = 90000;
+const RECEIPT_PROOF_VALUE_MAX_BYTE_LEN: usize = 90000;
 
 fn get_buffer_rlp(value: u32) -> Vec<u8> {
     let mut rlp: RlpStream = RlpStream::new();
@@ -76,6 +78,38 @@ pub fn get_block_storage_track(
         block_header,
     }
 }
+pub fn get_block_storage_input_receipt(
+    provider: &Provider<Http>,
+    block_number: u32,
+    receipt_index: u32,
+    receipt_rlp: Vec<u8>,
+    merkle_proof: Vec<Bytes>,
+    receipt_pf_max_depth: usize,
+) -> EthBlockReceiptInput{
+    let rt = Runtime::new().unwrap();
+    let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
+    let block_hash = block.hash.unwrap();
+    let block_header = get_block_rlp(&block);
+    let receipt_key_u256 = U256::from(receipt_index);
+    let receipt_key = get_buffer_rlp(receipt_key_u256.as_u32());
+    let slot_is_empty = false;
+    let receipt_proofs = MPTUnFixedKeyInput {
+        path: receipt_key,
+        value: receipt_rlp,
+        root_hash: block.transactions_root,
+        proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
+        slot_is_empty,
+        value_max_byte_len: RECEIPT_PROOF_VALUE_MAX_BYTE_LEN,
+        max_depth: receipt_pf_max_depth,
+    };
+    EthBlockReceiptInput{
+        block,
+        block_number,
+        block_hash,
+        block_header,
+        receipt:EthReceiptInput{receipt_index,receipt_proofs}
+    }
+}
 
 pub fn get_block_storage_input_transaction(
     provider: &Provider<Http>,
@@ -90,24 +124,8 @@ pub fn get_block_storage_input_transaction(
     let block_hash = block.hash.unwrap();
     let block_header = get_block_rlp(&block);
     let transaction_key_u256 = U256::from(transaction_index);
-
     let transaction_key = get_buffer_rlp(transaction_key_u256.as_u32());
     let slot_is_empty = false;
-    // let transaction_proofs=merkle_proof.into_iter().map(|proof|{
-    //     let path = proof.key;
-    //     // let value =if slot_is_empty { vec![0u8] } else { proof.value.rlp_bytes().to_vec() };
-    //     (
-    //         MPTFixedKeyInput{
-    //             path,
-    //             value,
-    //             root_hash: transaction_hash,
-    //             proof: proof.proof.into_iter().map(|x| x.to_vec()).collect(),
-    //             slot_is_empty,
-    //             value_max_byte_len: TRANSACTION_PROOF_VALUE_MAX_BYTE_LEN,
-    //             max_depth: transaction_pf_max_depth,
-    //         }
-    //         )
-    // }).collect();
     let transaction_proofs = MPTUnFixedKeyInput {
         path: transaction_key,
         value: transaction_rlp,

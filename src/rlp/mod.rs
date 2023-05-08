@@ -489,6 +489,7 @@ impl<'range, F: ScalarField> RlpChip<'range, F> {
             self.range.check_less_than_safe(ctx, len_len, (max_field_len_len + 1) as u64);
 
             let len_start_id = *prefix_parsed.is_not_literal.value() + prefix_idx.value();
+
             let len_cells = witness_subarray(
                 ctx,
                 &rlp_array,

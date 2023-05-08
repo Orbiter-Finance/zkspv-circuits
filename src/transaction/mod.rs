@@ -1,21 +1,22 @@
 use std::{cell::RefCell, env::var};
+
 use ethers_core::types::{Block, Bytes, H256};
 use ethers_providers::{Http, Provider};
 use halo2_base::{AssignedValue, Context};
-use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::gates::{GateInstructions, RangeChip};
+use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::utils::bit_length;
 use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
 use crate::block_header::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, MAINNET_BLOCK_HEADER_RLP_MAX_BYTES};
-use crate::keccak::{FixedLenRLCs, KeccakChip, VarLenRLCs, FnSynthesize};
-use crate::mpt::{AssignedBytes, MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
+use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
+use crate::mpt::{ MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
-use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, uint_to_bytes_be, EthConfigParams};
+use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, EthConfigParams};
 
 mod tests;
 
@@ -73,7 +74,7 @@ pub struct EIP1186ResponseDigest<F: Field> {
     pub block_number: AssignedValue<F>,
     pub index: AssignedValue<F>,
     // the value U256 is interpreted as H256 (padded with 0s on left)
-    // pub slots_values: AssignedValue<F>,
+    pub slots_values: Vec<AssignedValue<F>>,
     pub transaction_is_empty: AssignedValue<F>,
 }
 
@@ -99,7 +100,6 @@ pub trait EthBlockTransactionChip<F: Field> {
         ctx: &mut Context<F>,
         keccak: &mut KeccakChip<F>,
         transactions_root: &[AssignedValue<F>],
-        transaction_index: AssignedBytes<F>,
         transaction_proofs: MPTFixedKeyProof<F>,
     ) -> EthTransactionTraceWitness<F>;
 
@@ -114,7 +114,6 @@ pub trait EthBlockTransactionChip<F: Field> {
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
         transactions_root: &[AssignedValue<F>],
-        transaction_index: AssignedBytes<F>,
         transaction_proofs: MPTFixedKeyProof<F>,
     ) -> EthTransactionTraceWitness<F>;
 
@@ -144,7 +143,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         };
         block_header.resize(max_len, 0);
         let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
-        let transaction_root = &block_witness.get("transactions_root").field_cells;
+        let transactions_root = &block_witness.get("transactions_root").field_cells;
         let block_hash_hi_lo = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
 
         // compute block number from big-endian bytes
@@ -154,23 +153,20 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             bytes_be_var_to_fixed(ctx, self.gate(), block_num_bytes, block_num_len, 4);
         let block_number = bytes_be_to_uint(ctx, self.gate(), &block_number, 4);
 
-        // verify transaction proof
-        let transaction_index_bytes = uint_to_bytes_be(ctx, self.range(), &transaction_index, input.transaction.transaction_proofs.key_bytes.len());
-
         // drop ctx
         let transaction_witness = self.parse_eip1186_proof_phase0(
             thread_pool,
             keccak,
-            transaction_root,
-            input.transaction.transaction_proofs.key_bytes.to_vec(),
+            transactions_root,
             input.transaction.transaction_proofs,
         );
-        // let slots_values= input.transaction.transaction_proofs.value_bytes.into_iter().collect();
+        let transaction_rlp = transaction_witness.mpt_witness.value_bytes.to_vec();
+
         let digest = EIP1186ResponseDigest {
             block_hash: block_hash_hi_lo.try_into().unwrap(),
             block_number,
             index: transaction_index,
-            // slots_values,
+            slots_values: transaction_rlp,
             transaction_is_empty: transaction_witness.mpt_witness.slot_is_empty,
         };
         (EthBlockTransactionTraceWitness { block_witness, transaction_witness }, digest)
@@ -188,8 +184,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         EthBlockTransactionTrace { block_trace, transaction_trace }
     }
 
-    fn parse_transaction_proof_phase0(&self, ctx: &mut Context<F>, keccak: &mut KeccakChip<F>, transactions_root: &[AssignedValue<F>], transaction_index: AssignedBytes<F>, transaction_proofs: MPTFixedKeyProof<F>) -> EthTransactionTraceWitness<F> {
-        assert!(transaction_index.len() >= 1);
+    fn parse_transaction_proof_phase0(&self, ctx: &mut Context<F>, keccak: &mut KeccakChip<F>, transactions_root: &[AssignedValue<F>], transaction_proofs: MPTFixedKeyProof<F>) -> EthTransactionTraceWitness<F> {
 
         // check MPT root is transactions_root
         for (pf_root, root) in transaction_proofs.root_hash_bytes.iter().zip(transactions_root.iter()) {
@@ -203,12 +198,9 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             &[32, 32, 32, 20, 32, 100000, 32, 32, 32],//Maximum number of bytes per field. For example, the uint256 is 32 bytes.
             false,
         );
-        // println!("array_witness: {:?}", &array_witness.field_witness[0].field_cells);
 
         // check MPT inclusion
-        // transaction_index = (RLP(index)) => Keccak(RLP([nonce,gasPrice,gasLimit,to,value,data,v,r,s]))
         let mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, transaction_proofs);
-        // println!("mpt_witness: {:?}",mpt_witness.key_hexs);
 
         EthTransactionTraceWitness { array_witness, mpt_witness }
     }
@@ -256,7 +248,6 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
         transactions_root: &[AssignedValue<F>],
-        transaction_index: AssignedBytes<F>,
         transaction_proofs: MPTFixedKeyProof<F>,
     ) -> EthTransactionTraceWitness<F> {
         let ctx = thread_pool.main(FIRST_PHASE);
@@ -264,7 +255,6 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             ctx,
             keccak,
             transactions_root,
-            transaction_index,
             transaction_proofs,
         );
         transaction_trace
@@ -292,11 +282,6 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
     }
 }
 
-// #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize, Serialize)]
-// pub struct TransactionProof {
-//     pub key: H256,
-//     pub proof: Vec<Bytes>,
-// }
 
 #[derive(Clone, Debug)]
 pub struct EthTransactionInput {
@@ -394,17 +379,15 @@ impl EthBlockTransactionCircuit {
             block_hash,
             block_number,
             index,
-            // slots_values,
+            slots_values,
             transaction_is_empty
         } = digest;
         let assigned_instances = block_hash
             .into_iter()
             .chain([block_number, index])
-            // .chain(
-            //     slots_values
-            //         .into_iter()
-            //         .flat_map(|(slot, value)| slot.into_iter().chain(value.into_iter())),
-            // )
+            .chain(
+                slots_values
+            )
             .collect_vec();
         {
             let ctx = builder.gate_builder.main(FIRST_PHASE);

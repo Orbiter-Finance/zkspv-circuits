@@ -1,16 +1,17 @@
 use std::env::set_var;
-use ethers_core::types::{Bytes};
+
+use ethers_core::types::Bytes;
 use ethers_providers::{Http, Provider};
+
+use crate::halo2_proofs::{
+    dev::MockProver,
+    halo2curves::bn256::Fr,
+};
 use crate::Network;
 use crate::providers::{GOERLI_PROVIDER_URL, MAINNET_PROVIDER_URL};
 use crate::rlp::builder::RlcThreadBuilder;
-use crate::transaction::{EthBlockTransactionCircuit};
+use crate::transaction::EthBlockTransactionCircuit;
 use crate::util::EthConfigParams;
-use crate::halo2_proofs::{
-    dev::MockProver,
-    halo2curves::bn256::{Fr},
-};
-
 
 fn get_test_circuit(
     transaction_index: u32,
@@ -63,7 +64,7 @@ pub fn test_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
     let merkle_proof: Vec<Bytes> = vec![proof_one, proof_two, proof_three];
     let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof, Network::Goerli);
     let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(), None);
-    println!("instance:{:?}", circuit.instance());
+    // println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())
 }

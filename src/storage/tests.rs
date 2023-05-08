@@ -80,7 +80,7 @@ pub fn test_mock_single_eip1186() -> Result<(), Box<dyn std::error::Error>> {
 
     let input = get_test_circuit(Network::Mainnet, 10);
     let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(), None);
-    println!("instance:{:?}", circuit.assigned_instances);
+    println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())
 }
