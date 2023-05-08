@@ -96,7 +96,7 @@ pub fn get_block_storage_input_receipt(
     let receipt_proofs = MPTUnFixedKeyInput {
         path: receipt_key,
         value: receipt_rlp,
-        root_hash: block.transactions_root,
+        root_hash: block.receipts_root,
         proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
         slot_is_empty,
         value_max_byte_len: RECEIPT_PROOF_VALUE_MAX_BYTE_LEN,

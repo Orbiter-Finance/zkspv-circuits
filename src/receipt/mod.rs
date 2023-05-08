@@ -16,7 +16,7 @@ use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
 use crate::block_header::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, MAINNET_BLOCK_HEADER_RLP_MAX_BYTES};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, get_bytes, KeccakChip, VarLenRLCs};
 use crate::mpt::{AssignedBytes, MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
-use crate::r#type::{EIP_1559_PREFIX, EIP_2718_PREFIX, EIP_2930_PREFIX};
+use crate::r#type::{EIP_1559_PREFIX, EIP_2718_PREFIX, EIP_2930_PREFIX, TX_STATUS_SUCCESS};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
@@ -376,6 +376,14 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
             &[8, 8],//Maximum number of bytes per field. For example, the uint64 is 8 bytes.
             false,
         );
+
+        let tx_status_success = (F::from(TX_STATUS_SUCCESS as u64)).try_into().unwrap();
+        let tx_status_success = ctx.load_witness(tx_status_success);
+
+        // check tx_status is TX_STATUS_SUCCESS
+        for (tx_status, success_status) in array_witness.field_witness[0].field_cells.iter().zip(vec![tx_status_success].iter()) {
+            ctx.constrain_equal(tx_status, success_status);
+        }
 
         // check MPT inclusion
         let mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, receipt_proofs);
