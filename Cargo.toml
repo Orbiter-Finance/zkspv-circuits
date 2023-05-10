@@ -68,3 +68,5 @@ production = []
 halo2-pse = ["zkevm-keccak/halo2-pse", "snark-verifier-sdk?/halo2-pse"]
 halo2-axiom = ["zkevm-keccak/halo2-axiom", "snark-verifier-sdk?/halo2-axiom"]
 jemallocator = ["halo2-base/jemallocator"]
+
+dev-graph = ["halo2-base/dev-graph"]

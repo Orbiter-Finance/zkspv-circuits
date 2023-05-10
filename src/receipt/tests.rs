@@ -2,6 +2,7 @@ use std::env::set_var;
 
 use ethers_core::types::Bytes;
 use ethers_providers::{Http, Provider};
+use halo2_base::halo2_proofs;
 
 use crate::halo2_proofs::{
     dev::MockProver,
@@ -38,6 +39,7 @@ fn get_test_circuit(
     EthBlockReceiptCircuit::from_provider(&provider, block_number, receipt_index, receipt_rlp, merkle_proof, 4, network)
 }
 
+
 #[test]
 pub fn test_receipt_mpt() -> Result<(), Box<dyn std::error::Error>> {
     let params = EthConfigParams::from_path("configs/tests/receipt.json");
@@ -70,5 +72,7 @@ pub fn test_receipt_mpt() -> Result<(), Box<dyn std::error::Error>> {
     let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(), None);
     // println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
+
     Ok(())
+
 }

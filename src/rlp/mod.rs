@@ -482,6 +482,7 @@ impl<'range, F: ScalarField> RlpChip<'range, F> {
                 rlp_array.iter().copied().take(running_max_len + 1),
                 prefix_idx,
             );
+
             let prefix_parsed = self.parse_rlp_field_prefix(ctx, prefix);
 
             let mut len_len = prefix_parsed.len_len;

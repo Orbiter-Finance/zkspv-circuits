@@ -1,26 +1,24 @@
 use std::{cell::RefCell, env::var};
-use std::ops::Index;
-use ethers_core::k256::sha2::digest::typenum::private::IsEqualPrivate;
 
 use ethers_core::types::{Block, Bytes, H256};
 use ethers_providers::{Http, Provider};
 use halo2_base::{AssignedValue, Context};
 use halo2_base::gates::{GateInstructions, RangeChip};
 use halo2_base::gates::builder::GateThreadBuilder;
+use halo2_base::QuantumCell::Constant;
 use halo2_base::utils::bit_length;
-use itertools::{equal, Itertools};
-use rlp::Rlp;
+use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
 use crate::block_header::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, MAINNET_BLOCK_HEADER_RLP_MAX_BYTES};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, get_bytes, KeccakChip, VarLenRLCs};
 use crate::mpt::{AssignedBytes, MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
-use crate::r#type::{EIP_1559_PREFIX, EIP_2718_PREFIX, EIP_2930_PREFIX, TX_STATUS_SUCCESS};
+use crate::r#type::{EIP_1559_PREFIX, EIP_2930_PREFIX, TX_STATUS_SUCCESS};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
-use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, decode_field_to_u256, EthConfigParams};
+use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, EthConfigParams};
 
 mod tests;
 
@@ -178,7 +176,7 @@ pub struct EIP1186ResponseDigest<F: Field> {
 pub struct EthReceiptTrace<F: Field> {
     pub status_trace: RlcTrace<F>,
     pub cumulative_gas_used_trace: RlcTrace<F>,
-    // pub logs_bloom_trace: RlcTrace<F>,
+    pub logs_bloom_trace: RlcTrace<F>,
     // pub logs_trace: RlcTrace<F>,
 }
 
@@ -199,7 +197,7 @@ impl<F: Field> EthReceiptTraceWitness<F> {
         match receipt_field {
             "status" => &self.array_witness.field_witness[0],
             "cumulativeGasUsed" => &self.array_witness.field_witness[1],
-            // "logsBloom" => &self.array_witness.field_witness[2],
+            "logsBloom" => &self.array_witness.field_witness[2],
             // "logs" => &self.array_witness.field_witness[3],
             _ => panic!("invalid receipt field"),
         }
@@ -347,11 +345,12 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
             ctx.constrain_equal(mpt_root, re_root);
         }
 
-        let bytes_to_vec_u8 = |rlp_value: &AssignedBytes<F>, input_bytes: Option<Vec<u8>>| {
-            input_bytes.unwrap_or_else(|| get_bytes(&rlp_value[..]))
-        };
-        let value_u8 = bytes_to_vec_u8(&receipt_proofs.value_bytes, None);
-        let value_prefix = value_u8[0];
+        // let bytes_to_vec_u8 = |rlp_value: &AssignedBytes<F>, input_bytes: Option<Vec<u8>>| {
+        //     input_bytes.unwrap_or_else(|| get_bytes(&rlp_value[..]))
+        // };
+        // let value_u8 = bytes_to_vec_u8(&receipt_proofs.value_bytes, None);
+        // let value_prefix = value_u8[0];
+        let value_prefix = &receipt_proofs.value_bytes[0];
         let mut rlp_value: AssignedBytes<F> = vec![];
 
         // let nested_array = |rlp_value: &AssignedBytes<F>, index: usize| {
@@ -359,23 +358,26 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         //     let rlp_u8 = bytes_to_vec_u8(&a, None);
         // };
 
-        if value_prefix == EIP_1559_PREFIX || value_prefix == EIP_2930_PREFIX {
-            if let Some((_, elements)) = receipt_proofs.value_bytes.split_first() {
-                rlp_value = elements.to_vec();
-            }
-        }
+        // let eip_1559_prefix = (F::from(EIP_1559_PREFIX as u64)).try_into().unwrap();
+        // let eip_1559_prefix = ctx.load_witness(eip_1559_prefix);
 
 
-        // nested_array(&rlp_value, rlp_value.len()-1);
+        // if value_prefix.value == eip_1559_prefix.value  {
+            // Todo: Identify nested lists
+            rlp_value = receipt_proofs.value_bytes[1..269].to_vec();
+        // }
+        // println!("rlp_value: {:?}", rlp_value);
 
-
-        // parse [status,cumulativeGasUsed]; Todo: The logsBloom,logs field will not be parsed for the time being.
-        let array_witness = self.rlp().decompose_rlp_array_phase0(
+        // parse [status,cumulativeGasUsed,logsBloom]
+        // Todo: The logs field will not be parsed for the time being.
+        let mut array_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
             rlp_value,
-            &[8, 8],//Maximum number of bytes per field. For example, the uint64 is 8 bytes.
+            &[8, 8,256],//Maximum number of bytes per field. For example, the uint64 is 8 bytes.
             false,
         );
+
+        array_witness.rlp_len = self.gate().sub(ctx,array_witness.rlp_len,Constant(F::one()));
 
         let tx_status_success = (F::from(TX_STATUS_SUCCESS as u64)).try_into().unwrap();
         let tx_status_success = ctx.load_witness(tx_status_success);
@@ -432,7 +434,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
     ) -> EthReceiptTrace<F> {
         self.parse_mpt_inclusion_fixed_key_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
 
-        let array_trace: [_; 2] = self
+        let array_trace: [_; 3] = self
             .rlp()
             .decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.array_witness, false)
             .field_trace
@@ -442,15 +444,29 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         let [
         status_trace,
         cumulative_gas_used_trace,
-        // logs_bloom_trace,
+        logs_bloom_trace,
         // logs_trace,
         ] = array_trace.map(|trace| trace.field_trace);
+
+        // let tx_status_success = (F::from(TX_STATUS_SUCCESS as u64)).try_into().unwrap();
+        // let tx_status_success = ctx_gate.load_witness(tx_status_success);
+
 
         EthReceiptTrace {
             status_trace,
             cumulative_gas_used_trace,
-            // logs_bloom_trace,
+            logs_bloom_trace,
             // logs_trace,
+            // status_trace: RlcTrace {
+            //     rlc_val: tx_status_success,
+            //     len: tx_status_success,
+            //     max_len: 0,
+            // },
+            // cumulative_gas_used_trace: RlcTrace {
+            //     rlc_val: tx_status_success,
+            //     len: tx_status_success,
+            //     max_len: 0,
+            // },
         }
     }
 }
