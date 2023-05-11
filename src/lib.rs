@@ -47,6 +47,8 @@ pub(crate) const ETH_LOOKUP_BITS: usize = 8; // always want 8 to range check byt
 pub enum Network {
     Mainnet,
     Goerli,
+    // ArbitrumMainnet,
+    // ArbitrumGoerli
 }
 
 impl std::fmt::Display for Network {
@@ -54,6 +56,8 @@ impl std::fmt::Display for Network {
         match self {
             Network::Mainnet => write!(f, "mainnet"),
             Network::Goerli => write!(f, "goerli"),
+            // Network::ArbitrumMainnet=>write!(f,"arbitrum_mainnet"),
+            // Network::ArbitrumGoerli=>write!(f,"arbitrum_goerli"),
         }
     }
 }

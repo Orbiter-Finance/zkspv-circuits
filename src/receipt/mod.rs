@@ -5,7 +5,6 @@ use ethers_providers::{Http, Provider};
 use halo2_base::{AssignedValue, Context};
 use halo2_base::gates::{GateInstructions, RangeChip};
 use halo2_base::gates::builder::GateThreadBuilder;
-use halo2_base::QuantumCell::Constant;
 use halo2_base::utils::bit_length;
 use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
@@ -14,6 +13,7 @@ use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
 use crate::block_header::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, MAINNET_BLOCK_HEADER_RLP_MAX_BYTES};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, get_bytes, KeccakChip, VarLenRLCs};
 use crate::mpt::{AssignedBytes, MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
+use crate::providers::get_receipt_field_rlp;
 use crate::r#type::{EIP_1559_PREFIX, EIP_2930_PREFIX, TX_STATUS_SUCCESS};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
@@ -119,16 +119,16 @@ impl EthBlockReceiptCircuit {
             block_hash,
             block_number,
             index,
-            slots_values,
+            // slots_values,
             receipt_is_empty
         } = digest;
 
         let assigned_instances = block_hash
             .into_iter()
             .chain([block_number, index])
-            .chain(
-                slots_values
-            )
+            // .chain(
+            //     slots_values
+            // )
             .collect_vec();
         {
             let ctx = builder.gate_builder.main(FIRST_PHASE);
@@ -168,7 +168,7 @@ pub struct EIP1186ResponseDigest<F: Field> {
     pub block_number: AssignedValue<F>,
     pub index: AssignedValue<F>,
     // the value U256 is interpreted as H256 (padded with 0s on left)
-    pub slots_values: Vec<AssignedValue<F>>,
+    // pub slots_values: Vec<AssignedValue<F>>,
     pub receipt_is_empty: AssignedValue<F>,
 }
 
@@ -303,13 +303,12 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
             receipts_root,
             input.receipt.receipt_proofs,
         );
-        let receipt_rlp = receipt_witness.mpt_witness.value_bytes.to_vec();
 
         let digest = EIP1186ResponseDigest {
             block_hash: block_hash_hi_lo.try_into().unwrap(),
             block_number,
             index: receipt_index,
-            slots_values: receipt_rlp,
+            // slots_values: receipt_rlp,
             receipt_is_empty: receipt_witness.mpt_witness.slot_is_empty,
         };
         (EthBlockReceiptTraceWitness { block_witness, receipt_witness }, digest)
@@ -345,39 +344,48 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
             ctx.constrain_equal(mpt_root, re_root);
         }
 
-        // let bytes_to_vec_u8 = |rlp_value: &AssignedBytes<F>, input_bytes: Option<Vec<u8>>| {
-        //     input_bytes.unwrap_or_else(|| get_bytes(&rlp_value[..]))
-        // };
-        // let value_u8 = bytes_to_vec_u8(&receipt_proofs.value_bytes, None);
-        // let value_prefix = value_u8[0];
-        let value_prefix = &receipt_proofs.value_bytes[0];
-        let mut rlp_value: AssignedBytes<F> = vec![];
+        let bytes_to_vec_u8 = |rlp_value: &AssignedBytes<F>, input_bytes: Option<Vec<u8>>| {
+            input_bytes.unwrap_or_else(|| get_bytes(&rlp_value[..]))
+        };
+
+        let mut non_prefix_bytes: AssignedBytes<F> = vec![];
 
         // let nested_array = |rlp_value: &AssignedBytes<F>, index: usize| {
         //     let a =vec![*rlp_value.get(index).unwrap()] ;
         //     let rlp_u8 = bytes_to_vec_u8(&a, None);
         // };
 
-        // let eip_1559_prefix = (F::from(EIP_1559_PREFIX as u64)).try_into().unwrap();
-        // let eip_1559_prefix = ctx.load_witness(eip_1559_prefix);
-
-
-        // if value_prefix.value == eip_1559_prefix.value  {
+        // Load a prefix and determine if it belongs to a specific prefix
+        let eip_1559_prefix = (F::from(EIP_1559_PREFIX as u64)).try_into().unwrap();
+        let eip_1559_prefix = ctx.load_witness(eip_1559_prefix);
+        let eip_2930_prefix = (F::from(EIP_2930_PREFIX as u64)).try_into().unwrap();
+        let eip_2930_prefix = ctx.load_witness(eip_2930_prefix);
+        let receipt_value_prefix = &receipt_proofs.value_bytes[0];
+        if receipt_value_prefix.value == eip_1559_prefix.value || receipt_value_prefix.value == eip_2930_prefix.value {
             // Todo: Identify nested lists
-            rlp_value = receipt_proofs.value_bytes[1..269].to_vec();
-        // }
-        // println!("rlp_value: {:?}", rlp_value);
+            non_prefix_bytes = receipt_proofs.value_bytes[1..].to_vec();
+        }
+
+        let non_prefix_bytes_u8 = bytes_to_vec_u8(&non_prefix_bytes, None);
+
+        // Generate rlp encoding for specific fields and generate a witness
+        let dest_value_bytes = get_receipt_field_rlp(&non_prefix_bytes_u8, 4, vec![0, 1, 2]);
+        let mut load_bytes =
+            |bytes: &[u8]| ctx.assign_witnesses(bytes.iter().map(|x| F::from(*x as u64)));
+        let receipt_rlp_bytes = load_bytes(&dest_value_bytes);
+
 
         // parse [status,cumulativeGasUsed,logsBloom]
         // Todo: The logs field will not be parsed for the time being.
-        let mut array_witness = self.rlp().decompose_rlp_array_phase0(
+        let array_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
-            rlp_value,
-            &[8, 8,256],//Maximum number of bytes per field. For example, the uint64 is 8 bytes.
+            receipt_rlp_bytes,
+            &[8, 8, 256],//Maximum number of bytes per field. For example, the uint64 is 8 bytes.
             false,
         );
 
-        array_witness.rlp_len = self.gate().sub(ctx,array_witness.rlp_len,Constant(F::one()));
+        // minus the length of the removed prefix
+        // array_witness.rlp_len = self.gate().sub(ctx,array_witness.rlp_len,Constant(F::one()));
 
         let tx_status_success = (F::from(TX_STATUS_SUCCESS as u64)).try_into().unwrap();
         let tx_status_success = ctx.load_witness(tx_status_success);
@@ -448,25 +456,12 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         // logs_trace,
         ] = array_trace.map(|trace| trace.field_trace);
 
-        // let tx_status_success = (F::from(TX_STATUS_SUCCESS as u64)).try_into().unwrap();
-        // let tx_status_success = ctx_gate.load_witness(tx_status_success);
-
 
         EthReceiptTrace {
             status_trace,
             cumulative_gas_used_trace,
             logs_bloom_trace,
             // logs_trace,
-            // status_trace: RlcTrace {
-            //     rlc_val: tx_status_success,
-            //     len: tx_status_success,
-            //     max_len: 0,
-            // },
-            // cumulative_gas_used_trace: RlcTrace {
-            //     rlc_val: tx_status_success,
-            //     len: tx_status_success,
-            //     max_len: 0,
-            // },
         }
     }
 }

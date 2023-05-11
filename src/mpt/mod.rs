@@ -239,10 +239,10 @@ pub struct MPTUnFixedKeyInput {
     /// As an example, the MPT transaction trie of Ethereum has
     /// `path = rlp(transaction_index) => value = rlp(transaction)`
     pub path: Vec<u8>,
-    //rlp(transaction_index)
+    //rlp(index)
     pub value: Vec<u8>,
-    //rlp(transaction)
-    pub root_hash: H256,// transactions_hash
+    //rlp(value)
+    pub root_hash: H256,
 
     pub proof: Vec<Vec<u8>>,
 

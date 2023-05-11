@@ -1,29 +1,5 @@
 #![allow(unused_imports)]
 
-// until storage proof is refactored
-use crate::{
-    block_header::{
-        EthBlockHeaderChainInstance, GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
-        MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
-    },
-    mpt::MPTFixedKeyInput,
-    storage::{EthBlockStorageInput, EthStorageInput},
-    util::{get_merkle_mountain_range, u256_to_bytes32_be},
-    Network,
-};
-use ethers_core::types::{
-    Address, Block, BlockId, BlockId::Number, BlockNumber, Bytes, EIP1186ProofResponse,
-    StorageProof, H256, U256,
-};
-use ethers_core::utils::hex::FromHex;
-use ethers_core::utils::keccak256;
-use ethers_providers::{Http, Middleware, Provider};
-// use halo2_mpt::mpt::{max_branch_lens, max_leaf_lens};
-use itertools::Itertools;
-use lazy_static::__Deref;
-use rlp::{decode, decode_list, Encodable, Rlp, RlpStream};
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 use std::{
     convert::TryFrom,
     fs::{self, File},
@@ -31,7 +7,30 @@ use std::{
     iter, num,
     path::Path,
 };
+
+use ethers_core::types::{Address, Block, BlockId, BlockId::Number, BlockNumber, Bloom, Bytes, EIP1186ProofResponse, H256, StorageProof, U256, U64};
+use ethers_core::utils::hex::FromHex;
+use ethers_core::utils::keccak256;
+use ethers_providers::{Http, Middleware, Provider, StreamExt};
+// use halo2_mpt::mpt::{max_branch_lens, max_leaf_lens};
+use itertools::Itertools;
+use lazy_static::__Deref;
+use rlp::{decode, decode_list, Encodable, Rlp, RlpIterator, RlpStream};
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use tokio::runtime::Runtime;
+
+// until storage proof is refactored
+use crate::{
+    block_header::{
+        EthBlockHeaderChainInstance, GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
+        MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
+    },
+    mpt::MPTFixedKeyInput,
+    Network,
+    storage::{EthBlockStorageInput, EthStorageInput},
+    util::{get_merkle_mountain_range, u256_to_bytes32_be},
+};
 use crate::mpt::MPTUnFixedKeyInput;
 use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
 use crate::track_block::EthTrackBlockInput;
@@ -56,7 +55,7 @@ pub fn get_block_storage_track(
     provider: &Provider<Http>,
     block_number_interval: Vec<u64>,
 ) -> EthTrackBlockInput {
-    let  rt = Runtime::new().unwrap();
+    let rt = Runtime::new().unwrap();
     let mut block = Vec::with_capacity(block_number_interval.len());
     let mut block_number = Vec::with_capacity(block_number_interval.len());
     let mut block_hash = Vec::with_capacity(block_number_interval.len());
@@ -78,6 +77,7 @@ pub fn get_block_storage_track(
         block_header,
     }
 }
+
 pub fn get_block_storage_input_receipt(
     provider: &Provider<Http>,
     block_number: u32,
@@ -85,7 +85,7 @@ pub fn get_block_storage_input_receipt(
     receipt_rlp: Vec<u8>,
     merkle_proof: Vec<Bytes>,
     receipt_pf_max_depth: usize,
-) -> EthBlockReceiptInput{
+) -> EthBlockReceiptInput {
     let rt = Runtime::new().unwrap();
     let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
     let block_hash = block.hash.unwrap();
@@ -93,6 +93,7 @@ pub fn get_block_storage_input_receipt(
     let receipt_key_u256 = U256::from(receipt_index);
     let receipt_key = get_buffer_rlp(receipt_key_u256.as_u32());
     let slot_is_empty = false;
+
     let receipt_proofs = MPTUnFixedKeyInput {
         path: receipt_key,
         value: receipt_rlp,
@@ -102,12 +103,13 @@ pub fn get_block_storage_input_receipt(
         value_max_byte_len: RECEIPT_PROOF_VALUE_MAX_BYTE_LEN,
         max_depth: receipt_pf_max_depth,
     };
-    EthBlockReceiptInput{
+
+    EthBlockReceiptInput {
         block,
         block_number,
         block_hash,
         block_header,
-        receipt:EthReceiptInput{receipt_index,receipt_proofs}
+        receipt: EthReceiptInput { receipt_index, receipt_proofs },
     }
 }
 
@@ -246,6 +248,36 @@ pub fn is_assigned_slot(key: &H256, proof: &[Bytes]) -> bool {
         return false;
     }
     true
+}
+
+// Todo: Currently, only the u64 type is supported.
+pub fn get_receipt_field_rlp(source: &Vec<u8>, item_count: usize, new_item: Vec<u8>) -> Vec<u8> {
+    let mut source_rlp = RlpStream::new();
+    source_rlp.append_raw(source, item_count);
+    let source_bytes = source_rlp.as_raw().to_vec();
+    let rlp = Rlp::new(&source_bytes);
+    let mut dest_rlp = RlpStream::new_list(new_item.len());
+    for field_item in new_item {
+        let field_rlp = rlp.at_with_offset(field_item as usize).unwrap();
+        let field = field_rlp.0.data().unwrap();
+        match field_item {
+            0 => {
+                let dest_field = U64::from_big_endian(field);
+                dest_rlp.append(&dest_field);
+            }
+            1 => {
+                let dest_field = U64::from_big_endian(field);
+                dest_rlp.append(&dest_field);
+            }
+            2 => {
+                let dest_field = Bloom::from_slice(field);
+                dest_rlp.append(&dest_field);
+            }
+            _ => panic!()
+        }
+    }
+
+    dest_rlp.out().into()
 }
 
 pub fn get_acct_rlp(pf: &EIP1186ProofResponse) -> Vec<u8> {
