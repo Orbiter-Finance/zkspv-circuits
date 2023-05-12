@@ -44,20 +44,38 @@ pub(crate) const ETH_LOOKUP_BITS: usize = 8; // always want 8 to range check byt
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
-pub enum Network {
+pub enum EthereumNetwork{
     Mainnet,
     Goerli,
-    // ArbitrumMainnet,
-    // ArbitrumGoerli
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum ArbitrumNetwork{
+    Mainnet,
+    Goerli,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+// #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum Network {
+    Ethereum(EthereumNetwork),
+    Arbitrum(ArbitrumNetwork)
 }
 
 impl std::fmt::Display for Network {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Network::Mainnet => write!(f, "mainnet"),
-            Network::Goerli => write!(f, "goerli"),
-            // Network::ArbitrumMainnet=>write!(f,"arbitrum_mainnet"),
-            // Network::ArbitrumGoerli=>write!(f,"arbitrum_goerli"),
+            Network::Ethereum(ethereum_network) => {
+                match ethereum_network {
+                    EthereumNetwork::Mainnet=> write!(f, "mainnet"),
+                    EthereumNetwork::Goerli=> write!(f, "goerli"),
+                }
+            }
+            Network::Arbitrum(arbitrum_network)=>{
+                match arbitrum_network {
+                    ArbitrumNetwork::Mainnet=>write!(f, "arbitrum mainnet"),
+                    ArbitrumNetwork::Goerli=>write!(f, "arbitrum goerli"),
+                }
+            },
         }
     }
 }

@@ -28,6 +28,7 @@ use std::{
 pub mod circuit;
 #[cfg(feature = "aggregation")]
 pub mod scheduler;
+pub mod helpers;
 
 pub(crate) const NUM_BYTES_IN_U128: usize = 16;
 

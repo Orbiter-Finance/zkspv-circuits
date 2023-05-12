@@ -2,16 +2,11 @@ use super::{
     util::{bytes_be_to_u128, encode_h256_to_field, EthConfigParams},
     Field, Network,
 };
-use crate::{
-    keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs},
-    rlp::{
-        builder::{RlcThreadBreakPoints, RlcThreadBuilder},
-        rlc::{RlcContextPair, RlcFixedTrace, RlcTrace, FIRST_PHASE, RLC_PHASE},
-        RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness,
-    },
-    util::{bytes_be_var_to_fixed, decode_field_to_h256},
-    EthChip, EthCircuitBuilder, ETH_LOOKUP_BITS,
-};
+use crate::{keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs}, rlp::{
+    builder::{RlcThreadBreakPoints, RlcThreadBuilder},
+    rlc::{RlcContextPair, RlcFixedTrace, RlcTrace, FIRST_PHASE, RLC_PHASE},
+    RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness,
+}, util::{bytes_be_var_to_fixed, decode_field_to_h256}, EthChip, EthCircuitBuilder, ETH_LOOKUP_BITS, EthereumNetwork};
 use core::{
     iter::{self, once},
     marker::PhantomData,
@@ -29,6 +24,7 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, env::var};
+use crate::util::helpers::{get_block_header_rlp_max_bytes, get_block_header_rlp_max_field_lens};
 
 #[cfg(feature = "aggregation")]
 pub mod aggregation;
@@ -54,9 +50,9 @@ pub const GOERLI_BLOCK_HEADER_RLP_MAX_BYTES: usize =
     1 + 2 + (521 + GOERLI_EXTRA_DATA_RLP_MAX_BYTES + 33);
 
 const NUM_BLOCK_HEADER_FIELDS: usize = 17;
-const MAINNET_HEADER_FIELDS_MAX_BYTES: [usize; NUM_BLOCK_HEADER_FIELDS] =
+pub const MAINNET_HEADER_FIELDS_MAX_BYTES: [usize; NUM_BLOCK_HEADER_FIELDS] =
     [32, 32, 20, 32, 32, 32, 256, 7, 4, 4, 4, 4, MAINNET_EXTRA_DATA_MAX_BYTES, 32, 8, 6, 32];
-const GOERLI_HEADER_FIELDS_MAX_BYTES: [usize; NUM_BLOCK_HEADER_FIELDS] =
+pub const GOERLI_HEADER_FIELDS_MAX_BYTES: [usize; NUM_BLOCK_HEADER_FIELDS] =
     [32, 32, 20, 32, 32, 32, 256, 7, 4, 4, 4, 4, GOERLI_EXTRA_DATA_MAX_BYTES, 32, 8, 6, 32];
 /// The maximum number of bytes it takes to represent a block number, without any RLP encoding.
 pub const BLOCK_NUMBER_MAX_BYTES: usize = MAINNET_HEADER_FIELDS_MAX_BYTES[8];
@@ -215,17 +211,13 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
         block_header: &[u8],
         network: Network,
     ) -> EthBlockHeaderTraceWitness<F> {
-        let (max_len, max_field_lens) = match network {
-            Network::Mainnet => {
-                (MAINNET_BLOCK_HEADER_RLP_MAX_BYTES, &MAINNET_HEADER_FIELDS_MAX_BYTES)
-            }
-            Network::Goerli => (GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, &GOERLI_HEADER_FIELDS_MAX_BYTES),
-        };
+        let max_len =get_block_header_rlp_max_bytes(&network);
+        let max_field_lens = get_block_header_rlp_max_field_lens(&network);
         assert_eq!(block_header.len(), max_len);
         let block_header_assigned =
             ctx.assign_witnesses(block_header.iter().map(|byte| F::from(*byte as u64)));
         let rlp_witness =
-            self.rlp().decompose_rlp_array_phase0(ctx, block_header_assigned, max_field_lens, true); // `is_variable_len = true` because RLP can have between 15 to 17 fields, depending on which EIPs are active at that block
+            self.rlp().decompose_rlp_array_phase0(ctx, block_header_assigned, &max_field_lens, true); // `is_variable_len = true` because RLP can have between 15 to 17 fields, depending on which EIPs are active at that block
 
         let block_hash_query_idx = keccak.keccak_var_len(
             ctx,
@@ -281,12 +273,8 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
         headers: &[Vec<u8>],
         network: Network,
     ) -> Vec<EthBlockHeaderTraceWitness<F>> {
-        let (max_len, max_field_lens) = match network {
-            Network::Mainnet => {
-                (MAINNET_BLOCK_HEADER_RLP_MAX_BYTES, &MAINNET_HEADER_FIELDS_MAX_BYTES)
-            }
-            Network::Goerli => (GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, &GOERLI_HEADER_FIELDS_MAX_BYTES),
-        };
+        let max_len =get_block_header_rlp_max_bytes(&network);
+        let max_field_lens = get_block_header_rlp_max_field_lens(&network);
         // we cannot directly parallelize `decompose_block_header_phase0` because `KeccakChip` is not thread-safe (we need to deterministically add new queries), so we explicitly parallelize the logic here:
         let witness_gen_only = thread_pool.witness_gen_only();
         let ctx_ids = headers.iter().map(|_| thread_pool.get_new_thread_id()).collect::<Vec<_>>();
@@ -298,7 +286,7 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
                 let mut ctx = Context::new(witness_gen_only, ctx_id);
                 let header = ctx.assign_witnesses(header.iter().map(|byte| F::from(*byte as u64)));
                 let rlp_witness =
-                    self.rlp().decompose_rlp_array_phase0(&mut ctx, header, max_field_lens, true); // `is_variable_len = true` because RLP can have either 15 or 16 fields, depending on whether block is pre-London or not
+                    self.rlp().decompose_rlp_array_phase0(&mut ctx, header, &max_field_lens, true); // `is_variable_len = true` because RLP can have either 15 or 16 fields, depending on whether block is pre-London or not
                 (rlp_witness, ctx)
             })
             .unzip();
@@ -650,10 +638,7 @@ impl<F: Field> EthBlockHeaderChainCircuit<F> {
         num_blocks: u32,
         max_depth: usize,
     ) -> Self {
-        let header_rlp_max_bytes = match network {
-            Network::Mainnet => MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
-            Network::Goerli => GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
-        };
+        let header_rlp_max_bytes = get_block_header_rlp_max_bytes(&network);
         let (mut block_rlps, _) =
             crate::providers::get_blocks_input(provider, start_block_number, num_blocks, max_depth);
         for block_rlp in block_rlps.iter_mut() {

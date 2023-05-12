@@ -7,12 +7,13 @@ use halo2_base::gates::{RangeChip};
 use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
-use crate::block_header::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, MAINNET_BLOCK_HEADER_RLP_MAX_BYTES};
+use crate::block_header::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, };
 use crate::keccak::{FixedLenRLCs, KeccakChip, VarLenRLCs, FnSynthesize};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::FIRST_PHASE;
 use crate::rlp::RlpChip;
 use crate::util::{AssignedH256, bytes_be_to_u128, EthConfigParams};
+use crate::util::helpers::get_block_header_rlp_max_bytes;
 
 mod tests;
 
@@ -72,10 +73,7 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         let mut block_witness = Vec::with_capacity(input.block_header.len());
         for (i, value) in input.block_header.iter().enumerate() {
             let mut block_header = value.to_vec();
-            let max_len = match network {
-                Network::Goerli => GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
-                Network::Mainnet => MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
-            };
+            let max_len =get_block_header_rlp_max_bytes(&network);
             block_header.resize(max_len, 0);
 
             // It has been checked whether keccak(rlp(block_header)) is equal to block_hash.

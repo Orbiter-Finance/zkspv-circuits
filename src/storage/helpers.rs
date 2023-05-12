@@ -1,15 +1,11 @@
-use crate::{
-    rlp::builder::RlcThreadBuilder,
-    util::{
-        circuit::{PinnableCircuit, PreCircuit},
-        scheduler::{
-            evm_wrapper::{EvmWrapper, SimpleTask},
-            Task,
-        },
-        EthConfigPinning,
+use crate::{rlp::builder::RlcThreadBuilder, util::{
+    circuit::{PinnableCircuit, PreCircuit},
+    scheduler::{
+        evm_wrapper::{EvmWrapper, SimpleTask},
+        Task,
     },
-    Network,
-};
+    EthConfigPinning,
+}, Network, EthereumNetwork};
 use ethers_core::{
     types::{Address, H256},
     utils::keccak256,
@@ -47,7 +43,7 @@ impl StorageTask {
     }
 
     pub fn network(&self) -> Network {
-        self.network.unwrap_or(Network::Mainnet)
+        self.network.unwrap_or(Network::Ethereum(EthereumNetwork::Mainnet))
     }
 
     pub fn digest(&self) -> H256 {

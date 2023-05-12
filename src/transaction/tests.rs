@@ -1,17 +1,16 @@
 use std::env::set_var;
 
 use ethers_core::types::Bytes;
-use ethers_providers::{Http, Provider};
 
 use crate::halo2_proofs::{
     dev::MockProver,
     halo2curves::bn256::Fr,
 };
-use crate::Network;
-use crate::providers::{GOERLI_PROVIDER_URL, MAINNET_PROVIDER_URL};
+use crate::{ArbitrumNetwork, EthereumNetwork, Network};
 use crate::rlp::builder::RlcThreadBuilder;
 use crate::transaction::EthBlockTransactionCircuit;
 use crate::util::EthConfigParams;
+use crate::util::helpers::get_provider;
 
 fn get_test_circuit(
     transaction_index: u32,
@@ -19,21 +18,22 @@ fn get_test_circuit(
     merkle_proof: Vec<Bytes>,
     network: Network,
 ) -> EthBlockTransactionCircuit {
-    let infura_id = "870df3c2a62e4b8a81d466ef1b1cbefd";
-    let provider_url = match network {
-        Network::Mainnet => format!("{MAINNET_PROVIDER_URL}{infura_id}"),
-        Network::Goerli => format!("{GOERLI_PROVIDER_URL}{infura_id}"),
-    };
-    let provider = Provider::<Http>::try_from(provider_url.as_str())
-        .expect("could not instantiate HTTP Provider");
+    let provider = get_provider(&network);
     let block_number;
     match network {
-        Network::Mainnet => {
+        Network::Ethereum(EthereumNetwork::Mainnet) => {
             block_number = 16356350;
         }
-        Network::Goerli => {
+        Network::Ethereum(EthereumNetwork::Goerli) => {
             block_number = 0x82e239;
         }
+        Network::Arbitrum(ArbitrumNetwork::Mainnet)=>{
+            block_number  = 0x82e239;
+        }
+        Network::Arbitrum(ArbitrumNetwork::Goerli)=>{
+            block_number  = 0x82e239;
+        }
+
     }
     EthBlockTransactionCircuit::from_provider(&provider, block_number, transaction_index, transaction_rlp, merkle_proof, 3, network)
 }
@@ -62,7 +62,7 @@ pub fn test_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
     let proof_three = Bytes::from(proof_three_bytes);
 
     let merkle_proof: Vec<Bytes> = vec![proof_one, proof_two, proof_three];
-    let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof, Network::Goerli);
+    let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof, Network::Ethereum(EthereumNetwork::Goerli));
     let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(), None);
     // println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();

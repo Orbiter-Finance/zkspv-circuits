@@ -1,27 +1,20 @@
 use std::env::set_var;
-use ethers_providers::{Http, Provider};
-use crate::Network;
+use crate::{EthereumNetwork, Network};
 use crate::rlp::builder::RlcThreadBuilder;
 use crate::track_block::EthTrackBlockCircuit;
 use crate::util::EthConfigParams;
-use crate::providers::{GOERLI_PROVIDER_URL, MAINNET_PROVIDER_URL};
 use crate::halo2_proofs::{
     dev::MockProver,
     halo2curves::bn256::{Fr},
 };
+use crate::util::helpers::get_provider;
 
 fn get_test_circuit(
     block_number_interval: Vec<u64>,
     network: Network,
 ) -> EthTrackBlockCircuit {
-    let infura_id = "870df3c2a62e4b8a81d466ef1b1cbefd";
-    let provider_url = match network {
-        Network::Mainnet => format!("{MAINNET_PROVIDER_URL}{infura_id}"),
-        Network::Goerli => format!("{GOERLI_PROVIDER_URL}{infura_id}"),
-    };
-    let provider = Provider::<Http>::try_from(provider_url.as_str())
-        .expect("could not instantiate HTTP Provider");
-    EthTrackBlockCircuit::from_provider(&provider, block_number_interval, Network::Mainnet)
+    let provider = get_provider(&network);
+    EthTrackBlockCircuit::from_provider(&provider, block_number_interval, network)
 }
 
 #[test]
@@ -34,7 +27,7 @@ pub fn test_track_block() -> Result<(), Box<dyn std::error::Error>> {
         block_number_interval.push(i as u64);
     }
 
-    let input = get_test_circuit(block_number_interval, Network::Mainnet);
+    let input = get_test_circuit(block_number_interval, Network::Ethereum(EthereumNetwork::Mainnet));
     let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(), None);
     println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();

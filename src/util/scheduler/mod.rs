@@ -12,7 +12,6 @@ use snark_verifier_sdk::halo2::read_snark;
 use snark_verifier_sdk::Snark;
 use std::{
     collections::HashMap,
-    env::var,
     fmt::Debug,
     fs,
     hash::Hash,
@@ -22,9 +21,9 @@ use std::{
 };
 
 use crate::{
-    providers::{GOERLI_PROVIDER_URL, MAINNET_PROVIDER_URL},
     Network,
 };
+use crate::util::helpers::get_provider;
 
 use super::circuit::AnyCircuit;
 
@@ -88,13 +87,7 @@ impl<T: Task> EthScheduler<T> {
         config_dir: PathBuf,
         data_dir: PathBuf,
     ) -> Self {
-        let infura_id = var("INFURA_ID").expect("Infura ID not found");
-        let provider_url = match network {
-            Network::Mainnet => MAINNET_PROVIDER_URL,
-            Network::Goerli => GOERLI_PROVIDER_URL,
-        };
-        let provider = Provider::<Http>::try_from(format!("{provider_url}{infura_id}").as_str())
-            .expect("could not instantiate HTTP Provider");
+        let provider = get_provider(&network);
         fs::create_dir_all(&config_dir).expect("could not create config directory");
         fs::create_dir_all(&data_dir).expect("could not create data directory");
         srs_read_only = srs_read_only || read_only;

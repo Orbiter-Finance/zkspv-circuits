@@ -1,59 +1,56 @@
-use super::*;
-use crate::util::scheduler::evm_wrapper::ForEvm;
-use crate::{
-    halo2_proofs::{
-        dev::MockProver,
-        halo2curves::bn256::{Bn256, Fr, G1Affine},
-        plonk::*,
-        poly::commitment::ParamsProver,
-        poly::kzg::{
-            commitment::KZGCommitmentScheme,
-            multiopen::{ProverSHPLONK, VerifierSHPLONK},
-            strategy::SingleStrategy,
-        },
-        transcript::{
-            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-        },
-    },
-    providers::{GOERLI_PROVIDER_URL, MAINNET_PROVIDER_URL},
-    storage::helpers::{StorageScheduler, StorageTask},
-    util::scheduler::Scheduler,
-};
-use ark_std::{end_timer, start_timer};
-use ethers_core::utils::keccak256;
-use halo2_base::utils::fs::gen_srs;
-use rand_core::OsRng;
-use serde::{Deserialize, Serialize};
 use std::{
     env::set_var,
     fs::File,
     io::{BufReader, Write},
     path::PathBuf,
 };
+
+use ark_std::{end_timer, start_timer};
+use ethers_core::utils::keccak256;
+use halo2_base::utils::fs::gen_srs;
+use rand_core::OsRng;
+use serde::{Deserialize, Serialize};
 use test_log::test;
+
+use crate::{ArbitrumNetwork, EthereumNetwork, halo2_proofs::{
+    dev::MockProver,
+    halo2curves::bn256::{Bn256, Fr, G1Affine},
+    plonk::*,
+    poly::commitment::ParamsProver,
+    poly::kzg::{
+        commitment::KZGCommitmentScheme,
+        multiopen::{ProverSHPLONK, VerifierSHPLONK},
+        strategy::SingleStrategy,
+    },
+    transcript::{
+        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+    },
+}, storage::helpers::{StorageScheduler, StorageTask}, util::scheduler::Scheduler};
+use crate::util::helpers::get_provider;
+use crate::util::scheduler::evm_wrapper::ForEvm;
+
+use super::*;
 
 fn get_test_circuit(network: Network, num_slots: usize) -> EthBlockStorageCircuit {
     assert!(num_slots <= 10);
-    // let infura_id = var("INFURA_ID").expect("INFURA_ID environmental variable not set");
-    let infura_id = "870df3c2a62e4b8a81d466ef1b1cbefd";
-    let provider_url = match network {
-        Network::Mainnet => format!("{MAINNET_PROVIDER_URL}{infura_id}"),
-        Network::Goerli => format!("{GOERLI_PROVIDER_URL}{infura_id}"),
-    };
-    let provider = Provider::<Http>::try_from(provider_url.as_str())
-        .expect("could not instantiate HTTP Provider");
-    let addr;
-    let block_number;
+    let provider = get_provider(&network);
+    let mut addr = Default::default();
+    let mut block_number = 0;
     match network {
-        Network::Mainnet => {
+        Network::Ethereum(EthereumNetwork::Mainnet) => {
             // cryptopunks
             addr = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB".parse::<Address>().unwrap();
             block_number = 16356350;
-            //block_number = 0xf929e6;
         }
-        Network::Goerli => {
+        Network::Ethereum(EthereumNetwork::Goerli) => {
             addr = "0xf2d1f94310823fe26cfa9c9b6fd152834b8e7849".parse::<Address>().unwrap();
             block_number = 0x713d54;
+        }
+        Network::Arbitrum(ArbitrumNetwork::Mainnet)=>{
+            block_number  = 0x82e239;
+        }
+        Network::Arbitrum(ArbitrumNetwork::Goerli)=>{
+            block_number  = 0x82e239;
         }
     }
     // For only occupied slots:
@@ -78,7 +75,7 @@ pub fn test_mock_single_eip1186() -> Result<(), Box<dyn std::error::Error>> {
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let k = params.degree;
 
-    let input = get_test_circuit(Network::Mainnet, 10);
+    let input = get_test_circuit(Network::Ethereum(EthereumNetwork::Mainnet), 10);
     let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(), None);
     println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
@@ -87,7 +84,7 @@ pub fn test_mock_single_eip1186() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 pub fn test_storage_scheduler() {
-    let network = Network::Mainnet;
+    let network = Network::Ethereum(EthereumNetwork::Mainnet);
     let scheduler = StorageScheduler::new(
         network,
         false,
@@ -124,7 +121,7 @@ pub fn bench_eip1186() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&bench_params.0).unwrap());
-        let input = get_test_circuit(Network::Mainnet, bench_params.1);
+        let input = get_test_circuit(Network::Ethereum(EthereumNetwork::Mainnet), bench_params.1);
         let instance = input.instance();
         let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
 
@@ -196,13 +193,13 @@ pub fn bench_evm_eip1186() -> Result<(), Box<dyn std::error::Error>> {
     use crate::util::circuit::custom_gen_evm_verifier_shplonk;
     use halo2_base::gates::builder::CircuitBuilderStage;
     use snark_verifier_sdk::{
+        CircuitExt,
         evm::{evm_verify, gen_evm_proof_shplonk, write_calldata},
         gen_pk,
         halo2::{
             aggregation::{AggregationCircuit, AggregationConfigParams},
             gen_snark_shplonk,
-        },
-        CircuitExt, SHPLONK,
+        }, SHPLONK,
     };
     use std::{fs, path::Path};
     let bench_params_file = File::open("configs/bench/storage.json").unwrap();
@@ -226,7 +223,7 @@ pub fn bench_evm_eip1186() -> Result<(), Box<dyn std::error::Error>> {
 
         let (storage_snark, storage_proof_time) = {
             let k = bench_params.0.degree;
-            let input = get_test_circuit(Network::Mainnet, bench_params.1);
+            let input = get_test_circuit(Network::Ethereum(EthereumNetwork::Mainnet), bench_params.1);
             let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
             let params = gen_srs(k);
             let pk = gen_pk(&params, &circuit, None);

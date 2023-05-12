@@ -1,7 +1,6 @@
 use crate::{
     block_header::{
         EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness,
-        GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
     },
     keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs},
     mpt::{AssignedBytes, MPTFixedKeyInput, MPTFixedKeyProof, MPTFixedKeyProofWitness},
@@ -28,6 +27,7 @@ use halo2_base::{
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::{cell::RefCell, env::var};
+use crate::util::helpers::get_block_header_rlp_max_bytes;
 
 pub mod helpers;
 #[cfg(all(test, feature = "providers"))]
@@ -366,10 +366,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         let ctx = thread_pool.main(FIRST_PHASE);
         let address = input.storage.address;
         let mut block_header = input.block_header;
-        let max_len = match network {
-            Network::Goerli => GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
-            Network::Mainnet => MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
-        };
+        let max_len =get_block_header_rlp_max_bytes(&network);
         block_header.resize(max_len, 0);
         let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
 

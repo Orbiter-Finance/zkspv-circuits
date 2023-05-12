@@ -36,8 +36,9 @@ use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::{EthBlockTransactionInput, EthTransactionInput};
 
-pub const MAINNET_PROVIDER_URL: &str = "https://mainnet.infura.io/v3/";
-pub const GOERLI_PROVIDER_URL: &str = "https://goerli.infura.io/v3/";
+pub const MAINNET_PROVIDER_URL: &str = "https://eth-mainnet.g.alchemy.com/v2/";
+pub const GOERLI_PROVIDER_URL: &str = "https://eth-goerli.g.alchemy.com/v2/";
+pub const ARBITRUM_GOERLI_PROVIDER_URL: &str = "https://arb-goerli.g.alchemy.com/v2/";
 
 const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 114;
 const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
