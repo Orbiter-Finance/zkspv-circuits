@@ -8,7 +8,7 @@ use std::{
     path::Path,
 };
 
-use ethers_core::types::{Address, Block, BlockId, BlockId::Number, BlockNumber, Bloom, Bytes, EIP1186ProofResponse, H256, StorageProof, U256, U64};
+use ethers_core::types::{Address, Block, BlockId, BlockId::Number, BlockNumber, Bloom, Bytes, EIP1186ProofResponse, Eip1559TransactionRequest, H256, NameOrAddress, StorageProof, U256, U64};
 use ethers_core::utils::hex::FromHex;
 use ethers_core::utils::keccak256;
 use ethers_providers::{Http, Middleware, Provider, StreamExt};
@@ -32,9 +32,10 @@ use crate::{
     util::{get_merkle_mountain_range, u256_to_bytes32_be},
 };
 use crate::mpt::MPTUnFixedKeyInput;
+use crate::proof::arbitrum_proof::{ArbitrumProofBlockTrack, ArbitrumProofInput, ArbitrumProofTransactionOrReceipt};
 use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
 use crate::track_block::EthTrackBlockInput;
-use crate::transaction::{EthBlockTransactionInput, EthTransactionInput};
+use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
 
 pub const MAINNET_PROVIDER_URL: &str = "https://eth-mainnet.g.alchemy.com/v2/";
 pub const GOERLI_PROVIDER_URL: &str = "https://eth-goerli.g.alchemy.com/v2/";
@@ -50,6 +51,79 @@ fn get_buffer_rlp(value: u32) -> Vec<u8> {
     let mut rlp: RlpStream = RlpStream::new();
     rlp.append(&value);
     rlp.out().into()
+}
+
+pub fn get_arbitrum_proof(
+    arbitrum_provider: &Provider<Http>,
+    ethereum_provider: &Provider<Http>,
+    l2_seq_num: u64,
+    transaction_or_receipt: Vec<ArbitrumProofTransactionOrReceipt>,
+    trace_blocks: Vec<ArbitrumProofBlockTrack>,
+) -> ArbitrumProofInput {
+    let rt = Runtime::new().unwrap();
+
+    let arbitrum_transaction = transaction_or_receipt.get(0).cloned().unwrap();
+    let arbitrum_receipt = transaction_or_receipt.get(1).cloned().unwrap();
+    let ethereum_transaction = transaction_or_receipt.get(2).cloned().unwrap();
+    let arbitrum_trace_block = trace_blocks.get(0).cloned().unwrap();
+    let ethereum_trace_block = trace_blocks.get(1).cloned().unwrap();
+
+    let arbitrum_transaction_status = get_block_storage_input_transaction(
+        arbitrum_provider,
+        arbitrum_trace_block.start_block,
+        arbitrum_transaction.index,
+        arbitrum_transaction.rlp,
+        arbitrum_transaction.merkle_proof,
+        arbitrum_transaction.pf_max_depth,
+    );
+
+    let arbitrum_receipt_status = get_block_storage_input_receipt(
+        arbitrum_provider,
+        arbitrum_trace_block.start_block,
+        arbitrum_receipt.index,
+        arbitrum_receipt.rlp,
+        arbitrum_receipt.merkle_proof,
+        arbitrum_receipt.pf_max_depth,
+    );
+
+    let arbitrum_block_end_hash = rt.block_on(arbitrum_provider.get_block(arbitrum_trace_block.end_block)).unwrap().unwrap();
+    let mut arbitrum_block_number_interval = vec![];
+    for i in arbitrum_trace_block.start_block as u64..arbitrum_block_end_hash.number.unwrap().as_u64() {
+        arbitrum_block_number_interval.push(i);
+    }
+    let arbitrum_block_status = get_block_storage_track(
+        arbitrum_provider,
+        arbitrum_block_number_interval,
+    );
+
+    let ethereum_transaction_status = get_block_storage_input_transaction(
+        ethereum_provider,
+        ethereum_trace_block.start_block,
+        ethereum_transaction.index,
+        ethereum_transaction.rlp,
+        ethereum_transaction.merkle_proof,
+        ethereum_transaction.pf_max_depth,
+    );
+
+    let ethereum_block_end_hash = rt.block_on(ethereum_provider.get_block(ethereum_trace_block.end_block)).unwrap().unwrap();
+    let mut ethereum_block_number_interval = vec![];
+    for i in ethereum_trace_block.start_block as u64..ethereum_block_end_hash.number.unwrap().as_u64() {
+        ethereum_block_number_interval.push(i);
+    }
+
+    let ethereum_block_status = get_block_storage_track(
+        ethereum_provider,
+        ethereum_block_number_interval,
+    );
+
+    ArbitrumProofInput {
+        l2_seq_num,
+        arbitrum_transaction_status,
+        arbitrum_receipt_status,
+        arbitrum_block_status,
+        ethereum_transaction_status,
+        ethereum_block_status,
+    }
 }
 
 pub fn get_block_storage_track(
@@ -251,8 +325,74 @@ pub fn is_assigned_slot(key: &H256, proof: &[Bytes]) -> bool {
     true
 }
 
-// Todo: Currently, only the u64 type is supported.
-pub fn get_receipt_field_rlp(source: &Vec<u8>, item_count: usize, new_item: Vec<u8>) -> Vec<u8> {
+// EIP_2718 [nonce,gasPrice,gasLimit,to,value,data,v,r,s]
+// 1: EIP_2930 [chainId,nonce,gasPrice,gasLimit,to,value,data,accessList,v,r,s]
+// 2: EIP_1559 [chainId,nonce,maxPriorityFeePerGas,maxFeePerGas,gasLimit,to,value,data,accessList,v,r,s]
+pub fn get_transaction_field_rlp(tx_type: usize, source: &Vec<u8>, item_count: usize, new_item: [u8; 9]) -> Vec<u8> {
+    let mut source_rlp = RlpStream::new();
+    source_rlp.append_raw(source, item_count);
+    let source_bytes = source_rlp.as_raw().to_vec();
+    let rlp = Rlp::new(&source_bytes);
+    let mut dest_rlp = RlpStream::new_list(new_item.len());
+    for field_item in new_item {
+        let field_rlp = rlp.at_with_offset(field_item as usize).unwrap();
+        let field = field_rlp.0.data().unwrap();
+        if tx_type == 2 {
+            match field_item {
+                0 => {
+                    let dest_field = U64::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                1 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                2 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                3 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                4 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                5 => {
+                    let dest_field = NameOrAddress::Address(Address::from_slice(field));
+                    dest_rlp.append(&dest_field);
+                }
+                6 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                7 => {
+                    let dest_field = Bytes::from(field.to_vec()).clone();
+                    let a = dest_field.0.to_vec();
+                    dest_rlp.append(&a);
+                }
+                9 => {
+                    let dest_field = U64::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                10 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                11 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                _ => println!("error")
+            }
+        }
+    }
+
+    dest_rlp.out().into()
+}
+
+pub fn get_receipt_field_rlp(source: &Vec<u8>, item_count: usize, new_item: [u8; 3]) -> Vec<u8> {
     let mut source_rlp = RlpStream::new();
     source_rlp.append_raw(source, item_count);
     let source_bytes = source_rlp.as_raw().to_vec();

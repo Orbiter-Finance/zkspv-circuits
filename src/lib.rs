@@ -4,6 +4,7 @@
 #![allow(incomplete_features)]
 
 pub mod block_header;
+pub mod arbitrum_block_header;
 pub mod keccak;
 pub mod mpt;
 pub mod rlp;
@@ -17,6 +18,8 @@ pub mod track_block;
 pub mod providers;
 pub mod r#type;
 
+
+pub mod proof;
 
 use crate::rlp::{
     builder::{RlcThreadBreakPoints, RlcThreadBuilder},

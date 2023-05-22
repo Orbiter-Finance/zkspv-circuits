@@ -1069,7 +1069,6 @@ impl<'chip, F: Field> EthChip<'chip, F> {
                     node_hash_rlc.rlc_val =
                         self.gate().mul_not(ctx_gate, slot_is_empty, node_hash_rlc.rlc_val);
                 }
-
                 let is_match = rlc_is_equal(ctx_gate, self.gate(), match_hash_rlc, node_hash_rlc);
                 matches.push(is_match);
             }

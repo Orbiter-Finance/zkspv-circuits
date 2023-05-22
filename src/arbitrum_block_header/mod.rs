@@ -1,61 +1,65 @@
-use super::{
-    util::{bytes_be_to_u128, encode_h256_to_field, EthConfigParams},
-    Field, Network,
-};
-use crate::{keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs}, rlp::{
-    builder::{RlcThreadBreakPoints, RlcThreadBuilder},
-    rlc::{RlcContextPair, RlcFixedTrace, RlcTrace, FIRST_PHASE, RLC_PHASE},
-    RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness,
-}, util::{bytes_be_var_to_fixed, decode_field_to_h256}, EthChip, EthCircuitBuilder, ETH_LOOKUP_BITS, EthereumNetwork};
 use core::{
     iter::{self, once},
     marker::PhantomData,
 };
+use std::{cell::RefCell, env::var};
+
 use ethers_core::types::H256;
 #[cfg(feature = "providers")]
 use ethers_providers::{Http, Provider};
 use halo2_base::{
-    gates::{builder::GateThreadBuilder, GateInstructions, RangeChip},
+    AssignedValue,
+    Context,
+    gates::{builder::GateThreadBuilder, GateInstructions, RangeChip}, QuantumCell::{Constant, Existing},
     utils::bit_length,
-    AssignedValue, Context,
-    QuantumCell::{Constant, Existing},
 };
 use itertools::Itertools;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::{cell::RefCell, env::var};
-use crate::util::helpers::{get_block_header_rlp_max_bytes, get_block_header_rlp_max_field_lens};
+
+use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs}, rlp::{
+    builder::{RlcThreadBreakPoints, RlcThreadBuilder},
+    rlc::{FIRST_PHASE, RLC_PHASE, RlcContextPair, RlcFixedTrace, RlcTrace},
+    RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness,
+}, util::{bytes_be_var_to_fixed, decode_field_to_h256}};
+use crate::util::helpers::{get_arbitrum_block_header_rlp_max_field_lens, get_block_header_rlp_max_bytes};
+
+use super::{
+    Field,
+    Network, util::{bytes_be_to_u128, encode_h256_to_field, EthConfigParams},
+};
 
 #[cfg(feature = "aggregation")]
 pub mod aggregation;
+
 #[cfg(all(feature = "aggregation", feature = "providers"))]
 pub mod helpers;
 #[cfg(test)]
 mod tests;
 
-// extra data max byte length is different for different networks
-const MAINNET_EXTRA_DATA_MAX_BYTES: usize = 32;
-const MAINNET_EXTRA_DATA_RLP_MAX_BYTES: usize = MAINNET_EXTRA_DATA_MAX_BYTES + 1;
-const GOERLI_EXTRA_DATA_MAX_BYTES: usize = 97;
-const GOERLI_EXTRA_DATA_RLP_MAX_BYTES: usize = GOERLI_EXTRA_DATA_MAX_BYTES + 1;
+// Maybe after different network extra data maximum byte length is different
+const ARBITRUM_MAINNET_EXTRA_DATA_MAX_BYTES: usize = 32;
+const ARBITRUM_MAINNET_EXTRA_DATA_RLP_MAX_BYTES: usize = ARBITRUM_MAINNET_EXTRA_DATA_MAX_BYTES + 1;
+const ARBITRUM_GOERLI_EXTRA_DATA_MAX_BYTES: usize = 32;
+const ARBITRUM_GOERLI_EXTRA_DATA_RLP_MAX_BYTES: usize = ARBITRUM_GOERLI_EXTRA_DATA_MAX_BYTES + 1;
 
 /// This is the minimum possible RLP byte length of a block header *at any block* (including pre EIPs)
-const BLOCK_HEADER_RLP_MIN_BYTES: usize = 479;
+const ARBITRUM_BLOCK_HEADER_RLP_MIN_BYTES: usize = 479;
 /// The maximum possible RLP byte length of a block header *at any block* (including all EIPs).
 ///
 /// Provided that the total length is < 256^2, this will be 1 + 2 + sum(max RLP byte length of each field)
-pub const MAINNET_BLOCK_HEADER_RLP_MAX_BYTES: usize =
-    1 + 2 + (521 + MAINNET_EXTRA_DATA_RLP_MAX_BYTES + 33); // 33 is for withdrawals_root
-pub const GOERLI_BLOCK_HEADER_RLP_MAX_BYTES: usize =
-    1 + 2 + (521 + GOERLI_EXTRA_DATA_RLP_MAX_BYTES + 33);
+pub const ARBITRUM_MAINNET_BLOCK_HEADER_RLP_MAX_BYTES: usize =
+    1 + 2 + (521 + ARBITRUM_MAINNET_EXTRA_DATA_RLP_MAX_BYTES);
+pub const ARBITRUM_GOERLI_BLOCK_HEADER_RLP_MAX_BYTES: usize =
+    1 + 2 + (521 + ARBITRUM_GOERLI_EXTRA_DATA_RLP_MAX_BYTES);
 
-const NUM_BLOCK_HEADER_FIELDS: usize = 17;
-pub const MAINNET_HEADER_FIELDS_MAX_BYTES: [usize; NUM_BLOCK_HEADER_FIELDS] =
-    [32, 32, 20, 32, 32, 32, 256, 7, 4, 4, 4, 4, MAINNET_EXTRA_DATA_MAX_BYTES, 32, 8, 6, 32];
-pub const GOERLI_HEADER_FIELDS_MAX_BYTES: [usize; NUM_BLOCK_HEADER_FIELDS] =
-    [32, 32, 20, 32, 32, 32, 256, 7, 4, 4, 4, 4, GOERLI_EXTRA_DATA_MAX_BYTES, 32, 8, 6, 32];
+const ARBITRUM_NUM_BLOCK_HEADER_FIELDS: usize = 16;
+pub const ARBITRUM_MAINNET_HEADER_FIELDS_MAX_BYTES: [usize; ARBITRUM_NUM_BLOCK_HEADER_FIELDS] =
+    [32, 32, 20, 32, 32, 32, 256, 7, 4, 7, 4, 4, ARBITRUM_MAINNET_EXTRA_DATA_MAX_BYTES, 32, 8, 6];
+pub const ARBITRUM_GOERLI_HEADER_FIELDS_MAX_BYTES: [usize; ARBITRUM_NUM_BLOCK_HEADER_FIELDS] =
+    [32, 32, 20, 32, 32, 32, 256, 7, 4, 7, 4, 4, ARBITRUM_GOERLI_EXTRA_DATA_MAX_BYTES, 32, 8, 6];
 /// The maximum number of bytes it takes to represent a block number, without any RLP encoding.
-pub const BLOCK_NUMBER_MAX_BYTES: usize = MAINNET_HEADER_FIELDS_MAX_BYTES[8];
+pub const ARBITRUM_BLOCK_NUMBER_MAX_BYTES: usize = ARBITRUM_MAINNET_HEADER_FIELDS_MAX_BYTES[8];
 
 // Field                        Type            Size (bytes)    RLP size (bytes)    RLP size (bits)
 // parentHash	                256 bits	    32	            33	                264
@@ -67,14 +71,13 @@ pub const BLOCK_NUMBER_MAX_BYTES: usize = MAINNET_HEADER_FIELDS_MAX_BYTES[8];
 // logsBloom	                256 bytes	    256	            259	                2072
 // difficulty	                big int scalar	variable	    8                   64
 // number	                    big int scalar	variable	    <= 5                <= 40
-// gasLimit	                    big int scalar	variable	    5	                40
+// gasLimit	                    big int scalar	variable	    8	                64
 // gasUsed	                    big int scalar	variable	    <= 5	            <= 40
 // timestamp	                big int scalar	variable	    5	                40
 // extraData	                up to 256 bits	variable, <= 32	<= 33	            <= 264              (Mainnet)
 // mixHash	                    256 bits	    32	            33	                264
 // nonce	                    64 bits	        8	            9	                72
 // basefee (post-1559)	        big int scalar	variable	    <= 6	            <= 48
-// withdrawals_root (post-4895) 256 bits	    32	            33	                264
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct EthBlockHeaderTrace<F: Field> {
@@ -94,14 +97,14 @@ pub struct EthBlockHeaderTrace<F: Field> {
     pub extra_data: RlpFieldTrace<F>,
     pub mix_hash: RlpFieldTrace<F>,
     pub nonce: RlpFieldTrace<F>,
-    pub basefee: RlpFieldTrace<F>, // this is 0 (or undefined) for pre-EIP1559 (London) blocks
-    pub withdrawals_root: RlpFieldTrace<F>, // this is 0 (or undefined) for pre-EIP4895 (Shapella) blocks (before block number 1681338455)
-    // the user will have to separately determine whether the block is EIP1559 or not
+    pub basefee: RlpFieldTrace<F>,
+    // this is 0 (or undefined) for pre-EIP1559 (London) blocks
     pub block_hash: RlcFixedTrace<F>,
 
     // pub prefix: AssignedValue<F>,
     pub len_trace: RlcTrace<F>,
 }
+
 #[derive(Clone, Debug)]
 pub struct EthBlockHeaderTraceWitness<F: Field> {
     pub rlp_witness: RlpArrayTraceWitness<F>,
@@ -128,7 +131,6 @@ impl<F: Field> EthBlockHeaderTraceWitness<F> {
             "mix_hash" | "mixHash" => &self.rlp_witness.field_witness[13],
             "nonce" => &self.rlp_witness.field_witness[14],
             "basefee" => &self.rlp_witness.field_witness[15],
-            "withdrawals_root" => &self.rlp_witness.field_witness[16],
             _ => panic!("Invalid header field"),
         }
     }
@@ -211,8 +213,8 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
         block_header: &[u8],
         network: Network,
     ) -> EthBlockHeaderTraceWitness<F> {
-        let max_len =get_block_header_rlp_max_bytes(&network);
-        let max_field_lens = get_block_header_rlp_max_field_lens(&network);
+        let max_len = get_block_header_rlp_max_bytes(&network);
+        let max_field_lens = get_arbitrum_block_header_rlp_max_field_lens(&network);
         assert_eq!(block_header.len(), max_len);
         let block_header_assigned =
             ctx.assign_witnesses(block_header.iter().map(|byte| F::from(*byte as u64)));
@@ -225,7 +227,7 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
             rlp_witness.rlp_array.clone(), // this is `block_header_assigned`
             Some(block_header.to_vec()),
             rlp_witness.rlp_len,
-            BLOCK_HEADER_RLP_MIN_BYTES,
+            ARBITRUM_GOERLI_EXTRA_DATA_RLP_MAX_BYTES,
         );
         let block_hash = keccak.var_len_queries[block_hash_query_idx].output_assigned.clone();
         EthBlockHeaderTraceWitness { rlp_witness, block_hash, block_hash_query_idx }
@@ -240,7 +242,7 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
         let block_hash = self.keccak_var_len_rlcs()[witness.block_hash_query_idx].1;
 
         // Base fee per unit gas only after London
-        let [parent_hash, ommers_hash, beneficiary, state_root, transactions_root, receipts_root, logs_bloom, difficulty, number, gas_limit, gas_used, timestamp, extra_data, mix_hash, nonce, basefee, withdrawals_root]: [RlpFieldTrace<F>; NUM_BLOCK_HEADER_FIELDS] =
+        let [parent_hash, ommers_hash, beneficiary, state_root, transactions_root, receipts_root, logs_bloom, difficulty, number, gas_limit, gas_used, timestamp, extra_data, mix_hash, nonce, basefee]: [RlpFieldTrace<F>; ARBITRUM_NUM_BLOCK_HEADER_FIELDS] =
             trace.field_trace.try_into().unwrap();
 
         EthBlockHeaderTrace {
@@ -260,7 +262,6 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
             mix_hash,
             nonce,
             basefee,
-            withdrawals_root,
             block_hash,
             len_trace: trace.len_trace,
         }
@@ -273,8 +274,8 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
         headers: &[Vec<u8>],
         network: Network,
     ) -> Vec<EthBlockHeaderTraceWitness<F>> {
-        let max_len =get_block_header_rlp_max_bytes(&network);
-        let max_field_lens = get_block_header_rlp_max_field_lens(&network);
+        let max_len = get_block_header_rlp_max_bytes(&network);
+        let max_field_lens = get_arbitrum_block_header_rlp_max_field_lens(&network);
         // we cannot directly parallelize `decompose_block_header_phase0` because `KeccakChip` is not thread-safe (we need to deterministically add new queries), so we explicitly parallelize the logic here:
         let witness_gen_only = thread_pool.witness_gen_only();
         let ctx_ids = headers.iter().map(|_| thread_pool.get_new_thread_id()).collect::<Vec<_>>();
@@ -303,7 +304,7 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
                     rlp_witness.rlp_array.clone(), // this is `block_header_assigned`
                     Some(header.to_vec()),
                     rlp_witness.rlp_len,
-                    BLOCK_HEADER_RLP_MIN_BYTES,
+                    ARBITRUM_GOERLI_EXTRA_DATA_RLP_MAX_BYTES,
                 );
                 let block_hash =
                     keccak.var_len_queries[block_hash_query_idx].output_assigned.clone();
@@ -431,16 +432,16 @@ pub fn get_boundary_block_data<F: Field>(
 
     // start_block_number || end_block_number
     let block_numbers = {
-        debug_assert_eq!(chain[0].get("number").max_field_len, BLOCK_NUMBER_MAX_BYTES);
+        debug_assert_eq!(chain[0].get("number").max_field_len, ARBITRUM_BLOCK_NUMBER_MAX_BYTES);
         let start_block_number_bytes = bytes_be_var_to_fixed(
             ctx,
             gate,
             &chain[0].get("number").field_cells,
             chain[0].get("number").field_len,
-            BLOCK_NUMBER_MAX_BYTES,
+            ARBITRUM_BLOCK_NUMBER_MAX_BYTES,
         );
         // TODO: is there a way to do this without so many selects
-        let end_block_number_bytes: [_; BLOCK_NUMBER_MAX_BYTES] =
+        let end_block_number_bytes: [_; ARBITRUM_BLOCK_NUMBER_MAX_BYTES] =
             core::array::from_fn(|i| i).map(|idx| {
                 gate.select_by_indicator(
                     ctx,
@@ -458,7 +459,7 @@ pub fn get_boundary_block_data<F: Field>(
             gate,
             &end_block_number_bytes,
             end_block_number_len,
-            BLOCK_NUMBER_MAX_BYTES,
+            ARBITRUM_BLOCK_NUMBER_MAX_BYTES,
         );
         let mut block_numbers_bytes = start_block_number_bytes;
         block_numbers_bytes.append(&mut end_block_number_bytes);
@@ -526,7 +527,8 @@ impl EthBlockHeaderChainInstance {
 pub struct EthBlockHeaderChainCircuit<F> {
     /// The private inputs, which are the RLP encodings of the block headers
     header_rlp_encodings: Vec<Vec<u8>>,
-    num_blocks: u32, // num_blocks in [0, 2 ** max_depth)
+    num_blocks: u32,
+    // num_blocks in [0, 2 ** max_depth)
     // The public inputs:
     // (prev_hash, end_hash, start_block_number, end_block_number, merkle_roots: [H256; max_depth + 1])
     // pub instance: EthBlockHeaderChainInstance,
@@ -620,7 +622,7 @@ impl<F: Field> EthBlockHeaderChainCircuit<F> {
             let config_params: EthConfigParams = serde_json::from_str(
                 var("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
             )
-            .unwrap();
+                .unwrap();
             circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
         }
         circuit

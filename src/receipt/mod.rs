@@ -11,15 +11,15 @@ use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
 use crate::block_header::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness};
-use crate::keccak::{FixedLenRLCs, FnSynthesize, get_bytes, KeccakChip, VarLenRLCs};
+use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::mpt::{AssignedBytes, MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
 use crate::providers::get_receipt_field_rlp;
-use crate::r#type::{EIP_1559_PREFIX, EIP_2930_PREFIX, TX_STATUS_SUCCESS};
+use crate::r#type::{TX_RECEIPT_FIELD, TX_STATUS_SUCCESS};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
 use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, EthConfigParams};
-use crate::util::helpers::{get_block_header_rlp_max_bytes, get_block_header_type};
+use crate::util::helpers::{bytes_to_vec_u8, get_block_header_rlp_max_bytes, get_block_header_type, get_transaction_type};
 
 mod tests;
 
@@ -285,11 +285,10 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         let block_type = get_block_header_type(&network);
         block_header.resize(max_len, 0);
         let block_witness;
-        if block_type ==0 {
-             block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
-        }else {
-             block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
-
+        if block_type == 0 {
+            block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
+        } else {
+            block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
         }
         // let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
         let receipts_root = &block_witness.get("receipts_root").field_cells;
@@ -350,24 +349,12 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
             ctx.constrain_equal(mpt_root, re_root);
         }
 
-        let bytes_to_vec_u8 = |rlp_value: &AssignedBytes<F>, input_bytes: Option<Vec<u8>>| {
-            input_bytes.unwrap_or_else(|| get_bytes(&rlp_value[..]))
-        };
-
         let mut non_prefix_bytes: AssignedBytes<F> = vec![];
 
-        // let nested_array = |rlp_value: &AssignedBytes<F>, index: usize| {
-        //     let a =vec![*rlp_value.get(index).unwrap()] ;
-        //     let rlp_u8 = bytes_to_vec_u8(&a, None);
-        // };
-
         // Load a prefix and determine if it belongs to a specific prefix
-        let eip_1559_prefix = (F::from(EIP_1559_PREFIX as u64)).try_into().unwrap();
-        let eip_1559_prefix = ctx.load_witness(eip_1559_prefix);
-        let eip_2930_prefix = (F::from(EIP_2930_PREFIX as u64)).try_into().unwrap();
-        let eip_2930_prefix = ctx.load_witness(eip_2930_prefix);
-        let receipt_value_prefix = &receipt_proofs.value_bytes[0];
-        if receipt_value_prefix.value == eip_1559_prefix.value || receipt_value_prefix.value == eip_2930_prefix.value {
+        let receipt_value_prefix = &receipt_proofs.value_bytes.first().unwrap();
+        let transaction_type = get_transaction_type(ctx, receipt_value_prefix);
+        if transaction_type != 0 {
             // Todo: Identify nested lists
             non_prefix_bytes = receipt_proofs.value_bytes[1..].to_vec();
         }
@@ -375,7 +362,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         let non_prefix_bytes_u8 = bytes_to_vec_u8(&non_prefix_bytes, None);
 
         // Generate rlp encoding for specific fields and generate a witness
-        let dest_value_bytes = get_receipt_field_rlp(&non_prefix_bytes_u8, 4, vec![0, 1, 2]);
+        let dest_value_bytes = get_receipt_field_rlp(&non_prefix_bytes_u8, 4, TX_RECEIPT_FIELD);
         let mut load_bytes =
             |bytes: &[u8]| ctx.assign_witnesses(bytes.iter().map(|x| F::from(*x as u64)));
         let receipt_rlp_bytes = load_bytes(&dest_value_bytes);
