@@ -42,6 +42,8 @@ pub fn witness_subarray<F: ScalarField>(
 ) -> Vec<AssignedValue<F>> {
     // `u32` should be enough for array indices
     let [start_id, sub_len] = [start_id, sub_len].map(|fe| fe.get_lower_32() as usize);
+    // println!("sub_len: {:?}", sub_len);
+    // println!("max_len: {:?}", max_len);
     debug_assert!(sub_len <= max_len);
     ctx.assign_witnesses(
         array[start_id..start_id + sub_len]
