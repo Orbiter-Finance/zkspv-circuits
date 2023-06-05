@@ -1,1 +1,1 @@
-pub mod arbitrum_proof;
+pub mod arbitrum;

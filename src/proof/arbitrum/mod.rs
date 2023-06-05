@@ -9,10 +9,10 @@ use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
-use crate::arbitrum_block_header::EthBlockHeaderChip;
+use crate::block_header::arbitrum::EthBlockHeaderChip;
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::providers::get_arbitrum_proof;
-use crate::receipt::{EthBlockReceiptChip, EthBlockReceiptInput, EthBlockReceiptInputAssigned, EthBlockReceiptTrace, EthBlockReceiptTraceWitness};
+use crate::receipt::arbitrum::{EthBlockReceiptChip, EthBlockReceiptInput, EthBlockReceiptInputAssigned, EthBlockReceiptTrace, EthBlockReceiptTraceWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::FIRST_PHASE;
 use crate::rlp::RlpChip;

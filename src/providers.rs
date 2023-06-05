@@ -22,7 +22,7 @@ use tokio::runtime::Runtime;
 
 // until storage proof is refactored
 use crate::{
-    block_header::{
+    block_header::ethereum::{
         EthBlockHeaderChainInstance, GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
         MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
     },
@@ -32,14 +32,12 @@ use crate::{
     util::{get_merkle_mountain_range, u256_to_bytes32_be},
 };
 use crate::mpt::MPTUnFixedKeyInput;
-use crate::proof::arbitrum_proof::{ArbitrumProofBlockTrack, ArbitrumProofInput, ArbitrumProofTransactionOrReceipt};
-use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
+use crate::proof::arbitrum::{ArbitrumProofBlockTrack, ArbitrumProofInput, ArbitrumProofTransactionOrReceipt};
+use crate::receipt::ethereum::{EthBlockReceiptInput, EthReceiptInput};
+use crate::receipt::arbitrum::{EthBlockReceiptInput as ArbitrumBlockReceiptInput,EthReceiptInput as ArbitrumReceiptInput};
+use crate::receipt::optimism::{EthBlockReceiptInput as OptimismBlockReceiptInput,EthReceiptInput as OptimismReceiptInput};
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
-
-pub const MAINNET_PROVIDER_URL: &str = "https://eth-mainnet.g.alchemy.com/v2/";
-pub const GOERLI_PROVIDER_URL: &str = "https://eth-goerli.g.alchemy.com/v2/";
-pub const ARBITRUM_GOERLI_PROVIDER_URL: &str = "https://arb-goerli.g.alchemy.com/v2/";
 
 const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 114;
 const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
@@ -77,7 +75,7 @@ pub fn get_arbitrum_proof(
         arbitrum_transaction.pf_max_depth,
     );
 
-    let arbitrum_receipt_status = get_block_storage_input_receipt(
+    let arbitrum_receipt_status = get_arbitrum_receipt(
         arbitrum_provider,
         arbitrum_trace_block.start_block,
         arbitrum_receipt.index,
@@ -185,6 +183,76 @@ pub fn get_block_storage_input_receipt(
         block_hash,
         block_header,
         receipt: EthReceiptInput { receipt_index, receipt_proofs },
+    }
+}
+
+pub fn get_arbitrum_receipt(
+    provider: &Provider<Http>,
+    block_number: u32,
+    receipt_index: u32,
+    receipt_rlp: Vec<u8>,
+    merkle_proof: Vec<Bytes>,
+    receipt_pf_max_depth: usize,
+) -> ArbitrumBlockReceiptInput {
+    let rt = Runtime::new().unwrap();
+    let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
+    let block_hash = block.hash.unwrap();
+    let block_header = get_block_rlp(&block);
+    let receipt_key_u256 = U256::from(receipt_index);
+    let receipt_key = get_buffer_rlp(receipt_key_u256.as_u32());
+    let slot_is_empty = false;
+
+    let receipt_proofs = MPTUnFixedKeyInput {
+        path: receipt_key,
+        value: receipt_rlp,
+        root_hash: block.receipts_root,
+        proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
+        slot_is_empty,
+        value_max_byte_len: RECEIPT_PROOF_VALUE_MAX_BYTE_LEN,
+        max_depth: receipt_pf_max_depth,
+    };
+
+    ArbitrumBlockReceiptInput {
+        block,
+        block_number,
+        block_hash,
+        block_header,
+        receipt: ArbitrumReceiptInput { receipt_index, receipt_proofs },
+    }
+}
+
+pub fn get_optimism_receipt(
+    provider: &Provider<Http>,
+    block_number: u32,
+    receipt_index: u32,
+    receipt_rlp: Vec<u8>,
+    merkle_proof: Vec<Bytes>,
+    receipt_pf_max_depth: usize,
+) -> OptimismBlockReceiptInput {
+    let rt = Runtime::new().unwrap();
+    let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
+    let block_hash = block.hash.unwrap();
+    let block_header = get_block_rlp(&block);
+    let receipt_key_u256 = U256::from(receipt_index);
+    let receipt_key = get_buffer_rlp(receipt_key_u256.as_u32());
+    let slot_is_empty = false;
+
+    let receipt_proofs = MPTUnFixedKeyInput {
+        path: receipt_key,
+        value: receipt_rlp,
+        root_hash: block.receipts_root,
+        proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
+        slot_is_empty,
+        value_max_byte_len: RECEIPT_PROOF_VALUE_MAX_BYTE_LEN,
+        max_depth: receipt_pf_max_depth,
+    };
+
+    OptimismBlockReceiptInput {
+        block,
+        block_number,
+        block_hash,
+        block_header,
+        receipt: OptimismReceiptInput { receipt_index, receipt_proofs },
     }
 }
 

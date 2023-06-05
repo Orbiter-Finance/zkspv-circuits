@@ -17,17 +17,13 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs}, rlp::{
+use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs}, Network,Field, rlp::{
     builder::{RlcThreadBreakPoints, RlcThreadBuilder},
     rlc::{FIRST_PHASE, RLC_PHASE, RlcContextPair, RlcFixedTrace, RlcTrace},
     RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness,
 }, util::{bytes_be_var_to_fixed, decode_field_to_h256}};
+use crate::util::{bytes_be_to_u128, encode_h256_to_field, EthConfigParams};
 use crate::util::helpers::{get_arbitrum_block_header_rlp_max_field_lens, get_block_header_rlp_max_bytes};
-
-use super::{
-    Field,
-    Network, util::{bytes_be_to_u128, encode_h256_to_field, EthConfigParams},
-};
 
 #[cfg(feature = "aggregation")]
 pub mod aggregation;
@@ -227,7 +223,7 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
             rlp_witness.rlp_array.clone(), // this is `block_header_assigned`
             Some(block_header.to_vec()),
             rlp_witness.rlp_len,
-            ARBITRUM_GOERLI_EXTRA_DATA_RLP_MAX_BYTES,
+            ARBITRUM_BLOCK_HEADER_RLP_MIN_BYTES,
         );
         let block_hash = keccak.var_len_queries[block_hash_query_idx].output_assigned.clone();
         EthBlockHeaderTraceWitness { rlp_witness, block_hash, block_hash_query_idx }
@@ -304,7 +300,7 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
                     rlp_witness.rlp_array.clone(), // this is `block_header_assigned`
                     Some(header.to_vec()),
                     rlp_witness.rlp_len,
-                    ARBITRUM_GOERLI_EXTRA_DATA_RLP_MAX_BYTES,
+                    ARBITRUM_BLOCK_HEADER_RLP_MIN_BYTES,
                 );
                 let block_hash =
                     keccak.var_len_queries[block_hash_query_idx].output_assigned.clone();

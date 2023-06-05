@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="RemoteTargetsManager">
+    <targets>
+      <target name="ec2-user@ec2-54-168-205-23.ap-northeast-1.compute.amazonaws.com:22" type="ssh/sftp" uuid="7ceafcd1-1cc4-4b08-99c4-a3d3b547ed71">
+        <config>
+          <option name="projectRootOnTarget" value="/home/ec2-user/zk_spv" />
+          <option name="serverName" value="ec2-user@ec2-54-168-205-23.ap-northeast-1.compute.amazonaws.com:22 key" />
+          <option name="useRsync" value="true" />
+        </config>
+        <ContributedStateBase type="RsLanguageRuntime">
+          <config>
+            <option name="cargoPath" value="/home/ec2-user/.cargo/bin/cargo" />
+            <option name="cargoVersion" value="1.69.0 (6e9a83356 2023-04-12)" />
+            <option name="rustcPath" value="/home/ec2-user/.cargo/bin/rustc" />
+            <option name="rustcVersion" value="1.69.0 (84c898d65 2023-04-16)" />
+          </config>
+        </ContributedStateBase>
+      </target>
+    </targets>
+  </component>
+</project>

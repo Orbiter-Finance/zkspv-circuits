@@ -20,7 +20,7 @@ fn get_test_circuit(
     network: Network,
 ) -> EthBlockTransactionCircuit {
     let provider = get_provider(&network);
-    let block_number;
+    let mut block_number = 0;
     match network {
         Network::Ethereum(EthereumNetwork::Mainnet) => {
             block_number = 0xeee246;
@@ -34,13 +34,14 @@ fn get_test_circuit(
         Network::Arbitrum(ArbitrumNetwork::Goerli) => {
             block_number = 0x82e239;
         }
+        _ => {}
     }
     EthBlockTransactionCircuit::from_provider(&provider, block_number, transaction_index, transaction_rlp, merkle_proof, 3, network)
 }
 
 #[test]
 pub fn test_2718_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
-    let params = EthConfigParams::from_path("configs/test/transaction.");
+    let params = EthConfigParams::from_path("configs/tests/transaction.json");
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let k = params.degree;
     let transaction_index = 1;

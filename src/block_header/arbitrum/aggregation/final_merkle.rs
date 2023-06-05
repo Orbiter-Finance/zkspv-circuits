@@ -1,15 +1,7 @@
+use std::cell::RefCell;
 #[cfg(not(feature = "production"))]
-use crate::util::EthConfigParams;
-use crate::{
-    block_header::aggregation::join_previous_instances,
-    keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs},
-    rlp::{
-        builder::{RlcThreadBreakPoints, RlcThreadBuilder},
-        RlpChip,
-    },
-    util::{bytes_be_to_u128, get_merkle_mountain_range, num_to_bytes_be, NUM_BYTES_IN_U128},
-    EthCircuitBuilder,
-};
+use std::env::var;
+
 #[cfg(feature = "display")]
 use ark_std::{end_timer, start_timer};
 use halo2_base::{
@@ -20,10 +12,20 @@ use halo2_base::{
     },
     QuantumCell::Constant,
 };
-use snark_verifier_sdk::{halo2::aggregation::AggregationCircuit, Snark, SHPLONK};
-use std::cell::RefCell;
+use snark_verifier_sdk::{halo2::aggregation::AggregationCircuit, SHPLONK, Snark};
+
+use crate::{
+    EthCircuitBuilder,
+    keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs},
+    rlp::{
+        builder::{RlcThreadBreakPoints, RlcThreadBuilder},
+        RlpChip,
+    },
+    util::{bytes_be_to_u128, get_merkle_mountain_range, NUM_BYTES_IN_U128, num_to_bytes_be},
+};
+use crate::block_header::arbitrum::aggregation::join_previous_instances;
 #[cfg(not(feature = "production"))]
-use std::env::var;
+use crate::util::EthConfigParams;
 
 use super::EthBlockHeaderChainAggregationCircuit;
 

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" serverName="远程开发" remoteFilesAllowedToDisappearOnAutoupload="false">
+    <serverData>
+      <paths name="circuit">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/ec2-user/zk_spv" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/target" />
+          </excludedPaths>
+        </serverdata>
+      </paths>
+      <paths name="电路测试 (becd0a19-e064-4e77-a38f-e464eb71b607)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/ec2-user/zk_spv" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>

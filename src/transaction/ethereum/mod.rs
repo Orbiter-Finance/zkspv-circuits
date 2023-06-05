@@ -10,9 +10,9 @@ use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
-use crate::block_header::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness};
+use crate::block_header::ethereum::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
-use crate::mpt::{AssignedBytes, MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
+use crate::mpt::{MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
 use crate::providers::get_transaction_field_rlp;
 use crate::r#type::EIP_1559_TX_TYPE_FIELD;
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
@@ -191,7 +191,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             ctx.constrain_equal(pf_root, root);
         }
 
-        let mut transaction_rlp_bytes: AssignedBytes<F> = vec![];
+        let  transaction_rlp_bytes;
 
         let transaction_value_prefix = transaction_proofs.value_bytes.first().unwrap();
         let transaction_type = get_transaction_type(ctx, transaction_value_prefix);

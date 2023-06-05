@@ -7,8 +7,8 @@ use crate::halo2_proofs::{
     dev::MockProver,
     halo2curves::bn256::Fr,
 };
-use crate::{EthereumNetwork, Network,ArbitrumNetwork};
-use crate::receipt::EthBlockReceiptCircuit;
+use crate::{EthereumNetwork, Network};
+use crate::receipt::ethereum::EthBlockReceiptCircuit;
 use crate::rlp::builder::RlcThreadBuilder;
 use crate::util::EthConfigParams;
 use crate::util::helpers::get_provider;
@@ -20,7 +20,7 @@ fn get_test_circuit(
     network: Network,
 ) -> EthBlockReceiptCircuit {
     let provider = get_provider(&network);
-    let block_number;
+    let mut block_number = 0;
     match network {
         Network::Ethereum(EthereumNetwork::Mainnet) => {
             block_number = 16356350;
@@ -28,13 +28,7 @@ fn get_test_circuit(
         Network::Ethereum(EthereumNetwork::Goerli) => {
             block_number = 0x82e239;
         }
-        Network::Arbitrum(ArbitrumNetwork::Mainnet)=>{
-            block_number  = 0x82e239;
-        }
-        Network::Arbitrum(ArbitrumNetwork::Goerli)=>{
-            block_number  = 0x82e239;
-        }
-
+        _ => {}
     }
     EthBlockReceiptCircuit::from_provider(&provider, block_number, receipt_index, receipt_rlp, merkle_proof, 4, network)
 }

@@ -1,4 +1,4 @@
-pub(crate) const EIP_2718_TX_TYPE: u8 = 0x00;
+// pub(crate) const EIP_2718_TX_TYPE: u8 = 0x00;
 pub(crate) const EIP_2930_TX_TYPE: u8 = 0x01;
 pub(crate) const EIP_1559_TX_TYPE: u8 = 0x02;
 

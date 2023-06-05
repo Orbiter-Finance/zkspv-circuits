@@ -3,7 +3,6 @@ use std::{
     mem,
 };
 
-use crate::{block_header::EthBlockHeaderChainInstance, Field};
 #[cfg(feature = "display")]
 use ark_std::{end_timer, start_timer};
 use halo2_base::{
@@ -21,9 +20,11 @@ use halo2_base::{
 };
 use itertools::Itertools;
 use snark_verifier_sdk::{halo2::aggregation::AggregationCircuit, Snark, LIMBS, SHPLONK};
+use zkevm_keccak::util::eth_types::Field;
 
 mod final_merkle;
 pub use final_merkle::*;
+use crate::block_header::ethereum::EthBlockHeaderChainInstance;
 
 #[derive(Clone, Debug)]
 pub struct EthBlockHeaderChainAggregationCircuit {

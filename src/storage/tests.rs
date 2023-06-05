@@ -52,6 +52,7 @@ fn get_test_circuit(network: Network, num_slots: usize) -> EthBlockStorageCircui
         Network::Arbitrum(ArbitrumNetwork::Goerli)=>{
             block_number  = 0x82e239;
         }
+        _ => {}
     }
     // For only occupied slots:
     let slot_nums = vec![0u64, 1u64, 2u64, 3u64, 6u64, 8u64];

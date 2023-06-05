@@ -7,7 +7,7 @@ use halo2_base::gates::{RangeChip};
 use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
-use crate::block_header::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, };
+use crate::block_header::ethereum::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, };
 use crate::keccak::{FixedLenRLCs, KeccakChip, VarLenRLCs, FnSynthesize};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::FIRST_PHASE;
@@ -134,7 +134,7 @@ pub struct EthTrackBlockInput {
 }
 
 impl EthTrackBlockInput {
-    pub fn assign<F: Field>(self, ctx: &mut Context<F>) -> EthTrackBlockInputAssigned {
+    pub fn assign<F: Field>(self, _ctx: &mut Context<F>) -> EthTrackBlockInputAssigned {
         EthTrackBlockInputAssigned { block_header: self.block_header }
     }
 }

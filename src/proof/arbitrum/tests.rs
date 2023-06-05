@@ -7,7 +7,7 @@ use crate::halo2_proofs::{
     halo2curves::bn256::Fr,
 };
 use crate::{ArbitrumNetwork, EthereumNetwork, Network};
-use crate::proof::arbitrum_proof::{ArbitrumProofBlockTrack, ArbitrumProofCircuit, ArbitrumProofTransactionOrReceipt};
+use crate::proof::arbitrum::{ArbitrumProofBlockTrack, ArbitrumProofCircuit, ArbitrumProofTransactionOrReceipt};
 use crate::rlp::builder::RlcThreadBuilder;
 use crate::util::EthConfigParams;
 use crate::util::helpers::get_provider;

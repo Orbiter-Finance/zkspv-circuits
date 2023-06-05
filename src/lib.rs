@@ -3,8 +3,32 @@
 #![feature(return_position_impl_trait_in_trait)]
 #![allow(incomplete_features)]
 
+use std::env::{set_var, var};
+
+use halo2_base::{
+    AssignedValue,
+    gates::{flex_gate::FlexGateConfig, range::RangeConfig, RangeChip},
+    halo2_proofs::{
+        self,
+        circuit::{Layouter, SimpleFloorPlanner},
+        plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
+    },
+};
+use serde::{Deserialize, Serialize};
+use zkevm_keccak::KeccakConfig;
+pub use zkevm_keccak::util::eth_types::Field;
+
+use keccak::{FnSynthesize, KeccakCircuitBuilder, SharedKeccakChip};
+pub use mpt::EthChip;
+use util::EthConfigParams;
+
+use crate::rlp::{
+    builder::{RlcThreadBreakPoints, RlcThreadBuilder},
+    rlc::RlcConfig,
+    RlpConfig,
+};
+
 pub mod block_header;
-pub mod arbitrum_block_header;
 pub mod keccak;
 pub mod mpt;
 pub mod rlp;
@@ -21,47 +45,43 @@ pub mod r#type;
 
 pub mod proof;
 
-use crate::rlp::{
-    builder::{RlcThreadBreakPoints, RlcThreadBuilder},
-    rlc::RlcConfig,
-    RlpConfig,
-};
-use halo2_base::{
-    gates::{flex_gate::FlexGateConfig, range::RangeConfig, RangeChip},
-    halo2_proofs::{
-        self,
-        circuit::{Layouter, SimpleFloorPlanner},
-        plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
-    },
-    AssignedValue,
-};
-use keccak::{FnSynthesize, KeccakCircuitBuilder, SharedKeccakChip};
-pub use mpt::EthChip;
-use serde::{Deserialize, Serialize};
-use std::env::{set_var, var};
-use util::EthConfigParams;
-pub use zkevm_keccak::util::eth_types::Field;
-use zkevm_keccak::KeccakConfig;
 
 pub(crate) const ETH_LOOKUP_BITS: usize = 8; // always want 8 to range check bytes
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
-pub enum EthereumNetwork{
+pub enum EthereumNetwork {
     Mainnet,
     Goerli,
 }
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
-pub enum ArbitrumNetwork{
+pub enum ArbitrumNetwork {
     Mainnet,
     Goerli,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum OptimismNetwork {
+    Mainnet,
+    Goerli,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum ZkSyncEraNetwork {
+    Mainnet,
+    Goerli,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 // #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum Network {
     Ethereum(EthereumNetwork),
-    Arbitrum(ArbitrumNetwork)
+    Arbitrum(ArbitrumNetwork),
+    Optimism(OptimismNetwork),
 }
 
 impl std::fmt::Display for Network {
@@ -69,16 +89,22 @@ impl std::fmt::Display for Network {
         match self {
             Network::Ethereum(ethereum_network) => {
                 match ethereum_network {
-                    EthereumNetwork::Mainnet=> write!(f, "mainnet"),
-                    EthereumNetwork::Goerli=> write!(f, "goerli"),
+                    EthereumNetwork::Mainnet => write!(f, "mainnet"),
+                    EthereumNetwork::Goerli => write!(f, "goerli"),
                 }
             }
-            Network::Arbitrum(arbitrum_network)=>{
+            Network::Arbitrum(arbitrum_network) => {
                 match arbitrum_network {
-                    ArbitrumNetwork::Mainnet=>write!(f, "arbitrum mainnet"),
-                    ArbitrumNetwork::Goerli=>write!(f, "arbitrum goerli"),
+                    ArbitrumNetwork::Mainnet => write!(f, "arbitrum mainnet"),
+                    ArbitrumNetwork::Goerli => write!(f, "arbitrum goerli"),
                 }
-            },
+            }
+            Network::Optimism(optimism_network) => {
+                match optimism_network {
+                    OptimismNetwork::Mainnet => write!(f, "optimism mainnet"),
+                    OptimismNetwork::Goerli => write!(f, "optimism goerli"),
+                }
+            }
         }
     }
 }

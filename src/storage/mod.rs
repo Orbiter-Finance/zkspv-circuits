@@ -1,5 +1,5 @@
 use crate::{
-    block_header::{
+    block_header::ethereum::{
         EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness,
     },
     keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs},
