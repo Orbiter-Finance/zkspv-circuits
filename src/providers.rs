@@ -7,8 +7,9 @@ use std::{
     iter, num,
     path::Path,
 };
+use std::ops::{Not, Sub};
 
-use ethers_core::types::{Address, Block, BlockId, BlockId::Number, BlockNumber, Bloom, Bytes, EIP1186ProofResponse, Eip1559TransactionRequest, H256, NameOrAddress, StorageProof, U256, U64};
+use ethers_core::types::{Address, Block, BlockId, BlockId::Number, BlockNumber, Bloom, Bytes, EIP1186ProofResponse, Eip1559TransactionRequest, H256, NameOrAddress, StorageProof, Transaction, U256, U64};
 use ethers_core::utils::hex::FromHex;
 use ethers_core::utils::keccak256;
 use ethers_providers::{Http, Middleware, Provider, StreamExt};
@@ -31,13 +32,18 @@ use crate::{
     storage::{EthBlockStorageInput, EthStorageInput},
     util::{get_merkle_mountain_range, u256_to_bytes32_be},
 };
+use crate::config::contract::zksync_era_contract::{get_zksync_era_nonce_holder_contract_address, get_zksync_era_nonce_holder_contract_layout};
+use crate::config::token::zksync_era_token::{get_zksync_era_eth_address, get_zksync_era_token_layout_by_address};
 use crate::mpt::MPTUnFixedKeyInput;
 use crate::proof::arbitrum::{ArbitrumProofBlockTrack, ArbitrumProofInput, ArbitrumProofTransactionOrReceipt};
+use crate::receipt::arbitrum::{EthBlockReceiptInput as ArbitrumBlockReceiptInput, EthReceiptInput as ArbitrumReceiptInput};
 use crate::receipt::ethereum::{EthBlockReceiptInput, EthReceiptInput};
-use crate::receipt::arbitrum::{EthBlockReceiptInput as ArbitrumBlockReceiptInput,EthReceiptInput as ArbitrumReceiptInput};
-use crate::receipt::optimism::{EthBlockReceiptInput as OptimismBlockReceiptInput,EthReceiptInput as OptimismReceiptInput};
+use crate::receipt::optimism::{EthBlockReceiptInput as OptimismBlockReceiptInput, EthReceiptInput as OptimismReceiptInput};
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
+use crate::transaction::zksync_era::now::{ZkSyncBlockTransactionInput, ZkSyncTransactionsInput};
+use crate::util::contract_abi::erc20::{decode_input, is_erc20_transaction};
+use crate::util::helpers::calculate_storage_mapping_key;
 
 const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 114;
 const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
@@ -351,6 +357,125 @@ pub fn get_block_storage_input(
         storage: EthStorageInput { addr, acct_pf, storage_pfs },
     }
 }
+
+pub fn get_zksync_transaction_and_storage_input(
+    provider: &Provider<Http>,
+    tx_hash: H256,
+) -> ZkSyncBlockTransactionInput {
+    let rt = Runtime::new().unwrap();
+    let valid_tx = rt.block_on(provider.get_transaction(tx_hash)).unwrap().unwrap();
+    let valid_tx_block_number = valid_tx.block_number.unwrap();
+    let block_with_txs = rt.block_on(provider.get_block_with_txs(valid_tx.block_number.unwrap())).unwrap().unwrap();
+    let mut valid_tx_from = Address::default();
+    let mut valid_tx_to = Address::default();
+    // from:valid_tx.from to:valid_tx.to
+    if !valid_tx.value.is_zero() { // ETH
+        valid_tx_from = valid_tx.from;
+        valid_tx_to = valid_tx.to.unwrap();
+    } else if is_erc20_transaction(valid_tx.input.clone()) {
+        // from:valid_tx.from
+        // to:valid_tx.input.to
+        let valid_tx_erc20 = decode_input(valid_tx.input.clone()).unwrap();
+        valid_tx_from = valid_tx.from;
+        valid_tx_to = valid_tx_erc20.get(0).unwrap().clone().into_address().unwrap();
+    }
+
+    let mut from_txs: Vec<Bytes> = vec![];
+    let mut to_txs: Vec<Bytes> = vec![];
+    let mut from_tokens: Vec<Address> = vec![];
+    let mut to_tokens: Vec<Address> = vec![];
+
+    for transaction in block_with_txs.transactions {
+        let transaction_from = transaction.from;
+        let transaction_to = transaction.to.unwrap();
+        let transaction_value = transaction.value;
+
+        // ETH
+        if !transaction_value.is_zero() {
+            // out \ in
+            if transaction_from == valid_tx_from || transaction_to == valid_tx_from {
+                from_txs.push(transaction.rlp());
+                if !from_tokens.contains(&get_zksync_era_eth_address()) {
+                    from_tokens.push(get_zksync_era_eth_address());
+                }
+            }
+            if transaction_from == valid_tx_to || transaction_to == valid_tx_to {
+                // out \ in
+                to_txs.push(transaction.rlp());
+                if !to_tokens.contains(&get_zksync_era_eth_address()) {
+                    to_tokens.push(get_zksync_era_eth_address());
+                }
+            }
+        } else if is_erc20_transaction(transaction.input.clone()) {//非ETH交易
+            let erc20_address = transaction.to.unwrap();
+            let transaction_erc20 = decode_input(transaction.input.clone()).unwrap();
+            let transaction_erc20_to = transaction_erc20.get(0).unwrap().clone().into_address().unwrap();
+            // out \ in
+            if transaction_from == valid_tx_from || transaction_erc20_to == valid_tx_from {
+                from_txs.push(transaction.rlp());
+                if !from_tokens.contains(&erc20_address) {
+                    from_tokens.push(erc20_address);
+                }
+            }
+            if transaction_from == valid_tx_to || transaction_erc20_to == valid_tx_to {
+                to_txs.push(transaction.rlp());
+                if !to_tokens.contains(&erc20_address) {
+                    to_tokens.push(erc20_address);
+                }
+            }
+        }
+    }
+
+    let from_validate_index = from_txs.iter().position(|tx_rlp|tx_rlp.clone()==valid_tx.rlp()).unwrap();
+    let to_validate_index = to_txs.iter().position(|tx_rlp|tx_rlp.clone()==valid_tx.rlp()).unwrap();
+
+    let pre_block_id = Option::from(BlockId::from(valid_tx_block_number.sub(1)));
+    let now_block_id = Option::from(BlockId::from(valid_tx_block_number));
+
+    let from_nonce_location = calculate_storage_mapping_key(get_zksync_era_nonce_holder_contract_layout(), valid_tx_from);
+    let to_nonce_location = calculate_storage_mapping_key(get_zksync_era_nonce_holder_contract_layout(), valid_tx_to);
+
+    let from_nonce_slots = (
+        rt.block_on(provider.get_storage_at(get_zksync_era_nonce_holder_contract_address(), from_nonce_location, pre_block_id)).unwrap(),
+        rt.block_on(provider.get_storage_at(get_zksync_era_nonce_holder_contract_address(), from_nonce_location, now_block_id)).unwrap()
+    );
+
+    let to_nonce_slots=(
+        rt.block_on(provider.get_storage_at(get_zksync_era_nonce_holder_contract_address(), to_nonce_location, pre_block_id)).unwrap(),
+        rt.block_on(provider.get_storage_at(get_zksync_era_nonce_holder_contract_address(), to_nonce_location, now_block_id)).unwrap()
+    );
+
+    let mut get_amount_slots = |tokens:Vec<Address>,storage_key:Address|{
+        let amount_slots:Vec<(Address,H256,H256)> = tokens.into_iter().map(|token_address|{
+            let token_layout = get_zksync_era_token_layout_by_address(token_address).unwrap();
+            let token_location = calculate_storage_mapping_key(token_layout, storage_key);
+            let to_amount_pre_block_slot = rt.block_on(provider.get_storage_at(token_address, token_location, pre_block_id)).unwrap();
+            let to_amount_now_block_slot = rt.block_on(provider.get_storage_at(token_address, token_location, now_block_id)).unwrap();
+            (token_address,to_amount_pre_block_slot, to_amount_now_block_slot)
+        })
+            .collect();
+        amount_slots
+    };
+
+    let from_amount_slots =get_amount_slots(from_tokens,valid_tx_from);
+    let to_amount_slots =get_amount_slots(to_tokens,valid_tx_to);
+
+    ZkSyncBlockTransactionInput {
+        from_input: ZkSyncTransactionsInput {
+            validate_index: from_validate_index as u64,
+            txs: from_txs,
+            nonce_slots: from_nonce_slots,
+            amount_slots: from_amount_slots,
+        },
+        to_input: ZkSyncTransactionsInput {
+            validate_index: to_validate_index as u64,
+            txs: to_txs,
+            nonce_slots: to_nonce_slots,
+            amount_slots: to_amount_slots,
+        },
+    }
+}
+
 
 pub fn is_assigned_slot(key: &H256, proof: &[Bytes]) -> bool {
     let mut key_nibbles = Vec::new();

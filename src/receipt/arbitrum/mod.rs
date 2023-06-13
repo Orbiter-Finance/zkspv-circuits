@@ -14,7 +14,7 @@ use crate::block_header::arbitrum::{EthBlockHeaderChip, EthBlockHeaderTrace, Eth
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::mpt::{AssignedBytes, MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
 use crate::providers::get_receipt_field_rlp;
-use crate::r#type::{TX_RECEIPT_FIELD, TX_STATUS_SUCCESS};
+use crate::constant::{TX_RECEIPT_FIELD, TX_STATUS_SUCCESS};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
@@ -353,7 +353,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
             non_prefix_bytes = receipt_proofs.value_bytes[1..].to_vec();
         }
 
-        let non_prefix_bytes_u8 = bytes_to_vec_u8(&non_prefix_bytes, None);
+        let non_prefix_bytes_u8 = bytes_to_vec_u8(&non_prefix_bytes);
 
         // Generate rlp encoding for specific fields and generate a witness
         let dest_value_bytes = get_receipt_field_rlp(&non_prefix_bytes_u8, 4, TX_RECEIPT_FIELD);

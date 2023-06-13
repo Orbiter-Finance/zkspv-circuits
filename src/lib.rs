@@ -3,6 +3,8 @@
 #![feature(return_position_impl_trait_in_trait)]
 #![allow(incomplete_features)]
 
+extern crate core;
+
 use std::env::{set_var, var};
 
 use halo2_base::{
@@ -40,10 +42,11 @@ pub mod track_block;
 
 #[cfg(feature = "providers")]
 pub mod providers;
-pub mod r#type;
+pub mod constant;
 
 
 pub mod proof;
+pub mod config;
 
 
 pub(crate) const ETH_LOOKUP_BITS: usize = 8; // always want 8 to range check bytes
@@ -82,6 +85,7 @@ pub enum Network {
     Ethereum(EthereumNetwork),
     Arbitrum(ArbitrumNetwork),
     Optimism(OptimismNetwork),
+    ZkSync(ZkSyncEraNetwork),
 }
 
 impl std::fmt::Display for Network {
@@ -103,6 +107,12 @@ impl std::fmt::Display for Network {
                 match optimism_network {
                     OptimismNetwork::Mainnet => write!(f, "optimism mainnet"),
                     OptimismNetwork::Goerli => write!(f, "optimism goerli"),
+                }
+            }
+            Network::ZkSync(optimism_network) => {
+                match optimism_network {
+                    ZkSyncEraNetwork::Mainnet => write!(f, "zkSync mainnet"),
+                    ZkSyncEraNetwork::Goerli => write!(f, "zkSync goerli"),
                 }
             }
         }

@@ -29,6 +29,7 @@ pub mod circuit;
 #[cfg(feature = "aggregation")]
 pub mod scheduler;
 pub mod helpers;
+pub mod contract_abi;
 
 pub(crate) const NUM_BYTES_IN_U128: usize = 16;
 

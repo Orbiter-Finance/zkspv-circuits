@@ -11,10 +11,10 @@ use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
 use crate::block_header::ethereum::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness};
+use crate::constant::EIP_1559_TX_TYPE_FIELD;
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::mpt::{MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
 use crate::providers::get_transaction_field_rlp;
-use crate::r#type::EIP_1559_TX_TYPE_FIELD;
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
@@ -191,7 +191,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             ctx.constrain_equal(pf_root, root);
         }
 
-        let  transaction_rlp_bytes;
+        let transaction_rlp_bytes;
 
         let transaction_value_prefix = transaction_proofs.value_bytes.first().unwrap();
         let transaction_type = get_transaction_type(ctx, transaction_value_prefix);
@@ -200,7 +200,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             // Todo: Identify nested lists
             let non_prefix_bytes = transaction_proofs.value_bytes[1..].to_vec();
 
-            let non_prefix_bytes_u8 = bytes_to_vec_u8(&non_prefix_bytes, None);
+            let non_prefix_bytes_u8 = bytes_to_vec_u8(&non_prefix_bytes);
 
             // Generate rlp encoding for specific fields and generate a witness
             let dest_value_bytes = get_transaction_field_rlp(transaction_type, &non_prefix_bytes_u8, 12, EIP_1559_TX_TYPE_FIELD);

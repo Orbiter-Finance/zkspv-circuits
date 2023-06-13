@@ -10,11 +10,11 @@ use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
-use crate::block_header::optimism::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness};
+use crate::block_header::ethereum::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness};
+use crate::constant::{TX_RECEIPT_FIELD, TX_STATUS_SUCCESS};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::mpt::{AssignedBytes, MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
-use crate::providers::get_receipt_field_rlp;
-use crate::constant::{TX_RECEIPT_FIELD, TX_STATUS_SUCCESS};
+use crate::providers::{get_block_storage_input_receipt, get_receipt_field_rlp};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
@@ -84,9 +84,7 @@ impl EthBlockReceiptCircuit {
         receipt_pf_max_depth: usize,
         network: Network,
     ) -> Self {
-        use crate::providers::get_optimism_receipt;
-
-        let inputs = get_optimism_receipt(
+        let inputs = get_block_storage_input_receipt(
             provider,
             block_number,
             receipt_index,
@@ -284,7 +282,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         let max_len = get_block_header_rlp_max_bytes(&network);
         block_header.resize(max_len, 0);
 
-        let block_witness= self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
+        let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
         let receipts_root = &block_witness.get("receipts_root").field_cells;
         let block_hash_hi_lo = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
 
@@ -370,6 +368,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
             &[8, 8, 256],//Maximum number of bytes per field. For example, the uint64 is 8 bytes.
             false,
         );
+
 
         // minus the length of the removed prefix
         // array_witness.rlp_len = self.gate().sub(ctx,array_witness.rlp_len,Constant(F::one()));

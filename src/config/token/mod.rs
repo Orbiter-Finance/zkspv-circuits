@@ -1,0 +1,1 @@
+pub mod zksync_era_token;
