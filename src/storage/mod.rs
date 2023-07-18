@@ -29,7 +29,6 @@ use rayon::prelude::*;
 use std::{cell::RefCell, env::var};
 use crate::util::helpers::get_block_header_rlp_max_bytes;
 
-pub mod helpers;
 #[cfg(all(test, feature = "providers"))]
 mod tests;
 

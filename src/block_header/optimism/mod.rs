@@ -28,7 +28,6 @@ use crate::util::helpers::{get_block_header_rlp_max_bytes, get_optimism_block_he
 #[cfg(feature = "aggregation")]
 pub mod aggregation;
 #[cfg(all(feature = "aggregation", feature = "providers"))]
-pub mod helpers;
 #[cfg(test)]
 mod tests;
 
@@ -638,7 +637,7 @@ impl<F: Field> EthBlockHeaderChainCircuit<F> {
         max_depth: usize,
     ) -> Self {
         let header_rlp_max_bytes = get_block_header_rlp_max_bytes(&network);
-        let (mut block_rlps, _) =
+        let mut block_rlps =
             crate::providers::get_blocks_input(provider, start_block_number, num_blocks, max_depth);
         for block_rlp in block_rlps.iter_mut() {
             block_rlp.resize(header_rlp_max_bytes, 0u8);

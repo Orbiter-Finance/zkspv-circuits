@@ -119,8 +119,8 @@ pub fn get_mainnet_block_header_rlp_max_field_lens(network: &Network) -> [usize;
     max_field_lens
 }
 
-pub fn get_arbitrum_block_header_rlp_max_field_lens(network: &Network) -> [usize; 16] {
-    let mut max_field_lens = [0; 16];
+pub fn get_arbitrum_block_header_rlp_max_field_lens(network: &Network) -> [usize; 17] {
+    let mut max_field_lens = [0; 17];
     if let Network::Arbitrum(arbitrum_network) = network {
         max_field_lens = match arbitrum_network {
             ArbitrumNetwork::Mainnet => ARBITRUM_MAINNET_HEADER_FIELDS_MAX_BYTES,
@@ -197,5 +197,9 @@ pub fn load_bytes<F: Field>(ctx: &mut Context<F>, bytes: &[u8]) -> Vec<AssignedV
 pub fn calculate_storage_mapping_key(mapping_layout: H256, address: Address) -> H256 {
     let internal_bytes = [H256::from(address).to_fixed_bytes(), mapping_layout.to_fixed_bytes()].concat();
     H256::from(keccak256(internal_bytes))
+}
+
+pub fn array_to_slice_with_4<F: Field>(array: Vec<AssignedValue<F>>) -> [AssignedValue<F>; 4] {
+    array.try_into().expect("slice with incorrect length")
 }
 

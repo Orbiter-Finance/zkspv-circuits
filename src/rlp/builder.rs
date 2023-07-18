@@ -7,7 +7,7 @@ use std::{
 use halo2_base::{
     gates::{
         builder::{
-            assign_threads_in, FlexGateConfigParams, GateThreadBuilder,
+            assign_threads_in, CircuitBuilderStage, FlexGateConfigParams, GateThreadBuilder,
             KeygenAssignments as GateKeygenAssignments, MultiPhaseThreadBreakPoints,
             ThreadBreakPoints,
         },
@@ -20,6 +20,8 @@ use halo2_base::{
     utils::ScalarField,
     Context,
 };
+use itertools::Itertools;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::rlc::{RlcChip, RlcConfig, RlcContextPair, FIRST_PHASE, RLC_PHASE};
@@ -57,6 +59,10 @@ impl<F: ScalarField> RlcThreadBuilder<F> {
             witness_gen_only = false;
         }
         Self { threads_rlc: Vec::new(), gate_builder: GateThreadBuilder::new(witness_gen_only) }
+    }
+
+    pub fn from_stage(stage: CircuitBuilderStage) -> Self {
+        Self::new(stage == CircuitBuilderStage::Prover)
     }
 
     pub fn mock() -> Self {
@@ -130,7 +136,7 @@ impl<F: ScalarField> RlcThreadBuilder<F> {
                 .chain(self.threads_rlc.iter())
                 .flat_map(|ctx| ctx.constant_equality_constraints.iter().map(|(c, _)| *c)),
         )
-        .len();
+            .len();
         let num_fixed = (total_fixed + (1 << k) - 1) >> k;
         // assemble into new config params
         let params = EthConfigParams {
@@ -167,7 +173,7 @@ impl<F: ScalarField> RlcThreadBuilder<F> {
             mut break_points,
         }: KeygenAssignments<F>,
     ) -> KeygenAssignments<F> {
-        // assert!(!self.witness_gen_only());
+        assert!(!self.witness_gen_only());
         if rlc.basic_gates.is_empty() {
             return KeygenAssignments { assigned_advices, assigned_constants, break_points };
         }
@@ -181,14 +187,14 @@ impl<F: ScalarField> RlcThreadBuilder<F> {
         for ctx in self.threads_rlc.iter() {
             // TODO: if we have more similar vertical gates this should be refactored into a general function
             for (i, (&advice, &q)) in
-                ctx.advice.iter().zip(ctx.selector.iter().chain(iter::repeat(&false))).enumerate()
+            ctx.advice.iter().zip(ctx.selector.iter().chain(iter::repeat(&false))).enumerate()
             {
                 let (mut column, mut q_rlc) = basic_gate;
                 let value = if use_unknown { Value::unknown() } else { Value::known(advice) };
                 #[cfg(feature = "halo2-axiom")]
-                let cell = *region.assign_advice(column, row_offset, value).cell();
+                    let cell = *region.assign_advice(column, row_offset, value).cell();
                 #[cfg(not(feature = "halo2-axiom"))]
-                let cell =
+                    let cell =
                     region.assign_advice(|| "", column, row_offset, || value).unwrap().cell();
                 assigned_advices.insert((ctx.context_id, i), (cell, row_offset));
 
@@ -354,4 +360,42 @@ pub fn assign_prover_phase1<F: ScalarField>(
 
     let threads_rlc = mem::take(&mut builder.threads_rlc);
     assign_threads_rlc(threads_rlc, rlc_config, region, break_points_rlc);
+}
+
+/// Utility function to parallelize an operation involving RLC. This should be called in SecondPhase.
+///
+/// **Warning:** if `f` calls `rlc.load_rlc_cache`, then this call must be done *before* calling `parallelize_phase1`.
+/// Otherwise the cells where the rlc_cache gets stored will be different depending on which thread calls it first,
+/// leading to non-deterministic behavior.
+pub fn parallelize_phase1<F, T, R, FR>(
+    thread_pool: &mut RlcThreadBuilder<F>,
+    input: Vec<T>,
+    f: FR,
+) -> Vec<R>
+    where
+        F: ScalarField,
+        T: Send,
+        R: Send,
+        FR: Fn(RlcContextPair<F>, T) -> R + Send + Sync,
+{
+    let witness_gen_only = thread_pool.witness_gen_only();
+    let ctx_ids = input
+        .iter()
+        .map(|_| (thread_pool.get_new_thread_id(), thread_pool.get_new_thread_id()))
+        .collect_vec();
+    let (trace, ctxs): (Vec<_>, Vec<_>) = input
+        .into_par_iter()
+        .zip(ctx_ids.into_par_iter())
+        .map(|(input, (gate_id, rlc_id))| {
+            let mut ctx_gate = Context::new(witness_gen_only, gate_id);
+            let mut ctx_rlc = Context::new(witness_gen_only, rlc_id);
+            let trace = f((&mut ctx_gate, &mut ctx_rlc), input);
+            (trace, (ctx_gate, ctx_rlc))
+        })
+        .unzip();
+    let (mut ctxs_gate, mut ctxs_rlc): (Vec<_>, Vec<_>) = ctxs.into_iter().unzip();
+    thread_pool.gate_builder.threads[RLC_PHASE].append(&mut ctxs_gate);
+    thread_pool.threads_rlc.append(&mut ctxs_rlc);
+
+    trace
 }

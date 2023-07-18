@@ -3,9 +3,8 @@
 #![feature(return_position_impl_trait_in_trait)]
 #![allow(incomplete_features)]
 
-extern crate core;
-
 use std::env::{set_var, var};
+use ark_std::{end_timer, start_timer};
 
 use halo2_base::{
     AssignedValue,
@@ -14,9 +13,13 @@ use halo2_base::{
         self,
         circuit::{Layouter, SimpleFloorPlanner},
         plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
+        halo2curves::bn256::{Bn256, Fr, G1Affine},
+        poly::{commitment::Params, kzg::commitment::ParamsKZG},
     },
 };
+use halo2_base::gates::builder::{CircuitBuilderStage, MultiPhaseThreadBreakPoints};
 use serde::{Deserialize, Serialize};
+use snark_verifier_sdk::halo2::aggregation::AggregationCircuit;
 use zkevm_keccak::KeccakConfig;
 pub use zkevm_keccak::util::eth_types::Field;
 
@@ -47,6 +50,8 @@ pub mod constant;
 
 pub mod proof;
 pub mod config;
+mod new_block_header;
+mod new_receipt;
 
 
 pub(crate) const ETH_LOOKUP_BITS: usize = 8; // always want 8 to range check bytes
@@ -80,7 +85,7 @@ pub enum ZkSyncEraNetwork {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-// #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+// #[cfg_attr(feature = "clap", circuit_derive(clap::ValueEnum))]
 pub enum Network {
     Ethereum(EthereumNetwork),
     Arbitrum(ArbitrumNetwork),
@@ -277,5 +282,78 @@ for EthCircuitBuilder<F, FnPhase1>
     }
     fn instances(&self) -> Vec<Vec<F>> {
         vec![self.instance()]
+    }
+}
+
+/// Trait for objects that can be used to create an [`EthCircuitBuilder`] instantiation.
+pub trait EthPreCircuit: Sized {
+    /// Creates a circuit without auto-configuring it.
+    fn create(
+        self,
+        builder: RlcThreadBuilder<Fr>,
+        break_points: Option<RlcThreadBreakPoints>,
+    ) -> EthCircuitBuilder<Fr, impl FnSynthesize<Fr>>;
+
+    /// If feature 'production' is on, this is the same as `create`. Otherwise, it will read `ETH_CONFIG_PARAMS`
+    /// from the environment to determine the desired circuit degree and number of unusable rows and then auto-configure
+    /// the circuit and set environmental variables.
+    fn create_circuit(
+        self,
+        builder: RlcThreadBuilder<Fr>,
+        break_points: Option<RlcThreadBreakPoints>,
+    ) -> EthCircuitBuilder<Fr, impl FnSynthesize<Fr>> {
+        let prover = builder.witness_gen_only();
+        #[cfg(feature = "display")]
+            let start = start_timer!(|| "EthPreCircuit: create_circuit");
+        let circuit = self.create(builder, break_points);
+        #[cfg(feature = "display")]
+        end_timer!(start);
+        #[cfg(not(feature = "production"))]
+        if !prover {
+            let config_params: EthConfigParams = serde_json::from_str(
+                var("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
+            )
+                .unwrap();
+            circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
+        }
+        circuit
+    }
+}
+
+/// Trait for objects that can be used to create a [`RangeWithInstanceCircuitBuilder`] instantiation.
+pub trait AggregationPreCircuit: Sized {
+    /// Creates a circuit without auto-configuring it.
+    ///
+    /// `params` should be the universal trusted setup for the present aggregation circuit.
+    /// We assume the trusted setup for the previous SNARKs is compatible with `params` in the sense that
+    /// the generator point and toxic waste `tau` are the same.
+    fn create(
+        self,
+        stage: CircuitBuilderStage,
+        break_points: Option<MultiPhaseThreadBreakPoints>,
+        lookup_bits: usize,
+        params: &ParamsKZG<Bn256>,
+    ) -> AggregationCircuit;
+
+    /// If feature 'production' is on, this is the same as `create`. Otherwise, it will determine the desired
+    /// circuit degree from `params.k()` and auto-configure the circuit and set environmental variables.
+    fn create_circuit(
+        self,
+        stage: CircuitBuilderStage,
+        break_points: Option<MultiPhaseThreadBreakPoints>,
+        lookup_bits: usize,
+        params: &ParamsKZG<Bn256>,
+    ) -> AggregationCircuit {
+        #[cfg(feature = "display")]
+            let start = start_timer!(|| "AggregationPreCircuit: create_circuit");
+        let circuit = self.create(stage, break_points, lookup_bits, params);
+        #[cfg(feature = "display")]
+        end_timer!(start);
+        #[cfg(not(feature = "production"))]
+        if stage != CircuitBuilderStage::Prover {
+            let minimum_rows = var("UNUSABLE_ROWS").map(|s| s.parse().unwrap_or(10)).unwrap_or(10);
+            circuit.config(params.k(), Some(minimum_rows));
+        }
+        circuit
     }
 }

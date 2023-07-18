@@ -8,11 +8,13 @@ use std::{
     path::Path,
 };
 use std::ops::{Not, Sub};
+use std::path::PathBuf;
 
 use ethers_core::types::{Address, Block, BlockId, BlockId::Number, BlockNumber, Bloom, Bytes, EIP1186ProofResponse, Eip1559TransactionRequest, H256, NameOrAddress, StorageProof, Transaction, U256, U64};
 use ethers_core::utils::hex::FromHex;
 use ethers_core::utils::keccak256;
-use ethers_providers::{Http, Middleware, Provider, StreamExt};
+use ethers_providers::{Http, Middleware, Provider, ProviderError, StreamExt};
+use futures::future::{join, join_all};
 // use halo2_mpt::mpt::{max_branch_lens, max_leaf_lens};
 use itertools::Itertools;
 use lazy_static::__Deref;
@@ -686,37 +688,36 @@ pub fn get_blocks_input(
     start_block_number: u32,
     num_blocks: u32,
     max_depth: usize,
-) -> (Vec<Vec<u8>>, EthBlockHeaderChainInstance) {
+) -> Vec<Vec<u8>> {
     assert!(num_blocks <= (1 << max_depth));
-    fs::create_dir_all("./data/headers").unwrap();
+    assert!(num_blocks > 0);
+    let chain_data_dir = PathBuf::from("data/chain");
+    fs::create_dir_all(&chain_data_dir).unwrap();
     let end_block_number = start_block_number + num_blocks - 1;
     let rt = Runtime::new().unwrap();
     let chain_id = rt.block_on(provider.get_chainid()).unwrap();
-    let path = format!(
-        "./data/headers/chainid{chain_id}_{start_block_number:06x}_{end_block_number:06x}.json"
-    );
-
-    let ProcessedBlock { mut block_rlps, block_hashes, prev_hash } =
-        if let Ok(f) = File::open(path.as_str()) {
+    let path = chain_data_dir
+        .join(format!("chainid{chain_id}_{start_block_number:06x}_{end_block_number:06x}.json"));
+    // block_hashes and prev_hash no longer used, but keeping this format for compatibility with old cached chaindata
+    let ProcessedBlock { mut block_rlps, block_hashes: _, prev_hash: _ } =
+        if let Ok(f) = File::open(&path) {
             serde_json::from_reader(f).unwrap()
         } else {
-            let mut block_rlps = Vec::with_capacity(max_depth);
-            let mut block_hashes = Vec::with_capacity(num_blocks as usize);
-            let mut prev_hash = H256::zero();
-
-            for block_number in start_block_number..start_block_number + num_blocks {
-                let block = rt
-                    .block_on(provider.get_block(block_number as u64))
-                    .expect("get_block JSON-RPC call")
-                    .unwrap_or_else(|| panic!("block {block_number} should exist"));
-                if block_number == start_block_number {
-                    prev_hash = block.parent_hash;
-                }
-                block_hashes.push(block.hash.unwrap());
-                block_rlps.push(get_block_rlp(&block));
-            }
+            let blocks = get_blocks(
+                provider,
+                start_block_number as u64..(start_block_number + num_blocks) as u64,
+            )
+                .unwrap_or_else(|e| panic!("get_blocks JSON-RPC call failed: {e}"));
+            let prev_hash = blocks[0].as_ref().expect("block not found").parent_hash;
+            let (block_rlps, block_hashes): (Vec<_>, Vec<_>) = blocks
+                .into_iter()
+                .map(|block| {
+                    let block = block.expect("block not found");
+                    (get_block_rlp(&block), block.hash.unwrap())
+                })
+                .unzip();
             // write this to file
-            let file = File::create(path.as_str()).unwrap();
+            let file = File::create(&path).unwrap();
             let payload = ProcessedBlock { block_rlps, block_hashes, prev_hash };
             serde_json::to_writer(file, &payload).unwrap();
             payload
@@ -725,7 +726,7 @@ pub fn get_blocks_input(
     let dummy_block_rlp = block_rlps[0].clone();
     block_rlps.resize(1 << max_depth, dummy_block_rlp);
 
-    let end_hash = *block_hashes.last().unwrap();
+    /*let end_hash = *block_hashes.last().unwrap();
     let mmr = get_merkle_mountain_range(&block_hashes, max_depth);
 
     let instance = EthBlockHeaderChainInstance::new(
@@ -734,8 +735,20 @@ pub fn get_blocks_input(
         start_block_number,
         end_block_number,
         mmr,
-    );
-    (block_rlps, instance)
+    );*/
+    block_rlps
+}
+
+pub fn get_blocks(
+    provider: &Provider<Http>,
+    block_numbers: impl IntoIterator<Item = u64>,
+) -> Result<Vec<Option<Block<H256>>>, ProviderError> {
+    let rt = Runtime::new().unwrap();
+    rt.block_on(join_all(
+        block_numbers.into_iter().map(|block_number| provider.get_block(block_number)),
+    ))
+        .into_iter()
+        .collect()
 }
 
 #[cfg(test)]

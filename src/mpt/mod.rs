@@ -393,7 +393,7 @@ impl MPTUnFixedKeyInput {
 }
 
 /* // TODO
-#[derive(Clone, Debug)]
+#[circuit_derive(Clone, Debug)]
 pub struct MPTVarKeyProof<F: Field> {
     // claim specification
     key_bytes: AssignedBytes<F>,

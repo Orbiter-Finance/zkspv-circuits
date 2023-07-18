@@ -29,7 +29,6 @@ use crate::util::helpers::{get_arbitrum_block_header_rlp_max_field_lens, get_blo
 pub mod aggregation;
 
 #[cfg(all(feature = "aggregation", feature = "providers"))]
-pub mod helpers;
 #[cfg(test)]
 mod tests;
 
@@ -45,15 +44,15 @@ const ARBITRUM_BLOCK_HEADER_RLP_MIN_BYTES: usize = 479;
 ///
 /// Provided that the total length is < 256^2, this will be 1 + 2 + sum(max RLP byte length of each field)
 pub const ARBITRUM_MAINNET_BLOCK_HEADER_RLP_MAX_BYTES: usize =
-    1 + 2 + (521 + ARBITRUM_MAINNET_EXTRA_DATA_RLP_MAX_BYTES);
+    1 + 2 + (521 + ARBITRUM_MAINNET_EXTRA_DATA_RLP_MAX_BYTES+33);
 pub const ARBITRUM_GOERLI_BLOCK_HEADER_RLP_MAX_BYTES: usize =
-    1 + 2 + (521 + ARBITRUM_GOERLI_EXTRA_DATA_RLP_MAX_BYTES);
+    1 + 2 + (521 + ARBITRUM_GOERLI_EXTRA_DATA_RLP_MAX_BYTES+33);
 
-const ARBITRUM_NUM_BLOCK_HEADER_FIELDS: usize = 16;
+const ARBITRUM_NUM_BLOCK_HEADER_FIELDS: usize = 17;
 pub const ARBITRUM_MAINNET_HEADER_FIELDS_MAX_BYTES: [usize; ARBITRUM_NUM_BLOCK_HEADER_FIELDS] =
-    [32, 32, 20, 32, 32, 32, 256, 7, 4, 7, 4, 4, ARBITRUM_MAINNET_EXTRA_DATA_MAX_BYTES, 32, 8, 6];
+    [32, 32, 20, 32, 32, 32, 256, 7, 4, 7, 4, 4, ARBITRUM_MAINNET_EXTRA_DATA_MAX_BYTES, 32, 8, 6,32];
 pub const ARBITRUM_GOERLI_HEADER_FIELDS_MAX_BYTES: [usize; ARBITRUM_NUM_BLOCK_HEADER_FIELDS] =
-    [32, 32, 20, 32, 32, 32, 256, 7, 4, 7, 4, 4, ARBITRUM_GOERLI_EXTRA_DATA_MAX_BYTES, 32, 8, 6];
+    [32, 32, 20, 32, 32, 32, 256, 7, 4, 7, 4, 4, ARBITRUM_GOERLI_EXTRA_DATA_MAX_BYTES, 32, 8, 6,32];
 /// The maximum number of bytes it takes to represent a block number, without any RLP encoding.
 pub const ARBITRUM_BLOCK_NUMBER_MAX_BYTES: usize = ARBITRUM_MAINNET_HEADER_FIELDS_MAX_BYTES[8];
 
@@ -94,6 +93,7 @@ pub struct EthBlockHeaderTrace<F: Field> {
     pub mix_hash: RlpFieldTrace<F>,
     pub nonce: RlpFieldTrace<F>,
     pub basefee: RlpFieldTrace<F>,
+    pub withdrawals_root: RlpFieldTrace<F>,
     // this is 0 (or undefined) for pre-EIP1559 (London) blocks
     pub block_hash: RlcFixedTrace<F>,
 
@@ -238,7 +238,7 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
         let block_hash = self.keccak_var_len_rlcs()[witness.block_hash_query_idx].1;
 
         // Base fee per unit gas only after London
-        let [parent_hash, ommers_hash, beneficiary, state_root, transactions_root, receipts_root, logs_bloom, difficulty, number, gas_limit, gas_used, timestamp, extra_data, mix_hash, nonce, basefee]: [RlpFieldTrace<F>; ARBITRUM_NUM_BLOCK_HEADER_FIELDS] =
+        let [parent_hash, ommers_hash, beneficiary, state_root, transactions_root, receipts_root, logs_bloom, difficulty, number, gas_limit, gas_used, timestamp, extra_data, mix_hash, nonce, basefee,withdrawals_root]: [RlpFieldTrace<F>; ARBITRUM_NUM_BLOCK_HEADER_FIELDS] =
             trace.field_trace.try_into().unwrap();
 
         EthBlockHeaderTrace {
@@ -258,6 +258,7 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
             mix_hash,
             nonce,
             basefee,
+            withdrawals_root,
             block_hash,
             len_trace: trace.len_trace,
         }
@@ -637,7 +638,7 @@ impl<F: Field> EthBlockHeaderChainCircuit<F> {
         max_depth: usize,
     ) -> Self {
         let header_rlp_max_bytes = get_block_header_rlp_max_bytes(&network);
-        let (mut block_rlps, _) =
+        let mut block_rlps =
             crate::providers::get_blocks_input(provider, start_block_number, num_blocks, max_depth);
         for block_rlp in block_rlps.iter_mut() {
             block_rlp.resize(header_rlp_max_bytes, 0u8);

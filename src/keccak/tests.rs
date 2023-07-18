@@ -53,11 +53,11 @@ fn test_keccak_circuit<F: Field>(
         let bytes = input.to_vec();
         let mut bytes_assigned =
             ctx.assign_witnesses(bytes.iter().map(|byte| F::from(*byte as u64)));
-        let len = if var_len { rng.gen_range(0..bytes.len()) } else { bytes.len() };
+        let len =
+            if var_len && !bytes.is_empty() { rng.gen_range(0..bytes.len()) } else { bytes.len() };
         for byte in bytes_assigned[len..].iter_mut() {
             *byte = ctx.load_zero();
         }
-
 
         let len = ctx.load_witness(F::from(len as u64));
 
@@ -66,7 +66,6 @@ fn test_keccak_circuit<F: Field>(
         } else {
             keccak.borrow_mut().keccak_fixed_len(ctx, &range.gate, bytes_assigned, Some(bytes))
         };
-
     }
     let circuit = KeccakCircuitBuilder::new(
         builder,
@@ -89,19 +88,18 @@ pub fn test_keccak() {
     let _ = env_logger::builder().is_test(true).try_init();
 
     let k: u32 = var("KECCAK_DEGREE").unwrap_or_else(|_| "14".to_string()).parse().unwrap();
-    let hex_bytes = "f90222a07cd80cb26435972cabd899459015887fb26d40b3c92b5f97fc0dccc563bf9f04a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d4934794000095e79eac4d76aab57cb2c1f091d553b36ca0a09b1438b846d015f375417c75c20d1d1110c40d80ce97936481dbb0558363c878a09e2b33afc4ffe3856f2c980be6d3694096bc2411fa08e463b1382f5e28cad052a04e4648f62e85e191e06b15c2e264d17a446f5c988679a9c39486f65bb5e8c572b901000020044045004200001224008411008410094400680140122009001008000114408230040204220210073000214584846080000400da41620200129c80240448604140000c70000048088009002c8320680400102100b0048012c94080888040000540004282a080003202a4420409000c80001010484001003c14108c0810001342202400e04308804210104010000200000483681a1148b0010146926000541600004451001231104011022800000220000202002402048382018b00a01000002050034a002c0c04120041252a4144014810004000021023992000000239201810102400000214882001388000004c090e1810100100401042c00050004001808386007f8401c9c38083661f1284642e516480a07e21f2e4c711cd0e853fe65f469efd34a226239f5fe95a2d00f6fff636024cba8800000000000000008506caefa64ca0977a99d4b4fc493b053e10cac8a49aeb5913e7738f306929191e1a77b08b05a8";
-    let  block_header_bytes = hex::decode(hex_bytes).unwrap();
     let inputs = vec![
-        block_header_bytes
-        // (0u8..1).collect::<Vec<_>>(),
-        // (0u8..135).collect::<Vec<_>>(),
-        // (0u8..136).collect::<Vec<_>>(),
-        // (0u8..1000).collect::<Vec<_>>(),
+        vec![],
+        (0u8..1).collect::<Vec<_>>(),
+        (0u8..135).collect::<Vec<_>>(),
+        (0u8..136).collect::<Vec<_>>(),
+        (0u8..200).collect::<Vec<_>>(),
     ];
-    // let circuit = test_keccak_circuit(k, RlcThreadBuilder::mock(), inputs.clone(), false);
-    // MockProver::<Fr>::run(k, &circuit, vec![]).unwrap().assert_satisfied();
-    // println!("Fixed len keccak passed");
-    let circuit = test_keccak_circuit(k, RlcThreadBuilder::mock(), inputs, false);
+    let circuit = test_keccak_circuit(k, RlcThreadBuilder::mock(), inputs.clone(), false);
+    MockProver::<Fr>::run(k, &circuit, vec![]).unwrap().assert_satisfied();
+    println!("Fixed len keccak passed");
+
+    let circuit = test_keccak_circuit(k, RlcThreadBuilder::mock(), inputs, true);
     MockProver::<Fr>::run(k, &circuit, vec![]).unwrap().assert_satisfied();
     println!("Var len keccak passed");
 }
@@ -124,9 +122,9 @@ fn bench_keccak() {
     std::fs::create_dir_all("data/bench").unwrap();
     let mut fs_results = File::create("data/bench/keccak.csv").unwrap();
     writeln!(
-            fs_results,
-            "degree,advice_columns,unusable_rows,rows_per_round,keccak_f/s,num_keccak_f,proof_time,proof_size,verify_time"
-        )
+        fs_results,
+        "degree,advice_columns,unusable_rows,rows_per_round,keccak_f/s,num_keccak_f,proof_time,proof_size,verify_time"
+    )
         .unwrap();
 
     let bench_params_reader = BufReader::new(bench_params_file);
@@ -168,7 +166,7 @@ fn bench_keccak() {
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
             _,
         >(&params, &pk, &[circuit], &[&[]], OsRng, &mut transcript)
-        .unwrap();
+            .unwrap();
         let proof = transcript.finalize();
         end_timer!(proof_time);
 
@@ -183,7 +181,7 @@ fn bench_keccak() {
             Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
             SingleStrategy<'_, Bn256>,
         >(verifier_params, pk.get_vk(), strategy, &[&[]], &mut transcript)
-        .unwrap();
+            .unwrap();
         end_timer!(verify_time);
 
         let auto_params: EthConfigParams =
@@ -204,6 +202,6 @@ fn bench_keccak() {
             proof_time.time.elapsed().as_secs_f64(),
             verify_time.time.elapsed()
         )
-        .unwrap();
+            .unwrap();
     }
 }

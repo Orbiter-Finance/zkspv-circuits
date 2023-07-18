@@ -42,8 +42,6 @@ pub fn witness_subarray<F: ScalarField>(
 ) -> Vec<AssignedValue<F>> {
     // `u32` should be enough for array indices
     let [start_id, sub_len] = [start_id, sub_len].map(|fe| fe.get_lower_32() as usize);
-    // println!("sub_len: {:?}", sub_len);
-    // println!("max_len: {:?}", max_len);
     debug_assert!(sub_len <= max_len);
     ctx.assign_witnesses(
         array[start_id..start_id + sub_len]
@@ -324,8 +322,8 @@ impl<'range, F: ScalarField> RlpChip<'range, F> {
         //
         // * rlp_field_rlc.rlc_len = 1 + len_rlc.rlc_len + field_rlc.rlc_len
         // * len_rlc.rlc_len = prefix_parsed.is_big * prefix_parsed.next_len
-        // * field_rlc.rlc_len = prefix_parsed.is_big * prefix_parsed.next_len
-        //                       + (1 - prefix_parsed.is_big) * byte_value(len)
+        // * field_rlc.rlc_len = (1 - prefix_parsed.is_big) * prefix_parsed.next_len
+        //                       + prefix_parsed.is_big * byte_value(len)
         //
         // * rlp_field_rlc = accumulate(
         //                       [(prefix, 1),
@@ -484,7 +482,6 @@ impl<'range, F: ScalarField> RlpChip<'range, F> {
                 rlp_array.iter().copied().take(running_max_len + 1),
                 prefix_idx,
             );
-
             let prefix_parsed = self.parse_rlp_field_prefix(ctx, prefix);
 
             let mut len_len = prefix_parsed.len_len;
@@ -492,7 +489,6 @@ impl<'range, F: ScalarField> RlpChip<'range, F> {
             self.range.check_less_than_safe(ctx, len_len, (max_field_len_len + 1) as u64);
 
             let len_start_id = *prefix_parsed.is_not_literal.value() + prefix_idx.value();
-
             let len_cells = witness_subarray(
                 ctx,
                 &rlp_array,

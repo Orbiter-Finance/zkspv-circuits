@@ -284,7 +284,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         let max_len = get_block_header_rlp_max_bytes(&network);
         block_header.resize(max_len, 0);
 
-        let block_witness= self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
+        let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
         let receipts_root = &block_witness.get("receipts_root").field_cells;
         let block_hash_hi_lo = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
 
