@@ -23,12 +23,11 @@ use halo2_base::{
     },
     utils::fs::gen_srs,
 };
-use hex::FromHex;
+ use ethers_core::utils::hex::FromHex;
 use rand_core::OsRng;
 use std::{
     env::{set_var, var},
     fs::File,
-    marker::PhantomData,
 };
 use test_log::test;
 
@@ -47,7 +46,6 @@ fn block_header_test_circuit<F: Field>(
         &mut builder.gate_builder,
         &mut keccak.borrow_mut(),
         inputs,
-        network,
         &block_header_config
     );
 
@@ -62,7 +60,7 @@ fn block_header_test_circuit<F: Field>(
               keccak_rlcs: (FixedLenRLCs<F>, VarLenRLCs<F>)| {
             let chip = EthChip::new(rlp, Some(keccak_rlcs));
             let _block_chain_trace =
-                chip.decompose_block_header_chain_phase1(builder, chain_witness, None,&block_header_config);
+                chip.decompose_block_header_chain_phase1(builder, chain_witness, None);
         },
     );
     if !prover {

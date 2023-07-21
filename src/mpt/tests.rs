@@ -23,7 +23,7 @@ use halo2_base::{
     halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
     utils::fs::gen_srs,
 };
-use hex::FromHex;
+ use ethers_core::utils::hex::FromHex;
 use rand_core::OsRng;
 use std::{
     cell::RefCell,

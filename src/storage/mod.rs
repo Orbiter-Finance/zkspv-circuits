@@ -1,21 +1,12 @@
-use crate::{
-    block_header::ethereum::{
-        EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness,
-    },
-    keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs},
-    mpt::{AssignedBytes, MPTFixedKeyInput, MPTFixedKeyProof, MPTFixedKeyProofWitness},
-    rlp::{
-        builder::{RlcThreadBreakPoints, RlcThreadBuilder},
-        rlc::{RlcContextPair, RlcTrace, FIRST_PHASE, RLC_PHASE},
-        RlpArrayTraceWitness, RlpChip, RlpFieldTraceWitness, RlpFieldWitness,
-    },
-    util::{
-        bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, encode_addr_to_field,
-        encode_h256_to_field, encode_u256_to_field, uint_to_bytes_be, AssignedH256,
-        EthConfigParams,
-    },
-    EthChip, EthCircuitBuilder, Field, Network, ETH_LOOKUP_BITS,
-};
+use crate::{keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs}, mpt::{AssignedBytes, MPTFixedKeyInput, MPTFixedKeyProof, MPTFixedKeyProofWitness}, rlp::{
+    builder::{RlcThreadBreakPoints, RlcThreadBuilder},
+    rlc::{RlcContextPair, RlcTrace, FIRST_PHASE, RLC_PHASE},
+    RlpArrayTraceWitness, RlpChip, RlpFieldTraceWitness, RlpFieldWitness,
+}, util::{
+    bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, encode_addr_to_field,
+    encode_h256_to_field, encode_u256_to_field, uint_to_bytes_be, AssignedH256,
+    EthConfigParams,
+}, EthChip, EthCircuitBuilder, Field, Network, ETH_LOOKUP_BITS, EthPreCircuit};
 use ethers_core::types::{Address, Block, H256, U256};
 #[cfg(feature = "providers")]
 use ethers_providers::{Http, Provider};
@@ -23,11 +14,13 @@ use halo2_base::{
     gates::{builder::GateThreadBuilder, GateInstructions, RangeChip},
     utils::bit_length,
     AssignedValue, Context,
+    halo2_proofs::halo2curves::bn256::Fr,
 };
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::{cell::RefCell, env::var};
-use crate::util::helpers::get_block_header_rlp_max_bytes;
+use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, get_block_header_config};
+use crate::providers::get_storage_input;
 
 #[cfg(all(test, feature = "providers"))]
 mod tests;
@@ -149,7 +142,7 @@ pub trait EthStorageChip<F: Field> {
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
         input: EthBlockStorageInputAssigned<F>,
-        network: Network,
+        block_header_config: &BlockHeaderConfig,
     ) -> (EthBlockAccountStorageTraceWitness<F>, EIP1186ResponseDigest<F>)
     where
         Self: EthBlockHeaderChip<F>;
@@ -357,7 +350,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
         input: EthBlockStorageInputAssigned<F>,
-        network: Network,
+        block_header_config: &BlockHeaderConfig,
     ) -> (EthBlockAccountStorageTraceWitness<F>, EIP1186ResponseDigest<F>)
     where
         Self: EthBlockHeaderChip<F>,
@@ -365,16 +358,15 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         let ctx = thread_pool.main(FIRST_PHASE);
         let address = input.storage.address;
         let mut block_header = input.block_header;
-        let max_len =get_block_header_rlp_max_bytes(&network);
-        block_header.resize(max_len, 0);
-        let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
+        block_header.resize(block_header_config.block_header_rlp_max_bytes, 0);
+        let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header,block_header_config);
 
-        let state_root = &block_witness.get("state_root").field_cells;
+        let state_root = &block_witness.get_state_root().field_cells;
         let block_hash_hi_lo = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
 
         // compute block number from big-endian bytes
-        let block_num_bytes = &block_witness.get("number").field_cells;
-        let block_num_len = block_witness.get("number").field_len;
+        let block_num_bytes = &block_witness.get_number().field_cells;
+        let block_num_len = block_witness.get_number().field_len;
         let block_number =
             bytes_be_var_to_fixed(ctx, self.gate(), block_num_bytes, block_num_len, 4);
         let block_number = bytes_be_to_uint(ctx, self.gate(), &block_number, 4);
@@ -511,8 +503,8 @@ pub struct EthBlockStorageInputAssigned<F: Field> {
 
 #[derive(Clone, Debug)]
 pub struct EthBlockStorageCircuit {
-    pub inputs: EthBlockStorageInput, // public and private inputs
-    pub network: Network,
+    pub inputs: EthBlockStorageInput,
+    pub block_header_config: BlockHeaderConfig,
 }
 
 impl EthBlockStorageCircuit {
@@ -526,9 +518,8 @@ impl EthBlockStorageCircuit {
         storage_pf_max_depth: usize,
         network: Network,
     ) -> Self {
-        use crate::providers::get_block_storage_input;
 
-        let inputs = get_block_storage_input(
+        let inputs = get_storage_input(
             provider,
             block_number,
             address,
@@ -536,7 +527,8 @@ impl EthBlockStorageCircuit {
             acct_pf_max_depth,
             storage_pf_max_depth,
         );
-        Self { inputs, network }
+        let block_header_config = get_block_header_config(&network);
+        Self { inputs, block_header_config }
     }
 
     // MAYBE UNUSED
@@ -555,16 +547,16 @@ impl EthBlockStorageCircuit {
         }
         instance
     }
+}
 
-    pub fn create_circuit<F: Field>(
+impl EthPreCircuit for EthBlockStorageCircuit {
+    fn create(
         self,
-        mut builder: RlcThreadBuilder<F>,
+        mut builder: RlcThreadBuilder<Fr>,
         break_points: Option<RlcThreadBreakPoints>,
-    ) -> EthCircuitBuilder<F, impl FnSynthesize<F>> {
-        let prover = builder.witness_gen_only();
+    ) -> EthCircuitBuilder<Fr, impl FnSynthesize<Fr>> {
         let range = RangeChip::default(ETH_LOOKUP_BITS);
         let chip = EthChip::new(RlpChip::new(&range, None), None);
-
         let mut keccak = KeccakChip::default();
 
         // ================= FIRST PHASE ================
@@ -574,7 +566,7 @@ impl EthBlockStorageCircuit {
             &mut builder.gate_builder,
             &mut keccak,
             input,
-            self.network,
+            &self.block_header_config
         );
         let EIP1186ResponseDigest {
             block_hash,
@@ -596,34 +588,24 @@ impl EthBlockStorageCircuit {
         // For now this circuit is going to constrain that all slots are occupied. We can also create a circuit that exposes the bitmap of slot_is_empty
         {
             let ctx = builder.gate_builder.main(FIRST_PHASE);
-            range.gate.assert_is_const(ctx, &address_is_empty, &F::zero());
+            range.gate.assert_is_const(ctx, &address_is_empty, &Fr::zero());
             for slot_is_empty in slot_is_empty {
-                range.gate.assert_is_const(ctx, &slot_is_empty, &F::zero());
+                range.gate.assert_is_const(ctx, &slot_is_empty, &Fr::zero());
             }
         }
-        let circuit = EthCircuitBuilder::new(
+        EthCircuitBuilder::new(
             assigned_instances,
             builder,
             RefCell::new(keccak),
             range,
             break_points,
-            move |builder: &mut RlcThreadBuilder<F>,
-                  rlp: RlpChip<F>,
-                  keccak_rlcs: (FixedLenRLCs<F>, VarLenRLCs<F>)| {
+            move |builder: &mut RlcThreadBuilder<Fr>,
+                  rlp: RlpChip<Fr>,
+                  keccak_rlcs: (FixedLenRLCs<Fr>, VarLenRLCs<Fr>)| {
                 // ======== SECOND PHASE ===========
                 let chip = EthChip::new(rlp, Some(keccak_rlcs));
                 let _trace = chip.parse_eip1186_proofs_from_block_phase1(builder, witness);
             },
-        );
-
-        #[cfg(not(feature = "production"))]
-        if !prover {
-            let config_params: EthConfigParams = serde_json::from_str(
-                var("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
-            )
-            .unwrap();
-            circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
-        }
-        circuit
+        )
     }
 }

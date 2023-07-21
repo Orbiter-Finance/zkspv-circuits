@@ -164,7 +164,7 @@ mod rlp {
         *,
     };
     use halo2_base::halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-    use hex::FromHex;
+     use ethers_core::utils::hex::FromHex;
     use std::env::set_var;
     use test_log::test;
 

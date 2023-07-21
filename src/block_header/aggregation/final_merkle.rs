@@ -1,7 +1,15 @@
-use std::cell::RefCell;
 #[cfg(not(feature = "production"))]
-use std::env::var;
-
+use crate::util::EthConfigParams;
+use crate::{
+    block_header::aggregation::join_previous_instances,
+    keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs},
+    rlp::{
+        builder::{RlcThreadBreakPoints, RlcThreadBuilder},
+        RlpChip,
+    },
+    util::{bytes_be_to_u128, num_to_bytes_be, NUM_BYTES_IN_U128},
+    EthCircuitBuilder,
+};
 #[cfg(feature = "display")]
 use ark_std::{end_timer, start_timer};
 use halo2_base::{
@@ -12,20 +20,10 @@ use halo2_base::{
     },
     QuantumCell::Constant,
 };
-use snark_verifier_sdk::{halo2::aggregation::AggregationCircuit, SHPLONK, Snark};
-
-use crate::{
-    EthCircuitBuilder,
-    keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs},
-    rlp::{
-        builder::{RlcThreadBreakPoints, RlcThreadBuilder},
-        RlpChip,
-    },
-    util::{bytes_be_to_u128, get_merkle_mountain_range, NUM_BYTES_IN_U128, num_to_bytes_be},
-};
-use crate::block_header::arbitrum::aggregation::join_previous_instances;
+use snark_verifier_sdk::{halo2::aggregation::AggregationCircuit, Snark, SHPLONK};
+use std::cell::RefCell;
 #[cfg(not(feature = "production"))]
-use crate::util::EthConfigParams;
+use std::env::var;
 
 use super::EthBlockHeaderChainAggregationCircuit;
 
@@ -40,14 +38,13 @@ impl EthBlockHeaderChainFinalAggregationCircuit {
         max_depth: usize,
         initial_depth: usize,
     ) -> Self {
-        let mut inner = EthBlockHeaderChainAggregationCircuit::new(
+        let inner = EthBlockHeaderChainAggregationCircuit::new(
             snarks,
             num_blocks,
             max_depth,
             initial_depth,
         );
-        #[cfg(debug_assertions)]
-        {
+        /* // Only for testing
             let leaves =
                 &inner.chain_instance.merkle_mountain_range[..num_blocks as usize >> initial_depth];
             let mut new_mmr = get_merkle_mountain_range(leaves, max_depth - initial_depth);
@@ -55,7 +52,7 @@ impl EthBlockHeaderChainFinalAggregationCircuit {
                 &inner.chain_instance.merkle_mountain_range[1 << (max_depth - initial_depth)..],
             );
             inner.chain_instance.merkle_mountain_range = new_mmr;
-        }
+        */
         Self(inner)
     }
 
@@ -73,7 +70,7 @@ impl EthBlockHeaderChainFinalAggregationCircuit {
         let max_depth = self.0.max_depth;
         let initial_depth = self.0.initial_depth;
         #[cfg(feature = "display")]
-        let timer = start_timer!(|| {
+            let timer = start_timer!(|| {
             format!("New EthBlockHeaderChainFinalAggregationCircuit | num_blocks: {num_blocks} | max_depth: {max_depth} | initial_depth: {initial_depth}")
         });
         let aggregation = AggregationCircuit::new::<SHPLONK>(
@@ -155,14 +152,9 @@ impl EthBlockHeaderChainFinalAggregationCircuit {
             let config_params: EthConfigParams = serde_json::from_str(
                 var("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
             )
-            .unwrap();
+                .unwrap();
             circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
         }
         circuit
-    }
-
-    /// The number of instances NOT INCLUDING the accumulator
-    pub fn get_num_instance(max_depth: usize) -> usize {
-        5 + 2 * (max_depth + 1)
     }
 }

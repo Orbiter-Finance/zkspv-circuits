@@ -13,7 +13,7 @@ use halo2_base::{
         self,
         circuit::{Layouter, SimpleFloorPlanner},
         plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
-        halo2curves::bn256::{Bn256, Fr, G1Affine},
+        halo2curves::bn256::{Bn256, Fr},
         poly::{commitment::Params, kzg::commitment::ParamsKZG},
     },
 };
@@ -33,25 +33,25 @@ use crate::rlp::{
     RlpConfig,
 };
 
-pub mod block_header;
+
 pub mod keccak;
 pub mod mpt;
 pub mod rlp;
-pub mod storage;
-pub mod util;
+
+pub mod proof;
+
 pub mod transaction;
 pub mod receipt;
+pub mod storage;
 pub mod track_block;
+pub mod block_header;
 
 #[cfg(feature = "providers")]
 pub mod providers;
 pub mod constant;
-
-
-pub mod proof;
 pub mod config;
-mod new_block_header;
-mod new_receipt;
+pub mod util;
+pub mod server;
 
 
 pub(crate) const ETH_LOOKUP_BITS: usize = 8; // always want 8 to range check bytes
@@ -357,3 +357,4 @@ pub trait AggregationPreCircuit: Sized {
         circuit
     }
 }
+

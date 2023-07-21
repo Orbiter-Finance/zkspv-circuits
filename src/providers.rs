@@ -23,12 +23,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use tokio::runtime::Runtime;
 
-// until storage proof is refactored
 use crate::{
-    block_header::ethereum::{
-        EthBlockHeaderChainInstance, GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
-        MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
-    },
     mpt::MPTFixedKeyInput,
     Network,
     storage::{EthBlockStorageInput, EthStorageInput},
@@ -37,10 +32,8 @@ use crate::{
 use crate::config::contract::zksync_era_contract::{get_zksync_era_nonce_holder_contract_address, get_zksync_era_nonce_holder_contract_layout};
 use crate::config::token::zksync_era_token::{get_zksync_era_eth_address, get_zksync_era_token_layout_by_address};
 use crate::mpt::MPTUnFixedKeyInput;
+use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
 use crate::proof::arbitrum::{ArbitrumProofBlockTrack, ArbitrumProofInput, ArbitrumProofTransactionOrReceipt};
-use crate::receipt::arbitrum::{EthBlockReceiptInput as ArbitrumBlockReceiptInput, EthReceiptInput as ArbitrumReceiptInput};
-use crate::receipt::ethereum::{EthBlockReceiptInput, EthReceiptInput};
-use crate::receipt::optimism::{EthBlockReceiptInput as OptimismBlockReceiptInput, EthReceiptInput as OptimismReceiptInput};
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
 use crate::transaction::zksync_era::now::{ZkSyncBlockTransactionInput, ZkSyncTransactionsInput};
@@ -74,7 +67,7 @@ pub fn get_arbitrum_proof(
     let arbitrum_trace_block = trace_blocks.get(0).cloned().unwrap();
     let ethereum_trace_block = trace_blocks.get(1).cloned().unwrap();
 
-    let arbitrum_transaction_status = get_block_storage_input_transaction(
+    let arbitrum_transaction_status = get_transaction_input(
         arbitrum_provider,
         arbitrum_trace_block.start_block,
         arbitrum_transaction.index,
@@ -83,7 +76,7 @@ pub fn get_arbitrum_proof(
         arbitrum_transaction.pf_max_depth,
     );
 
-    let arbitrum_receipt_status = get_arbitrum_receipt(
+    let arbitrum_receipt_status = get_receipt_input(
         arbitrum_provider,
         arbitrum_trace_block.start_block,
         arbitrum_receipt.index,
@@ -97,12 +90,12 @@ pub fn get_arbitrum_proof(
     for i in arbitrum_trace_block.start_block as u64..arbitrum_block_end_hash.number.unwrap().as_u64() {
         arbitrum_block_number_interval.push(i);
     }
-    let arbitrum_block_status = get_block_storage_track(
+    let arbitrum_block_status = get_block_track_input(
         arbitrum_provider,
         arbitrum_block_number_interval,
     );
 
-    let ethereum_transaction_status = get_block_storage_input_transaction(
+    let ethereum_transaction_status = get_transaction_input(
         ethereum_provider,
         ethereum_trace_block.start_block,
         ethereum_transaction.index,
@@ -117,7 +110,7 @@ pub fn get_arbitrum_proof(
         ethereum_block_number_interval.push(i);
     }
 
-    let ethereum_block_status = get_block_storage_track(
+    let ethereum_block_status = get_block_track_input(
         ethereum_provider,
         ethereum_block_number_interval,
     );
@@ -132,7 +125,7 @@ pub fn get_arbitrum_proof(
     }
 }
 
-pub fn get_block_storage_track(
+pub fn get_block_track_input(
     provider: &Provider<Http>,
     block_number_interval: Vec<u64>,
 ) -> EthTrackBlockInput {
@@ -159,7 +152,7 @@ pub fn get_block_storage_track(
     }
 }
 
-pub fn get_block_storage_input_receipt(
+pub fn get_receipt_input(
     provider: &Provider<Http>,
     block_number: u32,
     receipt_index: u32,
@@ -194,77 +187,7 @@ pub fn get_block_storage_input_receipt(
     }
 }
 
-pub fn get_arbitrum_receipt(
-    provider: &Provider<Http>,
-    block_number: u32,
-    receipt_index: u32,
-    receipt_rlp: Vec<u8>,
-    merkle_proof: Vec<Bytes>,
-    receipt_pf_max_depth: usize,
-) -> ArbitrumBlockReceiptInput {
-    let rt = Runtime::new().unwrap();
-    let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
-    let block_hash = block.hash.unwrap();
-    let block_header = get_block_rlp(&block);
-    let receipt_key_u256 = U256::from(receipt_index);
-    let receipt_key = get_buffer_rlp(receipt_key_u256.as_u32());
-    let slot_is_empty = false;
-
-    let receipt_proofs = MPTUnFixedKeyInput {
-        path: receipt_key,
-        value: receipt_rlp,
-        root_hash: block.receipts_root,
-        proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
-        slot_is_empty,
-        value_max_byte_len: RECEIPT_PROOF_VALUE_MAX_BYTE_LEN,
-        max_depth: receipt_pf_max_depth,
-    };
-
-    ArbitrumBlockReceiptInput {
-        block,
-        block_number,
-        block_hash,
-        block_header,
-        receipt: ArbitrumReceiptInput { receipt_index, receipt_proofs },
-    }
-}
-
-pub fn get_optimism_receipt(
-    provider: &Provider<Http>,
-    block_number: u32,
-    receipt_index: u32,
-    receipt_rlp: Vec<u8>,
-    merkle_proof: Vec<Bytes>,
-    receipt_pf_max_depth: usize,
-) -> OptimismBlockReceiptInput {
-    let rt = Runtime::new().unwrap();
-    let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
-    let block_hash = block.hash.unwrap();
-    let block_header = get_block_rlp(&block);
-    let receipt_key_u256 = U256::from(receipt_index);
-    let receipt_key = get_buffer_rlp(receipt_key_u256.as_u32());
-    let slot_is_empty = false;
-
-    let receipt_proofs = MPTUnFixedKeyInput {
-        path: receipt_key,
-        value: receipt_rlp,
-        root_hash: block.receipts_root,
-        proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
-        slot_is_empty,
-        value_max_byte_len: RECEIPT_PROOF_VALUE_MAX_BYTE_LEN,
-        max_depth: receipt_pf_max_depth,
-    };
-
-    OptimismBlockReceiptInput {
-        block,
-        block_number,
-        block_hash,
-        block_header,
-        receipt: OptimismReceiptInput { receipt_index, receipt_proofs },
-    }
-}
-
-pub fn get_block_storage_input_transaction(
+pub fn get_transaction_input(
     provider: &Provider<Http>,
     block_number: u32,
     transaction_index: u32,
@@ -298,7 +221,7 @@ pub fn get_block_storage_input_transaction(
     }
 }
 
-pub fn get_block_storage_input(
+pub fn get_storage_input(
     provider: &Provider<Http>,
     block_number: u32,
     addr: Address,

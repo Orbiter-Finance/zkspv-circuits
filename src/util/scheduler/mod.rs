@@ -22,7 +22,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::{EthereumNetwork, Network};
+use crate::{ Network};
+use crate::util::helpers::get_provider;
 
 use super::circuit::AnyCircuit;
 
@@ -96,20 +97,7 @@ impl<T: Task> EthScheduler<T> {
         config_dir: PathBuf,
         data_dir: PathBuf,
     ) -> Self {
-        let provider_url = var("JSON_RPC_URL").expect("JSON_RPC_URL not found");
-        let provider =
-            Provider::<Http>::try_from(provider_url).expect("could not instantiate HTTP Provider");
-        tokio::runtime::Runtime::new().unwrap().block_on(async {
-            let chain_id = provider.get_chainid().await.unwrap();
-            // match network {
-            //     Network::Ethereum(EthereumNetwork::Mainnet) => {
-            //         assert_eq!(chain_id, U256::from(1));
-            //     }
-            //     Network::Goerli => {
-            //         assert_eq!(chain_id, U256::from(5));
-            //     }
-            // }
-        });
+        let provider = get_provider(&network);
         fs::create_dir_all(&config_dir).expect("could not create config directory");
         fs::create_dir_all(&data_dir).expect("could not create data directory");
         srs_read_only = srs_read_only || read_only;

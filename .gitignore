@@ -2,5 +2,4 @@
 Cargo.lock
 **/*.rs.bk
 *~
-.env
-./params/
+./spv.toml

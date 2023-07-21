@@ -1,12 +1,16 @@
-use std::env::set_var;
+use std::env::{set_var, var};
+use std::fs::File;
+use std::io::{ Write};
+use ark_std::{end_timer, start_timer};
 
 use ethers_core::types::Bytes;
-use hex::FromHex;
+use halo2_base::utils::fs::gen_srs;
+use ethers_core::utils::hex::FromHex;
 
-use crate::{ArbitrumNetwork, EthereumNetwork, Network};
+
+use crate::{ArbitrumNetwork, EthereumNetwork, EthPreCircuit, Network};
 use crate::halo2_proofs::{
     dev::MockProver,
-    halo2curves::bn256::Fr,
 };
 use crate::rlp::builder::RlcThreadBuilder;
 use crate::transaction::ethereum::EthBlockTransactionCircuit;
@@ -58,7 +62,7 @@ pub fn test_2718_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
 
     let merkle_proof: Vec<Bytes> = vec![proof_one, proof_two, proof_three];
     let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof, Network::Ethereum(EthereumNetwork::Goerli));
-    let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(), None);
+    let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
     // println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())
@@ -83,8 +87,130 @@ pub fn test_1559_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
 
     let merkle_proof: Vec<Bytes> = vec![proof_one, proof_two, proof_three];
     let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof, Network::Ethereum(EthereumNetwork::Mainnet));
-    let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(), None);
-    // println!("instance:{:?}", circuit.instance());
+    let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())
 }
+
+// #[test]
+#[cfg(feature = "evm")]
+pub fn evm() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::util::circuit::custom_gen_evm_verifier_shplonk;
+    use halo2_base::gates::builder::CircuitBuilderStage;
+    use snark_verifier_sdk::{
+        evm::{evm_verify, gen_evm_proof_shplonk, write_calldata},
+        gen_pk,
+        halo2::{
+            aggregation::{AggregationCircuit, AggregationConfigParams},
+            gen_snark_shplonk,
+        },
+        CircuitExt, SHPLONK,
+    };
+    use std::{fs, path::Path};
+    let transaction_param = EthConfigParams::from_path("configs/tests/transaction.json");
+    let evm_param = AggregationConfigParams::from_path("configs/evm/transaction_evm.json");
+    fs::create_dir_all("data/bench")?;
+    let mut fs_results = File::create("data/bench/transaction.csv").unwrap();
+    writeln!(fs_results, "degree,total_advice,num_rlc_columns,num_advice,num_lookup,num_fixed,storage_proof_time,evm_proof_time")?;
+
+    println!(
+        "---------------------- degree = {} ------------------------------",
+        transaction_param.degree
+    );
+
+    set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&transaction_param).unwrap());
+
+    let (storage_snark, storage_proof_time) = {
+        let transaction_index = 53;
+        let transaction_rlp = Vec::from_hex("02f873010285020a08fb2885020a08fb2882520894a79ed52d6774259535428f2533a8420703a4078f87054e13428c955280c080a02a3222ebb694535ee03ced3a0bc75a7c37b5053be9dcccc15894e014b1fd3a81a079250a246c8846c86cc24a84d2966752d9999ab4f05b5cca98762400e0a0f813").unwrap();
+
+        let proof_one_str = Vec::from_hex("f8b1a0d2b8a354f61d3d7a1fa0de1af78958094a3eed9374756cea377879edb0bc7422a0460779b6e7622dfc26dc9d87a5660dfd08a7338323d287f7d370ac1a474fbd53a03d77ff4a636303a1415da7085256e5041f36d7d0c9b97cfd6ba394b4f66e5f31a0d7e1a6ff03b18783bc4de36fd8c2122907e56de404c6eac2084432f4dacf231680808080a0e3263af8ff4c48d1b5bf85931a69ad8d759df6ef7b6507fbdb87a62547edd0238080808080808080").unwrap();
+        let proof_one = Bytes::from(proof_one_str);
+
+        let proof_two_str = Vec::from_hex("f8f1a0587596c6e4da70eb8697f12d5e59733bbebd14c07bbcf56aac4adbbeb903bca1a04a06b1a1d3b0ab9609f6a7776b43b730955020ac3f90bd43dff0018c895983dca04a31b06be6094943ff2f96afb092f04fd3e28a1b8138e5792187ae563ae62ff0a010ad65155d44082ba6f9c15328f24b19c8a9f42e94489d362b5e1250017e2ec0a01d76ade4e7af7470fd3d019b55ef0f49747d2bf487acd541cd3b0bfae4e2aa97a02553d6d7e11c7b21ecee4c4b7ae341e615a29efe6fb3e16de022817986a6b987a0891ad5f0c0f5ef449173e8516c8ae143edfb9ef629ce40d5346630cd7c73605e80808080808080808080").unwrap();
+        let proof_two = Bytes::from(proof_two_str);
+
+        let proof_three_str = Vec::from_hex("f87920b87602f873010285020a08fb2885020a08fb2882520894a79ed52d6774259535428f2533a8420703a4078f87054e13428c955280c080a02a3222ebb694535ee03ced3a0bc75a7c37b5053be9dcccc15894e014b1fd3a81a079250a246c8846c86cc24a84d2966752d9999ab4f05b5cca98762400e0a0f813").unwrap();
+        let proof_three = Bytes::from(proof_three_str);
+
+        let merkle_proof: Vec<Bytes> = vec![proof_one, proof_two, proof_three];
+
+        let k = transaction_param.degree;
+        let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof, Network::Ethereum(EthereumNetwork::Mainnet));
+        let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
+        let params = gen_srs(k);
+        let pk = gen_pk(&params, &circuit, None);
+        let break_points = circuit.circuit.break_points.take();
+        let storage_proof_time = start_timer!(|| "Storage Proof SHPLONK");
+        let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
+        let snark = gen_snark_shplonk(&params, &pk, circuit, None::<&str>);
+        end_timer!(storage_proof_time);
+        (snark, storage_proof_time)
+    };
+
+    let k = evm_param.degree;
+    let params = gen_srs(k);
+    set_var("LOOKUP_BITS", evm_param.lookup_bits.to_string());
+    let evm_circuit = AggregationCircuit::public::<SHPLONK>(
+        CircuitBuilderStage::Keygen,
+        None,
+        evm_param.lookup_bits,
+        &params,
+        vec![storage_snark.clone()],
+        false,
+    );
+    evm_circuit.config(k, Some(10));
+    let pk = gen_pk(&params, &evm_circuit, None);
+    let break_points = evm_circuit.break_points();
+
+    let instances = evm_circuit.instances();
+    let evm_proof_time = start_timer!(|| "EVM Proof SHPLONK");
+    let pf_circuit = AggregationCircuit::public::<SHPLONK>(
+        CircuitBuilderStage::Prover,
+        Some(break_points),
+        evm_param.lookup_bits,
+        &params,
+        vec![storage_snark],
+        false,
+    );
+    let proof = gen_evm_proof_shplonk(&params, &pk, pf_circuit, instances.clone());
+    end_timer!(evm_proof_time);
+    fs::create_dir_all("data/transaction").unwrap();
+    write_calldata(&instances, &proof, Path::new("data/transaction/test.calldata")).unwrap();
+
+    let deployment_code = custom_gen_evm_verifier_shplonk(
+        &params,
+        pk.get_vk(),
+        &evm_circuit,
+        Some(Path::new("data/transaction/test.yul")),
+    );
+
+    // this verifies proof in EVM and outputs gas cost (if successful)
+    evm_verify(deployment_code, instances, proof);
+
+    let keccak_advice = var("KECCAK_ADVICE_COLUMNS")
+        .unwrap_or_else(|_| "0".to_string())
+        .parse::<usize>()
+        .unwrap();
+    let transaction_params: EthConfigParams =
+        serde_json::from_str(var("ETH_CONFIG_PARAMS").unwrap().as_str()).unwrap();
+    writeln!(
+        fs_results,
+        "{},{},{},{:?},{:?},{},{:.2}s,{:?}",
+        transaction_params.degree,
+        transaction_params.num_rlc_columns
+            + transaction_params.num_range_advice.iter().sum::<usize>()
+            + transaction_params.num_lookup_advice.iter().sum::<usize>()
+            + keccak_advice,
+        transaction_params.num_rlc_columns,
+        transaction_params.num_range_advice,
+        transaction_params.num_lookup_advice,
+        transaction_params.num_fixed,
+        storage_proof_time.time.elapsed().as_secs_f64(),
+        evm_proof_time.time.elapsed()
+    )
+        .unwrap();
+    Ok(())
+}
+
+

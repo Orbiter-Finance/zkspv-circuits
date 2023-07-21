@@ -218,7 +218,7 @@ pub struct MPTFixedKeyInput {
     /// A Merkle-Patricia Trie is a mapping `path => value`
     ///
     /// As an example, the MPT state trie of Ethereum has
-    /// `path = keccak256(address) => value = rlp(account)`
+    /// `path = rlp(transaction_index) => value = rlp(transaction)`
     pub path: H256,
     pub value: Vec<u8>,
     pub root_hash: H256,
@@ -239,9 +239,9 @@ pub struct MPTUnFixedKeyInput {
     /// As an example, the MPT transaction trie of Ethereum has
     /// `path = rlp(transaction_index) => value = rlp(transaction)`
     pub path: Vec<u8>,
-    //rlp(index)
+
     pub value: Vec<u8>,
-    //rlp(value)
+
     pub root_hash: H256,
 
     pub proof: Vec<Vec<u8>>,

@@ -3,6 +3,7 @@ name = "zk_spv"
 version = "0.1.1"
 edition = "2021"
 
+
 [[bin]]
 name = "header_chain"
 required-features = ["aggregation", "clap"]
@@ -11,14 +12,16 @@ required-features = ["aggregation", "clap"]
 name = "storage_proof"
 required-features = ["aggregation", "clap", "evm"]
 
+[[bin]]
+name = "transaction"
+required-features = ["aggregation", "clap", "evm"]
+
 [dependencies]
 itertools = "0.10"
 lazy_static = "1.4.0"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0", default-features = false }
 rayon = "1.7"
-dotenv = "0.15.0"
-envy = "0.4"
 thiserror = "1.0"
 
 # macro
@@ -59,11 +62,29 @@ syn = "2.0.15"
 quote = "1.0.26"
 proc-macro2 = "1.0.56"
 
-[dev-dependencies]
+# sever
+jsonrpc-core = "18.0.0"
+jsonrpc-core-client = "18.0.0"
+jsonrpc-http-server = "18.0.0"
+jsonrpc-ipc-server = "18.0.0"
+jsonrpc-tcp-server= "18.0.0"
+jsonrpc-ws-server = "18.0.0"
+jsonrpc-stdio-server = "18.0.0"
+jsonrpc-derive = "18.0.0"
+jsonrpc-server-utils = "18.0.0"
+jsonrpc-pubsub = "18.0.0"
+
+#toml
+toml = "0.7.6"
+
 hex = "0.4.3"
-ark-std = { version = "0.3.0", features = ["print-trace"] }
-log = "0.4"
 test-log = "0.2.11"
+
+[dev-dependencies]
+#hex = "0.4.3"
+#ark-std = { version = "0.3.0", features = ["print-trace"] }
+#log = "0.4"
+#test-log = "0.2.11"
 
 [features]
 default = ["halo2-axiom", "jemallocator", "display", "aggregation", "clap", "evm"]

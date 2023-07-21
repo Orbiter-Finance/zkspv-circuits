@@ -1,6 +1,6 @@
 use ethers_core::types::{Address, H256};
 use thiserror::Error;
-use crate::config::load::get_token_config;
+use crate::config::token::get_token_config;
 
 #[derive(Clone, Copy, Debug, Error)]
 pub enum TokenError {

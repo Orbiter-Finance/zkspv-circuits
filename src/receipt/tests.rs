@@ -1,14 +1,15 @@
+
 use std::env::set_var;
 
 use ethers_core::types::Bytes;
-use hex::FromHex;
+ use ethers_core::utils::hex::FromHex;
 
 use crate::halo2_proofs::{
     dev::MockProver,
-    halo2curves::bn256::Fr,
 };
-use crate::{EthereumNetwork, Network};
-use crate::receipt::ethereum::EthBlockReceiptCircuit;
+use crate::{ArbitrumNetwork, EthereumNetwork, EthPreCircuit, Network};
+use crate::Network::{Arbitrum, Ethereum};
+use crate::receipt::EthBlockReceiptCircuit;
 use crate::rlp::builder::RlcThreadBuilder;
 use crate::util::EthConfigParams;
 use crate::util::helpers::get_provider;
@@ -22,11 +23,17 @@ fn get_test_circuit(
     let provider = get_provider(&network);
     let mut block_number = 0;
     match network {
-        Network::Ethereum(EthereumNetwork::Mainnet) => {
+        Ethereum(EthereumNetwork::Mainnet) => {
             block_number = 16356350;
         }
-        Network::Ethereum(EthereumNetwork::Goerli) => {
+        Ethereum(EthereumNetwork::Goerli) => {
             block_number = 0x82e239;
+        }
+        Arbitrum(ArbitrumNetwork::Mainnet)=>{
+            block_number  = 0x82e239;
+        }
+        Arbitrum(ArbitrumNetwork::Goerli)=>{
+            block_number  = 0x82e239;
         }
         _ => {}
     }
@@ -55,9 +62,8 @@ pub fn test_receipt_mpt() -> Result<(), Box<dyn std::error::Error>> {
     let proof_four = Bytes::from(proof_four_bytes);
 
     let merkle_proof: Vec<Bytes> = vec![proof_one, proof_two, proof_three, proof_four];
-    let input = get_test_circuit(receipt_index, receipt_rlp, merkle_proof, Network::Ethereum(EthereumNetwork::Goerli));
-    let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(), None);
-    // println!("instance:{:?}", circuit);
+    let input = get_test_circuit(receipt_index, receipt_rlp, merkle_proof, Arbitrum(ArbitrumNetwork::Goerli));
+    let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
 
     Ok(())

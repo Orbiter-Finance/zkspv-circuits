@@ -1,6 +1,4 @@
-use std::env;
 
-use dotenv::dotenv;
 use ethers_core::types::{Address, H256};
 use ethers_core::utils::keccak256;
 use ethers_providers::{Http, Provider};
@@ -8,139 +6,42 @@ use halo2_base::{AssignedValue, Context};
 use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ArbitrumNetwork, EthereumNetwork, Network, OptimismNetwork, ZkSyncEraNetwork};
-use crate::block_header::arbitrum::{ARBITRUM_GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, ARBITRUM_GOERLI_HEADER_FIELDS_MAX_BYTES, ARBITRUM_MAINNET_BLOCK_HEADER_RLP_MAX_BYTES, ARBITRUM_MAINNET_HEADER_FIELDS_MAX_BYTES};
-use crate::block_header::ethereum::{GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, GOERLI_HEADER_FIELDS_MAX_BYTES, MAINNET_BLOCK_HEADER_RLP_MAX_BYTES, MAINNET_HEADER_FIELDS_MAX_BYTES};
-use crate::block_header::optimism::{OPTIMISM_GOERLI_BLOCK_HEADER_RLP_MAX_BYTES, OPTIMISM_GOERLI_HEADER_FIELDS_MAX_BYTES, OPTIMISM_MAINNET_BLOCK_HEADER_RLP_MAX_BYTES, OPTIMISM_MAINNET_HEADER_FIELDS_MAX_BYTES};
+use crate::config::rpcs::get_rpcs_config;
 use crate::constant::{EIP_1559_TX_TYPE, EIP_2930_TX_TYPE};
 use crate::keccak::get_bytes;
 use crate::mpt::AssignedBytes;
 
 pub fn get_provider(network: &Network) -> Provider<Http> {
-    dotenv().ok();
+    let rpcs = get_rpcs_config();
     let provider_url = match network {
         Network::Ethereum(ethereum_network) => {
             match ethereum_network {
-                EthereumNetwork::Mainnet => env::var("MAINNET_RPC").unwrap(),
-                EthereumNetwork::Goerli => env::var("GOERLI_RPC").unwrap(),
+                EthereumNetwork::Mainnet => rpcs.ethereum.mainnet,
+                EthereumNetwork::Goerli => rpcs.ethereum.goerli,
             }
         }
         Network::Arbitrum(arbitrum_network) => {
             match arbitrum_network {
-                ArbitrumNetwork::Mainnet => env::var("ARBITRUM_MAINNET_RPC").unwrap(),
-                ArbitrumNetwork::Goerli => env::var("ARBITRUM_GOERLI_RPC").unwrap(),
+                ArbitrumNetwork::Mainnet => rpcs.arbitrum.mainnet,
+                ArbitrumNetwork::Goerli => rpcs.arbitrum.goerli,
             }
         }
         Network::Optimism(optimism_network) => {
             match optimism_network {
-                OptimismNetwork::Mainnet => env::var("OPTIMISM_MAINNET_RPC").unwrap(),
-                OptimismNetwork::Goerli => env::var("OPTIMISM_GOERLI_RPC").unwrap(),
+                OptimismNetwork::Mainnet => rpcs.optimism.mainnet,
+                OptimismNetwork::Goerli => rpcs.optimism.goerli,
             }
         }
         Network::ZkSync(zksync_network) => {
             match zksync_network {
-                ZkSyncEraNetwork::Mainnet => env::var("ZKSYNC_MAINNET_RPC").unwrap(),
-                ZkSyncEraNetwork::Goerli => env::var("ZKSYNC_GOERLI_RPC").unwrap(),
+                ZkSyncEraNetwork::Mainnet => rpcs.zksync_era.mainnet,
+                ZkSyncEraNetwork::Goerli => rpcs.zksync_era.goerli,
             }
         }
     };
     let provider = Provider::<Http>::try_from(provider_url.as_str())
         .expect("could not instantiate HTTP Provider");
     provider
-}
-
-pub fn get_network_type(network: &Network) -> usize {
-    let network_type = match network {
-        Network::Ethereum(ethereum_network) => {
-            match ethereum_network {
-                EthereumNetwork::Mainnet => 0,
-                EthereumNetwork::Goerli => 0,
-            }
-        }
-        Network::Arbitrum(arbitrum_network) => {
-            match arbitrum_network {
-                ArbitrumNetwork::Mainnet => 1,
-                ArbitrumNetwork::Goerli => 1,
-            }
-        }
-        Network::Optimism(optimism_network) => {
-            match optimism_network {
-                OptimismNetwork::Mainnet => 2,
-                OptimismNetwork::Goerli => 2,
-            }
-        }
-        Network::ZkSync(zksync_network) => {
-            match zksync_network {
-                ZkSyncEraNetwork::Mainnet => 3,
-                ZkSyncEraNetwork::Goerli => 3,
-            }
-        }
-    };
-
-    network_type
-}
-
-
-pub fn get_block_header_rlp_max_bytes(network: &Network) -> usize {
-    let max_len = match network {
-        Network::Ethereum(network) => {
-            match network {
-                EthereumNetwork::Mainnet => MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
-                EthereumNetwork::Goerli => GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
-            }
-        }
-        Network::Arbitrum(network) => {
-            match network {
-                ArbitrumNetwork::Mainnet => ARBITRUM_MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
-                ArbitrumNetwork::Goerli => ARBITRUM_GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
-            }
-        }
-        Network::Optimism(network) => {
-            match network {
-                OptimismNetwork::Mainnet => OPTIMISM_MAINNET_BLOCK_HEADER_RLP_MAX_BYTES,
-                OptimismNetwork::Goerli => OPTIMISM_GOERLI_BLOCK_HEADER_RLP_MAX_BYTES,
-            }
-        }
-
-        _ => { 0 }
-    };
-
-    max_len
-}
-
-pub fn get_mainnet_block_header_rlp_max_field_lens(network: &Network) -> [usize; 17] {
-    let mut max_field_lens = [0; 17];
-    if let Network::Ethereum(ethereum_network) = network {
-        max_field_lens = match ethereum_network {
-            EthereumNetwork::Mainnet => MAINNET_HEADER_FIELDS_MAX_BYTES,
-            EthereumNetwork::Goerli => GOERLI_HEADER_FIELDS_MAX_BYTES,
-        }
-    }
-
-    max_field_lens
-}
-
-pub fn get_arbitrum_block_header_rlp_max_field_lens(network: &Network) -> [usize; 17] {
-    let mut max_field_lens = [0; 17];
-    if let Network::Arbitrum(arbitrum_network) = network {
-        max_field_lens = match arbitrum_network {
-            ArbitrumNetwork::Mainnet => ARBITRUM_MAINNET_HEADER_FIELDS_MAX_BYTES,
-            ArbitrumNetwork::Goerli => ARBITRUM_GOERLI_HEADER_FIELDS_MAX_BYTES,
-        }
-    }
-
-    max_field_lens
-}
-
-pub fn get_optimism_block_header_rlp_max_field_lens(network: &Network) -> [usize; 17] {
-    let mut max_field_lens = [0; 17];
-    if let Network::Optimism(optimism_network) = network {
-        max_field_lens = match optimism_network {
-            OptimismNetwork::Mainnet => OPTIMISM_MAINNET_HEADER_FIELDS_MAX_BYTES,
-            OptimismNetwork::Goerli => OPTIMISM_GOERLI_HEADER_FIELDS_MAX_BYTES,
-        }
-    }
-
-    max_field_lens
 }
 
 pub fn get_transaction_type<F: Field>(ctx: &mut Context<F>, value: &AssignedValue<F>) -> usize {

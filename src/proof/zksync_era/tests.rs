@@ -34,7 +34,6 @@ use crate::{
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
     },
-    keccak::{FixedLenRLCs, FnSynthesize, KeccakCircuitBuilder, VarLenRLCs},
     rlp::builder::RlcThreadBuilder,
     util::EthConfigParams,
 };

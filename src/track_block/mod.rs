@@ -1,29 +1,112 @@
-use std::{cell::RefCell, env::var};
+use std::cell::RefCell;
+
 use ethers_core::types::{Block, H256};
 use ethers_providers::{Http, Provider};
 use halo2_base::{AssignedValue, Context};
+use halo2_base::gates::RangeChip;
 use halo2_base::gates::builder::GateThreadBuilder;
-use halo2_base::gates::{RangeChip};
+use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
-use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
-use crate::block_header::ethereum::{EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, };
-use crate::keccak::{FixedLenRLCs, KeccakChip, VarLenRLCs, FnSynthesize};
+
+use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Network};
+use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, get_block_header_config};
+use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
+use crate::providers::get_block_track_input;
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::FIRST_PHASE;
 use crate::rlp::RlpChip;
-use crate::util::{AssignedH256, bytes_be_to_u128, EthConfigParams};
-use crate::util::helpers::get_block_header_rlp_max_bytes;
+use crate::util::{AssignedH256, bytes_be_to_u128};
 
 mod tests;
 
-// Currently only available for L1
-// 200 blocks take about an hour
-
+#[derive(Clone, Debug)]
+pub struct EthTrackBlockInput {
+    pub block: Vec<Block<H256>>,
+    pub block_number: Vec<u64>,
+    pub block_hash: Vec<H256>,
+    // provided for convenience, actual block_hash is computed from block_header
+    pub block_header: Vec<Vec<u8>>,
+}
 
 #[derive(Clone, Debug)]
-pub struct EthTrackBlockTraceWitness<F: Field> {
-    pub block_witness: Vec<EthBlockHeaderTraceWitness<F>>,
+pub struct EthTrackBlockInputAssigned {
+    pub block_header: Vec<Vec<u8>>,
+}
+
+impl EthTrackBlockInput {
+    pub fn assign<F: Field>(self, _ctx: &mut Context<F>) -> EthTrackBlockInputAssigned {
+        EthTrackBlockInputAssigned { block_header: self.block_header }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct EthTrackBlockCircuit {
+    pub inputs: EthTrackBlockInput,
+    pub block_header_config: BlockHeaderConfig,
+}
+
+impl EthTrackBlockCircuit {
+    pub fn from_provider(
+        provider: &Provider<Http>,
+        block_number_interval: Vec<u64>,
+        network: Network,
+    ) -> Self {
+        let inputs = get_block_track_input(
+            provider,
+            block_number_interval,
+        );
+        let block_header_config = get_block_header_config(&network);
+        Self { inputs, block_header_config }
+    }
+}
+
+impl EthPreCircuit for EthTrackBlockCircuit {
+    fn create(
+        self,
+        mut builder: RlcThreadBuilder<Fr>,
+        break_points: Option<RlcThreadBreakPoints>,
+    ) -> EthCircuitBuilder<Fr, impl FnSynthesize<Fr>> {
+        let range = RangeChip::default(ETH_LOOKUP_BITS);
+        let chip = EthChip::new(RlpChip::new(&range, None), None);
+        let mut keccak = KeccakChip::default();
+
+        // ================= FIRST PHASE ================
+        let ctx = builder.gate_builder.main(FIRST_PHASE);
+        let input = self.inputs.assign(ctx);
+        let (witness, digest) = chip.parse_track_block_proof_from_block_phase0(
+            &mut builder.gate_builder,
+            &mut keccak,
+            input,
+            &self.block_header_config);
+
+        let EIP1186ResponseDigest {
+            last_block_hash,
+        } = digest;
+
+        let assigned_instances = last_block_hash
+            .into_iter()
+            .collect_vec();
+        EthCircuitBuilder::new(
+            assigned_instances,
+            builder,
+            RefCell::new(keccak),
+            range,
+            break_points,
+            move |builder: &mut RlcThreadBuilder<Fr>,
+                  rlp: RlpChip<Fr>,
+                  keccak_rlcs: (FixedLenRLCs<Fr>, VarLenRLCs<Fr>)| {
+                // ======== SECOND PHASE ===========
+                let chip = EthChip::new(rlp, Some(keccak_rlcs));
+                let _trace = chip.parse_track_block_proof_from_block_phase1(builder, witness);
+            },
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct EIP1186ResponseDigest<F: Field> {
+    pub last_block_hash: AssignedH256<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -32,22 +115,30 @@ pub struct EthTrackBlockTrace<F: Field> {
 }
 
 #[derive(Clone, Debug)]
-pub struct EIP1186ResponseDigest<F: Field> {
-    pub last_block_hash: AssignedH256<F>,
+pub struct EthTrackBlockTraceWitness<F: Field> {
+    pub block_witness: Vec<EthBlockHeaderTraceWitness<F>>,
 }
 
+// impl<F: Field> EthTrackBlockTraceWitness<F> {
+//
+// }
 
 pub trait EthTrackBlockChip<F: Field> {
+
+    // ================= FIRST PHASE ================
+
     fn parse_track_block_proof_from_block_phase0(
         &self,
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
         input: EthTrackBlockInputAssigned,
-        network: Network,
+        block_header_config: &BlockHeaderConfig,
     ) -> (EthTrackBlockTraceWitness<F>, EIP1186ResponseDigest<F>)
         where
             Self: EthBlockHeaderChip<F>;
 
+
+    // ================= SECOND PHASE ================
 
     fn parse_track_block_proof_from_block_phase1(
         &self,
@@ -59,12 +150,15 @@ pub trait EthTrackBlockChip<F: Field> {
 }
 
 impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
+
+    // ================= FIRST PHASE ================
+
     fn parse_track_block_proof_from_block_phase0(
         &self,
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
         input: EthTrackBlockInputAssigned,
-        network: Network,
+        block_header_config: &BlockHeaderConfig,
     ) -> (EthTrackBlockTraceWitness<F>, EIP1186ResponseDigest<F>)
         where
             Self: EthBlockHeaderChip<F>, {
@@ -73,14 +167,13 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         let mut block_witness = Vec::with_capacity(input.block_header.len());
         for (i, value) in input.block_header.iter().enumerate() {
             let mut block_header = value.to_vec();
-            let max_len =get_block_header_rlp_max_bytes(&network);
-            block_header.resize(max_len, 0);
+            block_header.resize(block_header_config.block_header_rlp_max_bytes, 0);
 
             // It has been checked whether keccak(rlp(block_header)) is equal to block_hash.
             // Therefore, there is no need to declare the qualification repeatedly.
-            let block_witness_temp = self.decompose_block_header_phase0(ctx, keccak, &block_header, network);
+            let block_witness_temp = self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config);
             // The parent hash of the current block
-            let parent_hash_element = bytes_be_to_u128(ctx, self.gate(), &block_witness_temp.get("parent_hash").field_cells);
+            let parent_hash_element = bytes_be_to_u128(ctx, self.gate(), &block_witness_temp.get_parent_hash().field_cells);
 
             let child_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness_temp.block_hash);
 
@@ -105,6 +198,9 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         (EthTrackBlockTraceWitness { block_witness }, digest)
     }
 
+
+    // ================= SECOND PHASE ================
+
     fn parse_track_block_proof_from_block_phase1(
         &self,
         thread_pool: &mut RlcThreadBuilder<F>,
@@ -124,96 +220,8 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
 }
 
 
-#[derive(Clone, Debug)]
-pub struct EthTrackBlockInput {
-    pub block: Vec<Block<H256>>,
-    pub block_number: Vec<u64>,
-    pub block_hash: Vec<H256>,
-    // provided for convenience, actual block_hash is computed from block_header
-    pub block_header: Vec<Vec<u8>>,
-}
 
-impl EthTrackBlockInput {
-    pub fn assign<F: Field>(self, _ctx: &mut Context<F>) -> EthTrackBlockInputAssigned {
-        EthTrackBlockInputAssigned { block_header: self.block_header }
-    }
-}
 
-#[derive(Clone, Debug)]
-pub struct EthTrackBlockInputAssigned {
-    pub block_header: Vec<Vec<u8>>,
-}
 
-#[derive(Clone, Debug)]
-pub struct EthTrackBlockCircuit {
-    pub inputs: EthTrackBlockInput,
-    pub network: Network,
-}
 
-impl EthTrackBlockCircuit {
-    pub fn from_provider(
-        provider: &Provider<Http>,
-        block_number_interval: Vec<u64>,
-        network: Network,
-    ) -> Self {
-        use crate::providers::get_block_storage_track;
 
-        let inputs = get_block_storage_track(
-            provider,
-            block_number_interval,
-        );
-        Self { inputs, network }
-    }
-
-    pub fn create_circuit<F: Field>(
-        self,
-        mut builder: RlcThreadBuilder<F>,
-        break_points: Option<RlcThreadBreakPoints>,
-    ) -> EthCircuitBuilder<F, impl FnSynthesize<F>> {
-        let prover = builder.witness_gen_only();
-        let range = RangeChip::default(ETH_LOOKUP_BITS);
-        let chip = EthChip::new(RlpChip::new(&range, None), None);
-
-        let mut keccak = KeccakChip::default();
-
-        // ================= FIRST PHASE ================
-        let ctx = builder.gate_builder.main(FIRST_PHASE);
-        let input = self.inputs.assign(ctx);
-        let (witness, digest) = chip.parse_track_block_proof_from_block_phase0(
-            &mut builder.gate_builder,
-            &mut keccak,
-            input, self.network);
-
-        let EIP1186ResponseDigest {
-            last_block_hash,
-        } = digest;
-
-        let assigned_instances = last_block_hash
-            .into_iter()
-            .collect_vec();
-        let circuit = EthCircuitBuilder::new(
-            assigned_instances,
-            builder,
-            RefCell::new(keccak),
-            range,
-            break_points,
-            move |builder: &mut RlcThreadBuilder<F>,
-                  rlp: RlpChip<F>,
-                  keccak_rlcs: (FixedLenRLCs<F>, VarLenRLCs<F>)| {
-                // ======== SECOND PHASE ===========
-                let chip = EthChip::new(rlp, Some(keccak_rlcs));
-                let _trace = chip.parse_track_block_proof_from_block_phase1(builder, witness);
-            },
-        );
-
-        #[cfg(not(feature = "production"))]
-        if !prover {
-            let config_params: EthConfigParams = serde_json::from_str(
-                var("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
-            )
-                .unwrap();
-            circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
-        }
-        circuit
-    }
-}
