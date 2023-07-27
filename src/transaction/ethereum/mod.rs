@@ -1,4 +1,5 @@
 use std::{cell::RefCell};
+use ethers_core::abi::AbiEncode;
 
 use ethers_core::types::{Block, Bytes, H256};
 use ethers_providers::{Http, Provider};
@@ -8,21 +9,27 @@ use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::utils::bit_length;
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Network};
 use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, get_block_header_config};
-use crate::constant::EIP_1559_TX_TYPE_FIELD;
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::mpt::{MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
 use crate::providers::{ get_transaction_field_rlp, get_transaction_input};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
-use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed};
-use crate::util::helpers::{bytes_to_vec_u8, get_transaction_type};
+use crate::transaction::{EIP_1559_TX_TYPE_FIELDS_ITEM, EIP_1559_TX_TYPE_FIELDS_NUM, EIP_2718_TX_TYPE, EIP_2718_TX_TYPE_FIELDS_ITEM, EIP_2718_TX_TYPE_FIELDS_NUM, get_transaction_type};
+use crate::util::helpers::{bytes_to_vec_u8, load_bytes};
 
 pub mod tests;
+pub mod helper;
+
+// lazy_static! {
+//     static ref KECCAK_RLP_EMPTY_STRING: Vec<u8> =
+//         Vec::from_hex("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421").unwrap();
+// }
 
 #[derive(Clone, Debug)]
 pub struct EthTransactionInput {
@@ -70,7 +77,7 @@ impl EthBlockTransactionInput {
 }
 
 #[derive(Clone, Debug)]
-pub struct EthBlockTransactionCircuit {
+pub struct EthBlockTransactionCircuit{
     pub inputs: EthBlockTransactionInput,
     pub block_header_config: BlockHeaderConfig,
 }
@@ -118,8 +125,6 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
             &self.block_header_config);
 
         let EIP1186ResponseDigest {
-            block_hash,
-            block_number,
             index,
             slots_values,
             transaction_is_empty
@@ -153,8 +158,6 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
 
 #[derive(Clone, Debug)]
 pub struct EIP1186ResponseDigest<F: Field> {
-    pub block_hash: AssignedH256<F>,
-    pub block_number: AssignedValue<F>,
     pub index: AssignedValue<F>,
     // the value U256 is interpreted as H256 (padded with 0s on left)
     pub slots_values: Vec<AssignedValue<F>>,
@@ -290,20 +293,16 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
     ) -> (EthBlockTransactionTraceWitness<F>, EIP1186ResponseDigest<F>)
         where
             Self: EthBlockHeaderChip<F>, {
-        let ctx = thread_pool.main(FIRST_PHASE);
-        let transaction_index = input.transaction.transaction_index;
-        let mut block_header = input.block_header;
-        block_header.resize(block_header_config.block_header_rlp_max_bytes, 0);
-        let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config);
-        let transactions_root = &block_witness.get_transactions_root().field_cells;
-        let block_hash_hi_lo = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
 
-        // compute block number from big-endian bytes
-        let block_num_bytes = &block_witness.get_number().field_cells;
-        let block_num_len = block_witness.get_number().field_len;
-        let block_number =
-            bytes_be_var_to_fixed(ctx, self.gate(), block_num_bytes, block_num_len, 4);
-        let block_number = bytes_be_to_uint(ctx, self.gate(), &block_number, 4);
+        let transaction_index = input.transaction.transaction_index;
+
+        let block_witness = {
+            let ctx = thread_pool.main(FIRST_PHASE);
+            let mut block_header = input.block_header;
+            block_header.resize(block_header_config.block_header_rlp_max_bytes, 0);
+            self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config)
+        };
+        let transactions_root = &block_witness.get_transactions_root().field_cells;
 
         // drop ctx
         let transaction_witness = self.parse_eip1186_proof_phase0(
@@ -315,8 +314,6 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let transaction_rlp = transaction_witness.mpt_witness.value_bytes.to_vec();
 
         let digest = EIP1186ResponseDigest {
-            block_hash: block_hash_hi_lo.try_into().unwrap(),
-            block_number,
             index: transaction_index,
             slots_values: transaction_rlp,
             transaction_is_empty: transaction_witness.mpt_witness.slot_is_empty,
@@ -348,32 +345,43 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             ctx.constrain_equal(pf_root, root);
         }
 
-        let transaction_rlp_bytes;
+        let mut transaction_rlp_bytes;
+        let mut fields_value_bytes = (vec![], vec![]);
 
         let transaction_value_prefix = transaction_proofs.value_bytes.first().unwrap();
         let transaction_type = get_transaction_type(ctx, transaction_value_prefix);
 
-        if transaction_type != 0 {
+        if transaction_type != EIP_2718_TX_TYPE {
             // Todo: Identify nested lists
             let non_prefix_bytes = transaction_proofs.value_bytes[1..].to_vec();
-
             let non_prefix_bytes_u8 = bytes_to_vec_u8(&non_prefix_bytes);
 
-            // Generate rlp encoding for specific fields and generate a witness
-            let dest_value_bytes = get_transaction_field_rlp(transaction_type, &non_prefix_bytes_u8, 12, EIP_1559_TX_TYPE_FIELD);
-            let mut load_bytes =
-                |bytes: &[u8]| ctx.assign_witnesses(bytes.iter().map(|x| F::from(*x as u64)));
-            transaction_rlp_bytes = load_bytes(&dest_value_bytes);
+            fields_value_bytes = get_transaction_field_rlp(transaction_type, &non_prefix_bytes_u8, EIP_1559_TX_TYPE_FIELDS_NUM, EIP_1559_TX_TYPE_FIELDS_ITEM);
+            transaction_rlp_bytes = load_bytes(ctx,&fields_value_bytes.0);
         } else {
+            let non_prefix_bytes_u8 = bytes_to_vec_u8(&transaction_proofs.value_bytes);
+            fields_value_bytes = get_transaction_field_rlp(transaction_type, &non_prefix_bytes_u8, EIP_2718_TX_TYPE_FIELDS_NUM, EIP_2718_TX_TYPE_FIELDS_ITEM);
             transaction_rlp_bytes = transaction_proofs.value_bytes.to_vec();
         }
 
+        // println!("value:{:?}",transaction_rlp_bytes.get(5).unwrap());
+        // println!("len:{:?}",fields_value_bytes.1);
+
+        // let transaction_data_hash_query_id = keccak.keccak_fixed_len(
+        //     ctx,
+        //     &self.range().gate,
+        //     vec![*transaction_rlp_bytes.get(5).unwrap()],
+        //     Some(vec![])
+        // );
+        //
+        // let transaction_data_hash = keccak.fixed_len_queries[transaction_data_hash_query_id].output_assigned.clone();
+        // println!("transaction_data_hash:{:?}",transaction_data_hash);
 
         // parse EIP 2718 [nonce,gasPrice,gasLimit,to,value,data,v,r,s]
         let array_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
             transaction_rlp_bytes,
-            &[32, 32, 32, 20, 32, 100000, 32, 32, 32],//Maximum number of bytes per field. For example, the uint256 is 32 bytes.
+            &[32, 32, 32, 20, 32, fields_value_bytes.1.len(), 32, 32, 32],//Maximum number of bytes per field. For example, the uint256 is 32 bytes.
             false,
         );
 
@@ -451,7 +459,6 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         }
     }
 }
-
 
 
 

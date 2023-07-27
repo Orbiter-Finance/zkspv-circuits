@@ -14,16 +14,16 @@ use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, Network};
 use crate::config::token::zksync_era_token::get_zksync_era_eth_address;
-use crate::constant::EIP_1559_TX_TYPE_FIELD;
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::mpt::AssignedBytes;
 use crate::providers::{get_transaction_field_rlp, get_zksync_transaction_and_storage_input};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
+use crate::transaction::{ EIP_1559_TX_TYPE_FIELDS_ITEM, EIP_2718_TX_TYPE, get_transaction_type};
 use crate::util::{bytes_be_to_uint, EthConfigParams};
 use crate::util::contract_abi::erc20::{decode_input, is_erc20_transaction};
-use crate::util::helpers::{bytes_to_u8, bytes_to_vec_u8, bytes_to_vec_u8_gt_or_lt, get_transaction_type, load_bytes};
+use crate::util::helpers::{bytes_to_u8, bytes_to_vec_u8, bytes_to_vec_u8_gt_or_lt, load_bytes};
 
 mod tests;
 
@@ -384,13 +384,13 @@ impl<'chip, F: Field> ZkSyncBlockTransactionChip<F> for EthChip<'chip, F> {
                 let transaction_value_prefix = transaction.first().unwrap();
                 let transaction_type = get_transaction_type(ctx, transaction_value_prefix);
 
-                if transaction_type != 0 {
+                if transaction_type != EIP_2718_TX_TYPE {
                     // Todo: Identify nested lists
 
                     let non_prefix_bytes_u8 = bytes_to_vec_u8(&transaction[1..].to_vec());
                     // Generate rlp encoding for specific fields and generate a witness
-                    let dest_value_bytes = get_transaction_field_rlp(transaction_type, &non_prefix_bytes_u8, 12, EIP_1559_TX_TYPE_FIELD);
-                    transaction_rlp_bytes = load_bytes(ctx, &dest_value_bytes);
+                    let dest_value_bytes = get_transaction_field_rlp(transaction_type, &non_prefix_bytes_u8, 12, EIP_1559_TX_TYPE_FIELDS_ITEM);
+                    transaction_rlp_bytes = load_bytes(ctx, &dest_value_bytes.0);
                 } else {
                     transaction_rlp_bytes = transaction.to_vec();
                 }

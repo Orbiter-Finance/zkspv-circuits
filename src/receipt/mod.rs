@@ -21,8 +21,9 @@ use crate::providers::{get_receipt_field_rlp, get_receipt_input};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
+use crate::transaction::get_transaction_type;
 use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed};
-use crate::util::helpers::{bytes_to_vec_u8, get_transaction_type};
+use crate::util::helpers::{bytes_to_vec_u8};
 
 
 #[derive(Clone, Debug)]

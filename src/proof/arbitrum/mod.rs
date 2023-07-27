@@ -262,7 +262,7 @@ impl<'chip, F: Field> ArbitrumProofChip<F> for EthChip<'chip, F> {
             input.ethereum_block_status, ethereum_block_header_config);
 
         let digest = EIP1186ResponseDigest {
-            arbitrum_tx: arbitrum_transaction_digest.slots_values,
+            arbitrum_tx: vec![arbitrum_transaction_digest.transaction_is_empty],
             seq_number: input.l2_seq_num,
             arbitrum_block_end_hash: arbitrum_block_digest.last_block_hash,
             ethereum_block_end_hash: ethereum_block_digest.last_block_hash,

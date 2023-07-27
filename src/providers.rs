@@ -35,6 +35,7 @@ use crate::mpt::MPTUnFixedKeyInput;
 use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
 use crate::proof::arbitrum::{ArbitrumProofBlockTrack, ArbitrumProofInput, ArbitrumProofTransactionOrReceipt};
 use crate::track_block::EthTrackBlockInput;
+use crate::transaction::{EIP_1559_TX_TYPE,EIP_2718_TX_TYPE};
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
 use crate::transaction::zksync_era::now::{ZkSyncBlockTransactionInput, ZkSyncTransactionsInput};
 use crate::util::contract_abi::erc20::{decode_input, is_erc20_transaction};
@@ -446,68 +447,118 @@ pub fn is_assigned_slot(key: &H256, proof: &[Bytes]) -> bool {
 // EIP_2718 [nonce,gasPrice,gasLimit,to,value,data,v,r,s]
 // 1: EIP_2930 [chainId,nonce,gasPrice,gasLimit,to,value,data,accessList,v,r,s]
 // 2: EIP_1559 [chainId,nonce,maxPriorityFeePerGas,maxFeePerGas,gasLimit,to,value,data,accessList,v,r,s]
-pub fn get_transaction_field_rlp(tx_type: usize, source: &Vec<u8>, item_count: usize, new_item: [u8; 9]) -> Vec<u8> {
+pub fn get_transaction_field_rlp(tx_type: u8, source: &Vec<u8>, item_count: usize, new_item: [u8; 9]) -> (Vec<u8>,Vec<u8>) {
     let mut source_rlp = RlpStream::new();
     source_rlp.append_raw(source, item_count);
     let source_bytes = source_rlp.as_raw().to_vec();
     let rlp = Rlp::new(&source_bytes);
     let mut dest_rlp = RlpStream::new_list(new_item.len());
+    let mut data = vec![];
     for field_item in new_item {
         let field_rlp = rlp.at_with_offset(field_item as usize).unwrap();
         let field = field_rlp.0.data().unwrap();
-        if tx_type == 2 {
-            match field_item {
-                0 => {
-                    let dest_field = U64::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
+        match tx_type {
+            EIP_2718_TX_TYPE=>{
+                match field_item {
+                    0 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    1 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    2 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    3 => {
+                        let dest_field = NameOrAddress::Address(Address::from_slice(field));
+                        dest_rlp.append(&dest_field);
+                    }
+                    4 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    5 => {
+                        let dest_field = Bytes::from(field.to_vec()).clone();
+                        let a = dest_field.0.to_vec();
+                        dest_rlp.append(&a);
+                        data = a.to_vec();
+                    }
+                    6 => {
+                        let dest_field = U64::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    7 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    8 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    _ => println!("error")
                 }
-                1 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                2 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                3 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                4 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                5 => {
-                    let dest_field = NameOrAddress::Address(Address::from_slice(field));
-                    dest_rlp.append(&dest_field);
-                }
-                6 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                7 => {
-                    let dest_field = Bytes::from(field.to_vec()).clone();
-                    let a = dest_field.0.to_vec();
-                    dest_rlp.append(&a);
-                }
-                9 => {
-                    let dest_field = U64::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                10 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                11 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                _ => println!("error")
             }
+            EIP_1559_TX_TYPE =>{
+                match field_item {
+                    0 => {
+                        let dest_field = U64::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    1 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    2 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    3 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    4 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    5 => {
+                        let dest_field = NameOrAddress::Address(Address::from_slice(field));
+                        dest_rlp.append(&dest_field);
+                    }
+                    6 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    7 => {
+                        let dest_field = Bytes::from(field.to_vec()).clone();
+                        let a = dest_field.0.to_vec();
+                        dest_rlp.append(&a);
+                        data = a.to_vec();
+                    }
+                    9 => {
+                        let dest_field = U64::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    10 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    11 => {
+                        let dest_field = U256::from_big_endian(field);
+                        dest_rlp.append(&dest_field);
+                    }
+                    _ => println!("error")
+                }
+            }
+            _ => println!("error")
         }
     }
 
-    dest_rlp.out().into()
+
+
+    (dest_rlp.out().into(),data)
 }
 
 pub fn get_receipt_field_rlp(source: &Vec<u8>, item_count: usize, new_item: [u8; 3]) -> Vec<u8> {

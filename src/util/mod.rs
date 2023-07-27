@@ -502,3 +502,4 @@ pub fn is_zero_vec<F: ScalarField>(
     let total_len = gate.get_field_element(input.len() as u64);
     gate.is_equal(ctx, sum, Constant(total_len))
 }
+

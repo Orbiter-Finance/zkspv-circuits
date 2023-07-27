@@ -13,7 +13,7 @@
   ],
   [
     {
-      "degree": 17,
+      "degree": 19,
       "num_rlc_columns": 2,
       "num_range_advice": [24, 14],
       "num_lookup_advice": [1, 1],

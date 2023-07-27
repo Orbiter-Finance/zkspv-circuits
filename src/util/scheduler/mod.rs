@@ -1,3 +1,5 @@
+pub mod evm_wrapper;
+
 use ethers_core::types::U256;
 use ethers_providers::{Http, Middleware, Provider};
 use halo2_base::{

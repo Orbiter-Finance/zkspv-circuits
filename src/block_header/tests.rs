@@ -201,168 +201,168 @@ pub fn test_one_mainnet_header_prover() -> Result<(), Box<dyn std::error::Error>
 
     Ok(())
 }
-//
-// fn get_default_goerli_header_chain_circuit() -> EthBlockHeaderChainCircuit<Fr> {
-//     let network = Network::Goerli;
-//     let header_rlp_max_bytes = GOERLI_BLOCK_HEADER_RLP_MAX_BYTES;
-//     let blocks: Vec<String> =
-//         serde_json::from_reader(File::open("data/headers/default_blocks_goerli.json").unwrap())
-//             .unwrap();
-//     let mut input_bytes = Vec::new();
-//     let max_depth = 3;
-//     for block_str in blocks.iter() {
-//         let mut block_vec: Vec<u8> = Vec::from_hex(block_str).unwrap();
-//         block_vec.resize(header_rlp_max_bytes, 0);
-//         input_bytes.push(block_vec);
-//     }
-//     let dummy_header_rlp = input_bytes[0].clone();
-//     input_bytes.extend(iter::repeat(dummy_header_rlp).take((1 << max_depth) - input_bytes.len()));
-//
-//     EthBlockHeaderChainCircuit {
-//         header_rlp_encodings: input_bytes,
-//         num_blocks: 7,
-//         max_depth,
-//         network,
-//         _marker: PhantomData,
-//     }
-// }
 
-// #[test]
-// pub fn test_multi_goerli_header_mock() {
-//     let config = EthConfigPinning::from_path("configs/tests/multi_block.json").params;
-//     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&config).unwrap());
-//     let k = config.degree;
-//
-//     let input = get_default_goerli_header_chain_circuit();
-//     let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
-//     let instance = circuit.instance();
-//
-//     MockProver::run(k, &circuit, vec![instance]).unwrap().assert_satisfied();
-// }
-//
-// #[test]
-// pub fn test_multi_goerli_header_prover() {
-//     let config = EthConfigPinning::from_path("configs/tests/multi_block.json").params;
-//     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&config).unwrap());
-//     let k = config.degree;
-//     let input = get_default_goerli_header_chain_circuit();
-//     let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
-//
-//     let params = gen_srs(k);
-//
-//     let vk_time = start_timer!(|| "vk gen");
-//     let vk = keygen_vk(&params, &circuit).unwrap();
-//     end_timer!(vk_time);
-//     let pk_time = start_timer!(|| "pk gen");
-//     let pk = keygen_pk(&params, vk, &circuit).unwrap();
-//     end_timer!(pk_time);
-//     let break_points = circuit.circuit.break_points.take();
-//     let pinning = EthConfigPinning {
-//         params: serde_json::from_str(var("ETH_CONFIG_PARAMS").unwrap().as_str()).unwrap(),
-//         break_points,
-//     };
-//     serde_json::to_writer(File::create("configs/tests/multi_block.json").unwrap(), &pinning)
-//         .unwrap();
-//
-//     let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-//     let pf_time = start_timer!(|| "proof gen");
-//     let break_points = pinning.break_points();
-//     let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
-//     let instance = circuit.instance();
-//     create_proof::<
-//         KZGCommitmentScheme<Bn256>,
-//         ProverSHPLONK<'_, Bn256>,
-//         Challenge255<G1Affine>,
-//         _,
-//         Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-//         _,
-//     >(&params, &pk, &[circuit], &[&[&instance]], OsRng, &mut transcript)
-//         .unwrap();
-//     let proof = transcript.finalize();
-//     end_timer!(pf_time);
-//
-//     let verifier_params = params.verifier_params();
-//     let strategy = SingleStrategy::new(&params);
-//     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-//     let verify_time = start_timer!(|| "verify");
-//     verify_proof::<
-//         KZGCommitmentScheme<Bn256>,
-//         VerifierSHPLONK<'_, Bn256>,
-//         Challenge255<G1Affine>,
-//         Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
-//         SingleStrategy<'_, Bn256>,
-//     >(verifier_params, pk.get_vk(), strategy, &[&[&instance]], &mut transcript)
-//         .unwrap();
-//     end_timer!(verify_time);
-// }
-//
-// #[cfg(all(feature = "aggregation", feature = "providers"))]
-// mod aggregation {
-//     use std::path::PathBuf;
-//
-//     use super::test;
-//     use super::*;
-//     use crate::{
-//         block_header::helpers::{BlockHeaderScheduler, CircuitType, Finality, Task},
-//         util::scheduler::Scheduler,
-//     };
-//
-//     fn test_scheduler(network: Network) -> BlockHeaderScheduler {
-//         BlockHeaderScheduler::new(
-//             network,
-//             false,
-//             false,
-//             PathBuf::from("configs/headers"),
-//             PathBuf::from("data/headers"),
-//         )
-//     }
-//
-//     #[test]
-//     fn test_goerli_header_chain_provider() {
-//         let scheduler = test_scheduler(Network::Goerli);
-//         scheduler.get_snark(Task::new(
-//             0x765fb3,
-//             0x765fb3 + 7,
-//             CircuitType::new(3, 3, Finality::None, Network::Goerli),
-//         ));
-//     }
-//
-//     #[test]
-//     #[ignore = "requires over 32G memory"]
-//     fn test_goerli_header_chain_with_aggregation() {
-//         let scheduler = test_scheduler(Network::Goerli);
-//         scheduler.get_snark(Task::new(
-//             0x765fb3,
-//             0x765fb3 + 11,
-//             CircuitType::new(4, 3, Finality::None, Network::Goerli),
-//         ));
-//     }
-//
-//     #[test]
-//     #[ignore = "requires over 32G memory"]
-//     fn test_goerli_header_chain_final_aggregation() {
-//         let scheduler = test_scheduler(Network::Goerli);
-//         scheduler.get_snark(Task::new(
-//             0x765fb3,
-//             0x765fb3 + 9,
-//             CircuitType::new(4, 3, Finality::Merkle, Network::Goerli),
-//         ));
-//     }
-//
-//     #[cfg(feature = "evm")]
-//     #[test]
-//     fn test_goerli_header_chain_for_evm() {
-//         let scheduler = test_scheduler(Network::Goerli);
-//         scheduler.get_calldata(
-//             Task::new(
-//                 0x765fb3,
-//                 0x765fb3 + 11,
-//                 CircuitType::new(4, 3, Finality::Evm(1), Network::Goerli),
-//             ),
-//             true,
-//         );
-//     }
-// }
+fn get_default_goerli_header_chain_circuit() -> EthBlockHeaderChainCircuit<Fr> {
+    let network = Network::Ethereum(EthereumNetwork::Goerli);
+    let block_header_config = get_block_header_config(&network);
+    let blocks: Vec<String> =
+        serde_json::from_reader(File::open("data/headers/default_blocks_goerli.json").unwrap())
+            .unwrap();
+    let mut input_bytes = Vec::new();
+    let max_depth = 3;
+    for block_str in blocks.iter() {
+        let mut block_vec: Vec<u8> = Vec::from_hex(block_str).unwrap();
+        block_vec.resize(block_header_config.block_header_rlp_max_bytes, 0);
+        input_bytes.push(block_vec);
+    }
+    let dummy_header_rlp = input_bytes[0].clone();
+    input_bytes.extend(iter::repeat(dummy_header_rlp).take((1 << max_depth) - input_bytes.len()));
+
+    EthBlockHeaderChainCircuit {
+        header_rlp_encodings: input_bytes,
+        num_blocks: 7,
+        max_depth,
+        block_header_config,
+        _marker: PhantomData,
+    }
+}
+
+#[test]
+pub fn test_multi_goerli_header_mock() {
+    let config = EthConfigPinning::from_path("configs/tests/multi_block.json").params;
+    set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&config).unwrap());
+    let k = config.degree;
+
+    let input = get_default_goerli_header_chain_circuit();
+    let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
+    let instance = circuit.instance();
+
+    MockProver::run(k, &circuit, vec![instance]).unwrap().assert_satisfied();
+}
+
+#[test]
+pub fn test_multi_goerli_header_prover() {
+    let config = EthConfigPinning::from_path("configs/tests/multi_block.json").params;
+    set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&config).unwrap());
+    let k = config.degree;
+    let input = get_default_goerli_header_chain_circuit();
+    let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
+
+    let params = gen_srs(k);
+
+    let vk_time = start_timer!(|| "vk gen");
+    let vk = keygen_vk(&params, &circuit).unwrap();
+    end_timer!(vk_time);
+    let pk_time = start_timer!(|| "pk gen");
+    let pk = keygen_pk(&params, vk, &circuit).unwrap();
+    end_timer!(pk_time);
+    let break_points = circuit.circuit.break_points.take();
+    let pinning = EthConfigPinning {
+        params: serde_json::from_str(var("ETH_CONFIG_PARAMS").unwrap().as_str()).unwrap(),
+        break_points,
+    };
+    serde_json::to_writer(File::create("configs/tests/multi_block.json").unwrap(), &pinning)
+        .unwrap();
+
+    let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+    let pf_time = start_timer!(|| "proof gen");
+    let break_points = pinning.break_points();
+    let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
+    let instance = circuit.instance();
+    create_proof::<
+        KZGCommitmentScheme<Bn256>,
+        ProverSHPLONK<'_, Bn256>,
+        Challenge255<G1Affine>,
+        _,
+        Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
+        _,
+    >(&params, &pk, &[circuit], &[&[&instance]], OsRng, &mut transcript)
+        .unwrap();
+    let proof = transcript.finalize();
+    end_timer!(pf_time);
+
+    let verifier_params = params.verifier_params();
+    let strategy = SingleStrategy::new(&params);
+    let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+    let verify_time = start_timer!(|| "verify");
+    verify_proof::<
+        KZGCommitmentScheme<Bn256>,
+        VerifierSHPLONK<'_, Bn256>,
+        Challenge255<G1Affine>,
+        Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
+        SingleStrategy<'_, Bn256>,
+    >(verifier_params, pk.get_vk(), strategy, &[&[&instance]], &mut transcript)
+        .unwrap();
+    end_timer!(verify_time);
+}
+
+#[cfg(all(feature = "aggregation", feature = "providers"))]
+mod aggregation {
+    use std::path::PathBuf;
+
+    use super::test;
+    use super::*;
+    use crate::{
+        util::scheduler::Scheduler,
+    };
+    use crate::block_header::helper::{BlockHeaderScheduler, CircuitType, Finality, Task};
+
+    fn test_scheduler(network: Network) -> BlockHeaderScheduler {
+        BlockHeaderScheduler::new(
+            network,
+            false,
+            false,
+            PathBuf::from("configs/headers"),
+            PathBuf::from("data/headers"),
+        )
+    }
+
+    #[test]
+    fn test_goerli_header_chain_provider() {
+        let scheduler = test_scheduler(Network::Ethereum(EthereumNetwork::Goerli));
+        scheduler.get_snark(Task::new(
+            0x765fb3,
+            0x765fb3 + 7,
+            CircuitType::new(3, 3, Finality::None, Network::Ethereum(EthereumNetwork::Goerli)),
+        ));
+    }
+
+    #[test]
+    #[ignore = "requires over 32G memory"]
+    fn test_goerli_header_chain_with_aggregation() {
+        let scheduler = test_scheduler(Network::Ethereum(EthereumNetwork::Goerli));
+        scheduler.get_snark(Task::new(
+            0x765fb3,
+            0x765fb3 + 11,
+            CircuitType::new(4, 3, Finality::None, Network::Ethereum(EthereumNetwork::Goerli)),
+        ));
+    }
+
+    #[test]
+    #[ignore = "requires over 32G memory"]
+    fn test_goerli_header_chain_final_aggregation() {
+        let scheduler = test_scheduler(Network::Ethereum(EthereumNetwork::Goerli));
+        scheduler.get_snark(Task::new(
+            0x765fb3,
+            0x765fb3 + 9,
+            CircuitType::new(4, 3, Finality::Merkle, Network::Ethereum(EthereumNetwork::Goerli)),
+        ));
+    }
+
+    #[cfg(feature = "evm")]
+    #[test]
+    fn test_goerli_header_chain_for_evm() {
+        let scheduler = test_scheduler(Network::Ethereum(EthereumNetwork::Goerli));
+        scheduler.get_calldata(
+            Task::new(
+                0x765fb3,
+                0x765fb3 + 1,
+                CircuitType::new(4, 3, Finality::Evm(1), Network::Ethereum(EthereumNetwork::Goerli)),
+            ),
+            true,
+        );
+    }
+}
 
 
 #[test]

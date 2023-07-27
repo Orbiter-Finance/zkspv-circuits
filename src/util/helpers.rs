@@ -7,7 +7,6 @@ use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ArbitrumNetwork, EthereumNetwork, Network, OptimismNetwork, ZkSyncEraNetwork};
 use crate::config::rpcs::get_rpcs_config;
-use crate::constant::{EIP_1559_TX_TYPE, EIP_2930_TX_TYPE};
 use crate::keccak::get_bytes;
 use crate::mpt::AssignedBytes;
 
@@ -44,20 +43,7 @@ pub fn get_provider(network: &Network) -> Provider<Http> {
     provider
 }
 
-pub fn get_transaction_type<F: Field>(ctx: &mut Context<F>, value: &AssignedValue<F>) -> usize {
-    let eip_1559_prefix = (F::from(EIP_1559_TX_TYPE as u64)).try_into().unwrap();
-    let eip_1559_prefix = ctx.load_witness(eip_1559_prefix);
-    let eip_2930_prefix = (F::from(EIP_2930_TX_TYPE as u64)).try_into().unwrap();
-    let eip_2930_prefix = ctx.load_witness(eip_2930_prefix);
-    let transaction_type =
-        if value.value == eip_1559_prefix.value {
-            2
-        } else if value.value == eip_2930_prefix.value {
-            1
-        } else { 0 };
 
-    transaction_type
-}
 
 pub fn bytes_to_vec_u8<F: Field>(bytes_value: &AssignedBytes<F>) -> Vec<u8> {
     let input_bytes: Option<Vec<u8>> = None;
