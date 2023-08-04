@@ -4,10 +4,10 @@ use ark_std::{end_timer, start_timer};
 use clap::{Parser, ValueEnum};
 use ethers_core::types::Bytes;
 use hex::FromHex;
-use zk_spv::{EthereumNetwork, Network};
-use zk_spv::transaction::ethereum::helper::{ TransactionScheduler, TransactionTask};
-use zk_spv::util::scheduler::evm_wrapper::ForEvm;
-use zk_spv::util::scheduler::Scheduler;
+use zkspv_circuits::{EthereumNetwork, Network};
+use zkspv_circuits::transaction::ethereum::helper::{ TransactionScheduler, TransactionTask};
+use zkspv_circuits::util::scheduler::evm_wrapper::ForEvm;
+use zkspv_circuits::util::scheduler::Scheduler;
 //
 // #[derive(Parser, Debug)]
 // #[command(author, version, about, long_about = None)] // Read from `Cargo.toml`

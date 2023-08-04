@@ -48,7 +48,6 @@ pub mod block_header;
 
 #[cfg(feature = "providers")]
 pub mod providers;
-pub mod constant;
 pub mod config;
 pub mod util;
 pub mod server;

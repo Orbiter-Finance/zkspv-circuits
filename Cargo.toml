@@ -1,5 +1,5 @@
 [package]
-name = "zk_spv"
+name = "zkspv_circuits"
 version = "0.1.1"
 edition = "2021"
 
@@ -7,10 +7,6 @@ edition = "2021"
 [[bin]]
 name = "header_chain"
 required-features = ["aggregation", "clap"]
-
-[[bin]]
-name = "storage_proof"
-required-features = ["aggregation", "clap", "evm"]
 
 [[bin]]
 name = "transaction"
@@ -39,8 +35,8 @@ serde_with = { version = "2.2", optional = true }
 
 # halo2
 ff = "0.12"
-halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib.git", tag = "v0.3.0", default-features = false }
-zkevm-keccak = { git = "https://github.com/axiom-crypto/halo2-lib.git", tag = "v0.3.0", default-features = false }
+halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib.git",  branch = "community-edition", default-features = false }
+zkevm-keccak = { git = "https://github.com/axiom-crypto/halo2-lib.git",  branch = "community-edition", default-features = false }
 
 # crypto
 rlp = "0.5.2"
@@ -50,8 +46,8 @@ rand = "0.8"
 rand_chacha = "0.3.1"
 
 # aggregation 
-snark-verifier = { git = "https://github.com/axiom-crypto/snark-verifier.git", tag = "v0.1.1", default-features = false, features = ["loader_halo2"], optional = true }
-snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", tag = "v0.1.1", default-features = false, features = ["loader_halo2"], optional = true }
+snark-verifier = { git = "https://github.com/axiom-crypto/snark-verifier.git",  branch = "community-edition", default-features = false, features = ["loader_halo2"], optional = true }
+snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", branch = "community-edition", default-features = false, features = ["loader_halo2"], optional = true }
 
 # generating circuit inputs from blockchain
 ethers-providers = { version = "=2.0.6", optional = true }
@@ -79,12 +75,6 @@ toml = "0.7.6"
 
 hex = "0.4.3"
 test-log = "0.2.11"
-
-[dev-dependencies]
-#hex = "0.4.3"
-#ark-std = { version = "0.3.0", features = ["print-trace"] }
-#log = "0.4"
-#test-log = "0.2.11"
 
 [features]
 default = ["halo2-axiom", "jemallocator", "display", "aggregation", "clap", "evm"]

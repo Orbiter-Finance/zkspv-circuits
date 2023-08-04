@@ -1,10 +1,9 @@
 #[cfg(feature = "display")]
 use ark_std::{end_timer, start_timer};
-use zk_spv::{util::scheduler::Scheduler, Network,EthereumNetwork};
+use zkspv_circuits::{util::scheduler::Scheduler, Network,EthereumNetwork, block_header::helper::{BlockHeaderScheduler, CircuitType, Finality, Task}};
 use clap::{Parser, ValueEnum};
 use clap_num::maybe_hex;
 use std::{cmp::min, fmt::Display, path::PathBuf};
-use zk_spv::block_header::helper::{BlockHeaderScheduler, CircuitType, Finality, Task};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)] // Read from `Cargo.toml`

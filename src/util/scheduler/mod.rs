@@ -23,6 +23,8 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
 };
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 
 use crate::{ Network};
 use crate::util::helpers::get_provider;
@@ -228,10 +230,20 @@ pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::Circuit
         // TODO: some shared code with `get_snark`; clean up somehow
 
         let calldata_path = self.calldata_path(&task);
-        if let Ok(calldata) = fs::read_to_string(&calldata_path) {
-            // calldata is serialized as a hex string
-            return calldata;
-        }
+        println!("test1");
+
+        // // read large
+        // let file = File::open(calldata_path)?;
+        // let reader = BufReader::new(file);
+        // for line in reader.lines() {
+        //     let line_content = line?;
+        // }
+        // if let Ok(calldata) = fs::read_to_string(&calldata_path) {
+        //     // calldata is serialized as a hex string
+        //     return calldata;
+        // }
+
+        println!("test");
 
         let dep_snarks: Vec<Snark> =
             task.dependencies().into_iter().map(|dep| self.get_snark(dep)).collect();
@@ -253,6 +265,7 @@ pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::Circuit
             self.insert_pkey(circuit_type.clone(), pk);
             self.get_pkey(&circuit_type).unwrap()
         };
+
 
         let deployment_code = generate_smart_contract.then(|| {
             pre_circuit.clone().gen_evm_verifier_shplonk(params, &pk, self.yul_path(&circuit_type))

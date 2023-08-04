@@ -348,8 +348,17 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let mut transaction_rlp_bytes;
         let mut fields_value_bytes = (vec![], vec![]);
 
-        let transaction_value_prefix = transaction_proofs.value_bytes.first().unwrap();
-        let transaction_type = get_transaction_type(ctx, transaction_value_prefix);
+        let type_value = transaction_proofs.value_bytes.first().unwrap();
+
+        let test_value = self.gate().select(
+            ctx,
+            transaction_proofs.value_bytes[3],
+            transaction_proofs.value_bytes[2],
+            *type_value
+        );
+        println!("test_value:{:?}",test_value.value);
+
+        let transaction_type = get_transaction_type(ctx, type_value);
 
         if transaction_type != EIP_2718_TX_TYPE {
             // Todo: Identify nested lists
@@ -364,8 +373,6 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             transaction_rlp_bytes = transaction_proofs.value_bytes.to_vec();
         }
 
-        // println!("value:{:?}",transaction_rlp_bytes.get(5).unwrap());
-        // println!("len:{:?}",fields_value_bytes.1);
 
         // let transaction_data_hash_query_id = keccak.keccak_fixed_len(
         //     ctx,
@@ -381,9 +388,13 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let array_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
             transaction_rlp_bytes,
-            &[32, 32, 32, 20, 32, fields_value_bytes.1.len(), 32, 32, 32],//Maximum number of bytes per field. For example, the uint256 is 32 bytes.
+            &[32, 32, 32, 20, 32, 0, 32, 32, 32],//Maximum number of bytes per field. For example, the uint256 is 32 bytes.
             false,
         );
+
+        // println!("len:{:?}",array_witness.field_witness.len());
+
+        assert_eq!(array_witness.field_witness.len(),EIP_2718_TX_TYPE_FIELDS_NUM);
 
         // check MPT inclusion
         let mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, transaction_proofs);
@@ -417,7 +428,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
 
         let max_len = (2 * &copy_witness.mpt_witness.key_byte_len).max(copy_witness.array_witness.rlp_array.len());
         let cache_bits = bit_length(max_len as u64);
-        self.rlc().load_rlc_cache((ctx_gate, ctx_rlc), self.gate(), cache_bits);
+        self.rlc().load_rlc_cache((ctx_gate, ctx_rlc), self.gate(), 12);
 
         transaction_trace
     }
