@@ -97,9 +97,27 @@ jemallocator = ["halo2-base/jemallocator"]
 
 dev-graph = ["halo2-base/dev-graph"]
 
+# [patch."https://github.com/Orbiter-Finance/halo2-axiom.git"]
+# halo2_proofs = { path = "../halo2-axiom/halo2_proofs"}
+
 # [patch."https://github.com/Orbiter-Finance/snark-verifier.git"]
 # snark-verifier-sdk = { path = "../snark-verifier/snark-verifier-sdk"}
 # snark-verifier = { path = "../snark-verifier/snark-verifier"}
+
+
+# [patch."https://github.com/Orbiter-Finance/halo2-lib.git"]
+# halo2-base = { path = "../halo2-lib/halo2-base"}
+# halo2-ecc = { path = "../halo2-lib/halo2-ecc" }
+
+# [patch."https://github.com/Orbiter-Finance/halo2curves.git"]
+# halo2curves = { path = "../halo2curves"}
+
+
+# [patch."https://github.com/Orbiter-Finance/ec-gpu.git"]
+# ec-gpu = { path = "../ec-gpu/ec-gpu"}
+# ec-gpu-gen = { path = "../ec-gpu/ec-gpu-gen"}
+
+
 
 # [patch.crates-io]
 # snark-verifier = { git = "https://github.com/Orbiter-Finance/snark-verifier.git",  branch = "community-edition-performance", default-features = false, features = ["loader_halo2"], optional = true }
