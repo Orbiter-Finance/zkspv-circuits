@@ -64,7 +64,7 @@ impl Display for CliFinality {
 fn main(){
     // let args = Cli::parse();
     #[cfg(feature = "production")]
-        let srs_readonly = true;
+        let srs_readonly = false;
     // #[cfg(not(feature = "production"))]
     //     let srs_readonly = args.srs_readonly;
 
@@ -73,7 +73,7 @@ fn main(){
     let scheduler = TransactionScheduler::new(
         network,
         false,
-        false,
+        true,
         PathBuf::from("configs/transactions"),
         PathBuf::from("data/transactions"),
     );

@@ -1,2 +1,0 @@
-degree,total_advice,num_rlc_columns,num_advice,num_lookup,num_fixed,storage_proof_time,evm_proof_time
-18,42,1,[5, 3, 0],[1, 1, 0],1,1333.60s,553.717126464s

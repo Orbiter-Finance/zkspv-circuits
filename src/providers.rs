@@ -7,7 +7,7 @@ use std::{
     iter, num,
     path::Path,
 };
-use std::ops::{Not, Sub};
+use std::ops::{Mul, Not, Sub};
 use std::path::PathBuf;
 
 use ethers_core::types::{Address, Block, BlockId, BlockId::Number, BlockNumber, Bloom, Bytes, EIP1186ProofResponse, Eip1559TransactionRequest, H256, NameOrAddress, StorageProof, Transaction, U256, U64};
@@ -205,11 +205,11 @@ pub fn get_transaction_input(
     let slot_is_empty = false;
     let transaction_proofs = MPTUnFixedKeyInput {
         path: transaction_key,
-        value: transaction_rlp,
+        value: transaction_rlp.to_vec(),
         root_hash: block.transactions_root,
         proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
         slot_is_empty,
-        value_max_byte_len: TRANSACTION_PROOF_VALUE_MAX_BYTE_LEN,
+        value_max_byte_len: transaction_rlp.len(),
         max_depth: transaction_pf_max_depth,
     };
 
