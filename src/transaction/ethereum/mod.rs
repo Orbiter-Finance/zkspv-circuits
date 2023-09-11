@@ -182,37 +182,37 @@ pub struct EthBlockTransactionTrace<F: Field> {
 
 #[derive(Clone, Debug)]
 pub struct EthTransactionTraceWitness<F: Field> {
-    array_witness: RlpArrayTraceWitness<F>,
+    transaction_witness: RlpArrayTraceWitness<F>,
     mpt_witness: MPTFixedKeyProofWitness<F>,
 }
 
 impl<F: Field> EthTransactionTraceWitness<F> {
     pub fn get_nonce(&self) -> &RlpFieldWitness<F> {
-        &self.array_witness.field_witness[0]
+        &self.transaction_witness.field_witness[0]
     }
     pub fn get_gas_price(&self) -> &RlpFieldWitness<F> {
-        &self.array_witness.field_witness[1]
+        &self.transaction_witness.field_witness[1]
     }
     pub fn get_gas_limit(&self) -> &RlpFieldWitness<F> {
-        &self.array_witness.field_witness[2]
+        &self.transaction_witness.field_witness[2]
     }
     pub fn get_to(&self) -> &RlpFieldWitness<F> {
-        &self.array_witness.field_witness[3]
+        &self.transaction_witness.field_witness[3]
     }
     pub fn get_value(&self) -> &RlpFieldWitness<F> {
-        &self.array_witness.field_witness[4]
+        &self.transaction_witness.field_witness[4]
     }
     pub fn get_data(&self) -> &RlpFieldWitness<F> {
-        &self.array_witness.field_witness[5]
+        &self.transaction_witness.field_witness[5]
     }
     pub fn get_v(&self) -> &RlpFieldWitness<F> {
-        &self.array_witness.field_witness[6]
+        &self.transaction_witness.field_witness[6]
     }
     pub fn get_r(&self) -> &RlpFieldWitness<F> {
-        &self.array_witness.field_witness[7]
+        &self.transaction_witness.field_witness[7]
     }
     pub fn get_s(&self) -> &RlpFieldWitness<F> {
-        &self.array_witness.field_witness[8]
+        &self.transaction_witness.field_witness[8]
     }
 }
 
@@ -364,28 +364,11 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             let legacy_transaction_type = load_transaction_type(ctx,EIP_2718_TX_TYPE);
             ctx.constrain_equal(transaction_type,&legacy_transaction_type);
         }else{
-            transaction_rlp_bytes = transaction_proofs.value_bytes[1..].to_vec();
+            transaction_rlp_bytes = transaction_rlp_bytes[1..].to_vec();
             field_lens = EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN.to_vec();
         }
 
-        println!("is_not_legacy_transaction:{:?}",&is_not_legacy_transaction.value);
-
-        // let test_value = self.gate().select(
-        //     ctx,
-        //     transaction_proofs.value_bytes[3],
-        //     transaction_proofs.value_bytes[2],
-        //     type_is_not_zero
-        // );//type_is_not_zero == 1 , value is a;type_is_not_zero == 0 , value is b
-
-        // let one_nine_three = ctx.load_constant(F::from(193));
-        // let zero = ctx.load_constant(F::from(0));
-        // let c  = self.gate().mul_add(ctx,one_nine_three,zero,transaction_proofs.value_bytes[0]);
-        // println!("c:{:?}",&c.value);
-
-        println!("len:{:?}",&transaction_rlp_bytes.len());
-
-
-        let array_witness = self.rlp().decompose_rlp_array_phase0(
+        let transaction_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
             transaction_rlp_bytes,
             &field_lens.as_slice(),//Maximum number of bytes per field. For example, the uint256 is 32 bytes.
@@ -394,7 +377,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
 
         // check MPT inclusion
         let mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, transaction_proofs);
-        EthTransactionTraceWitness { array_witness, mpt_witness }
+        EthTransactionTraceWitness { transaction_witness, mpt_witness }
     }
 
 
@@ -433,7 +416,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         self.parse_mpt_inclusion_fixed_key_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
         let value_trace = self
             .rlp()
-            .decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.array_witness, true)
+            .decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.transaction_witness, true)
             .field_trace
             .try_into()
             .unwrap();

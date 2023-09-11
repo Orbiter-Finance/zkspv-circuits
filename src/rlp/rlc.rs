@@ -232,7 +232,7 @@ impl<F: ScalarField> RlcChip<F> {
 
     // returns (rlc, len)
     // if num_frags.value() = 0, then (rlc = 0, len = 0) because of how `select_from_idx` works (`num_frags_minus_1` will be very large)
-    fn rlc_concat_var(
+    pub fn rlc_concat_var(
         &self,
         ctx_gate: &mut Context<F>,
         gate: &impl GateInstructions<F>,
@@ -266,7 +266,7 @@ impl<F: ScalarField> RlcChip<F> {
         (rlc_select, total_len)
     }
 
-    /// Same as `constrain_rlc_concat` but now the actual length of `inputs` to use is variable:
+    /// Same as [`constrain_rlc_concat`] but now the actual length of `inputs` to use is variable:
     /// these are referred to as "fragments".
     ///
     /// Assumes 0 < num_frags <= max_num_frags.
