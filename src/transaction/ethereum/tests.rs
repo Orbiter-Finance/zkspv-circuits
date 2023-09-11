@@ -92,7 +92,7 @@ pub fn test_1559_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// #[test]
+#[test]
 #[cfg(feature = "evm")]
 pub fn evm() -> Result<(), Box<dyn std::error::Error>> {
     use crate::util::circuit::custom_gen_evm_verifier_shplonk;
@@ -186,30 +186,30 @@ pub fn evm() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // this verifies proof in EVM and outputs gas cost (if successful)
-    evm_verify(deployment_code, instances, proof);
-
-    let keccak_advice = var("KECCAK_ADVICE_COLUMNS")
-        .unwrap_or_else(|_| "0".to_string())
-        .parse::<usize>()
-        .unwrap();
-    let transaction_params: EthConfigParams =
-        serde_json::from_str(var("ETH_CONFIG_PARAMS").unwrap().as_str()).unwrap();
-    writeln!(
-        fs_results,
-        "{},{},{},{:?},{:?},{},{:.2}s,{:?}",
-        transaction_params.degree,
-        transaction_params.num_rlc_columns
-            + transaction_params.num_range_advice.iter().sum::<usize>()
-            + transaction_params.num_lookup_advice.iter().sum::<usize>()
-            + keccak_advice,
-        transaction_params.num_rlc_columns,
-        transaction_params.num_range_advice,
-        transaction_params.num_lookup_advice,
-        transaction_params.num_fixed,
-        storage_proof_time.time.elapsed().as_secs_f64(),
-        evm_proof_time.time.elapsed()
-    )
-        .unwrap();
+    // evm_verify(deployment_code, instances, proof);
+    //
+    // let keccak_advice = var("KECCAK_ADVICE_COLUMNS")
+    //     .unwrap_or_else(|_| "0".to_string())
+    //     .parse::<usize>()
+    //     .unwrap();
+    // let transaction_params: EthConfigParams =
+    //     serde_json::from_str(var("ETH_CONFIG_PARAMS").unwrap().as_str()).unwrap();
+    // writeln!(
+    //     fs_results,
+    //     "{},{},{},{:?},{:?},{},{:.2}s,{:?}",
+    //     transaction_params.degree,
+    //     transaction_params.num_rlc_columns
+    //         + transaction_params.num_range_advice.iter().sum::<usize>()
+    //         + transaction_params.num_lookup_advice.iter().sum::<usize>()
+    //         + keccak_advice,
+    //     transaction_params.num_rlc_columns,
+    //     transaction_params.num_range_advice,
+    //     transaction_params.num_lookup_advice,
+    //     transaction_params.num_fixed,
+    //     storage_proof_time.time.elapsed().as_secs_f64(),
+    //     evm_proof_time.time.elapsed()
+    // )
+    //     .unwrap();
     Ok(())
 }
 

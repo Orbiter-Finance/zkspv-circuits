@@ -29,6 +29,7 @@ use std::{
     env::{set_var, var},
     fs::File,
 };
+use rayon::ThreadPoolBuilder;
 use test_log::test;
 
 fn block_header_test_circuit<F: Field>(
@@ -135,6 +136,8 @@ pub fn test_one_mainnet_header_withdrawals_mock() {
 
 #[test]
 pub fn test_one_mainnet_header_prover() -> Result<(), Box<dyn std::error::Error>> {
+
+    ThreadPoolBuilder::new().num_threads(256).build_global().unwrap();
     let params = EthConfigPinning::from_path("configs/tests/one_block.json").params;
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let network = Network::Ethereum(EthereumNetwork::Mainnet);

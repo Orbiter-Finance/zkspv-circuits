@@ -3,5 +3,6 @@ Cargo.lock
 **/*.rs.bk
 *~
 ./spv.toml
-./params
+params/
 *.srs
+data/

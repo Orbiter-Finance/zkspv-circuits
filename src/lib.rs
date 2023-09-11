@@ -50,7 +50,7 @@ pub mod block_header;
 pub mod providers;
 pub mod config;
 pub mod util;
-pub mod server;
+// pub mod server;
 
 
 pub(crate) const ETH_LOOKUP_BITS: usize = 8; // always want 8 to range check bytes

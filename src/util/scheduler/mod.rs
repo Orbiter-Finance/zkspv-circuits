@@ -230,20 +230,11 @@ pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::Circuit
         // TODO: some shared code with `get_snark`; clean up somehow
 
         let calldata_path = self.calldata_path(&task);
-        println!("test1");
 
-        // // read large
-        // let file = File::open(calldata_path)?;
-        // let reader = BufReader::new(file);
-        // for line in reader.lines() {
-        //     let line_content = line?;
-        // }
-        // if let Ok(calldata) = fs::read_to_string(&calldata_path) {
-        //     // calldata is serialized as a hex string
-        //     return calldata;
-        // }
-
-        println!("test");
+        if let Ok(calldata) = fs::read_to_string(&calldata_path) {
+            // calldata is serialized as a hex string
+            return calldata;
+        }
 
         let dep_snarks: Vec<Snark> =
             task.dependencies().into_iter().map(|dep| self.get_snark(dep)).collect();

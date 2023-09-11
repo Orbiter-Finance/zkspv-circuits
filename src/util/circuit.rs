@@ -23,6 +23,7 @@ use snark_verifier_sdk::{
     read_pk, CircuitExt, Snark, LIMBS, SHPLONK,
 };
 use std::{env::var, fs::File, path::Path};
+use std::io::Read;
 
 pub trait PinnableCircuit<F: ff::Field>: CircuitExt<F> {
     type Pinning: Halo2ConfigPinning;
@@ -300,7 +301,7 @@ pub fn write_calldata_generic<ConcreteCircuit: CircuitExt<Fr>>(
     let calldata = encode(encode_calldata(&instances, &proof));
     fs::write(path, &calldata).expect("write calldata should not fail");
     if let Some(deployment_code) = deployment_code {
-        println!("deployment_code");
+        println!("deployment_code:{:?}",deployment_code);
         evm_verify(deployment_code, instances, proof);
     }
     calldata
@@ -324,6 +325,7 @@ pub fn custom_gen_evm_verifier_shplonk<C: CircuitExt<Fr>>(
     circuit: &C,
     path: Option<impl AsRef<Path>>,
 ) -> Vec<u8> {
+    println!("num_instance:{:?}",&circuit.num_instance().len());
     gen_evm_verifier_shplonk::<C>(
         params,
         vk,

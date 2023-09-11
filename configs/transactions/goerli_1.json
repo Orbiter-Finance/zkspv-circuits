@@ -1,10 +1,10 @@
 {
   "params": {
     "degree": 19,
-    "num_rlc_columns": 2,
+    "num_rlc_columns": 1,
     "num_range_advice": [
-      2,
-      14,
+      1,
+      1,
       0
     ],
     "num_lookup_advice": [
@@ -14,33 +14,15 @@
     ],
     "num_fixed": 1,
     "unusable_rows": 69,
-    "keccak_rows_per_round": 30,
+    "keccak_rows_per_round": 50,
     "lookup_bits": 8
   },
   "break_points": {
     "gate": [
-      [
-        524176
-      ],
-      [
-        524178,
-        524177,
-        524178,
-        524176,
-        524177,
-        524177,
-        524176,
-        524178,
-        524176,
-        524176,
-        524178,
-        524176,
-        524177
-      ],
+      [],
+      [],
       []
     ],
-    "rlc": [
-      524177
-    ]
+    "rlc": []
   }
 }

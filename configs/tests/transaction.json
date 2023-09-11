@@ -1,5 +1,5 @@
 {
-  "degree": 19,
+  "degree": 13,
   "num_rlc_columns": 3,
   "num_range_advice": [40, 23],
   "num_lookup_advice": [1, 1],
