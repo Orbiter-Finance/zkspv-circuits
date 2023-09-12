@@ -171,11 +171,11 @@ pub fn get_receipt_input(
 
     let receipt_proofs = MPTUnFixedKeyInput {
         path: receipt_key,
-        value: receipt_rlp,
+        value: receipt_rlp.to_vec(),
         root_hash: block.receipts_root,
         proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
         slot_is_empty,
-        value_max_byte_len: RECEIPT_PROOF_VALUE_MAX_BYTE_LEN,
+        value_max_byte_len: receipt_rlp.len(),
         max_depth: receipt_pf_max_depth,
     };
 

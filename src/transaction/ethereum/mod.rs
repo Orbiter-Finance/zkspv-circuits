@@ -341,7 +341,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
 
     fn parse_transaction_proof_phase0(&self, ctx: &mut Context<F>, keccak: &mut KeccakChip<F>, transaction_index: &AssignedValue<F>,transactions_root: &[AssignedValue<F>], transaction_proofs: MPTFixedKeyProof<F>) -> EthTransactionTraceWitness<F> {
 
-        // ctx.constrain_equal(&transaction_proofs.key_bytes,transaction_index);
+        // ctx.constrain_equal(&transaction_proofs.key_bytes,transaction_index); key_bytes in transaction_proofs is constructed by transaction_index itself, which seems unnecessary to verify.
 
         // check MPT root is transactions_root
         for (pf_root, root) in transaction_proofs.root_hash_bytes.iter().zip(transactions_root.iter()) {

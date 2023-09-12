@@ -5,7 +5,7 @@ use std::{cell::RefCell};
 use ethers_core::types::{Block, Bytes, H256};
 use ethers_providers::{Http, Provider};
 use halo2_base::{AssignedValue, Context};
-use halo2_base::gates::{GateInstructions, RangeChip};
+use halo2_base::gates::{GateInstructions, RangeChip, RangeInstructions};
 use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::utils::bit_length;
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
@@ -17,17 +17,24 @@ use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderT
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::mpt::{AssignedBytes, MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
 use crate::providers::{get_receipt_field_rlp, get_receipt_input};
-use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldWitness};
+use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
-use crate::transaction::get_transaction_type;
+use crate::transaction::{EIP_2718_TX_TYPE, EIP_TX_TYPE_CRITICAL_VALUE, get_transaction_type, load_transaction_type};
 use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed};
 use crate::util::helpers::{bytes_to_vec_u8};
+
+const RECEIPT_FIELDS_NUM:usize = 4;
+const RECEIPT_LOGS_BLOOM_MAX_LEN:usize = 256;
+const RECEIPT_LOGS_MAX_LEN:usize = 128;
+const RECEIPT_FIELDS_MAX_FIELDS_LEN:[usize;RECEIPT_FIELDS_NUM]= [8,8,RECEIPT_LOGS_BLOOM_MAX_LEN,RECEIPT_LOGS_MAX_LEN];
 
 // Status of the transaction
 pub const TX_STATUS_SUCCESS: u8 = 1;
 
 pub const TX_RECEIPT_FIELD: [u8; 3] = [0, 1, 2];
+
+const NUM_BITS :usize = 8;
 
 #[derive(Clone, Debug)]
 pub struct EthReceiptInput {
@@ -171,10 +178,7 @@ pub struct EIP1186ResponseDigest<F: Field> {
 
 #[derive(Clone, Debug)]
 pub struct EthReceiptTrace<F: Field> {
-    pub status_trace: RlcTrace<F>,
-    pub cumulative_gas_used_trace: RlcTrace<F>,
-    pub logs_bloom_trace: RlcTrace<F>,
-    // pub logs_trace: RlcTrace<F>,
+    pub value_trace:Vec<RlpFieldTrace<F>>,
 }
 
 #[derive(Clone, Debug)]
@@ -185,19 +189,19 @@ pub struct EthBlockReceiptTrace<F: Field> {
 
 #[derive(Clone, Debug)]
 pub struct EthReceiptTraceWitness<F: Field> {
-    array_witness: RlpArrayTraceWitness<F>,
+    receipt_witness: RlpArrayTraceWitness<F>,
     mpt_witness: MPTFixedKeyProofWitness<F>,
 }
 
 impl<F: Field> EthReceiptTraceWitness<F> {
     pub fn get_status(&self) -> &RlpFieldWitness<F> {
-        &self.array_witness.field_witness[0]
+        &self.receipt_witness.field_witness[0]
     }
     pub fn get_cumulative_gas_used(&self) -> &RlpFieldWitness<F> {
-        &self.array_witness.field_witness[1]
+        &self.receipt_witness.field_witness[1]
     }
     pub fn get_logs_bloom(&self) -> &RlpFieldWitness<F> {
-        &self.array_witness.field_witness[2]
+        &self.receipt_witness.field_witness[2]
     }
     // pub fn get_logs(&self) -> &RlpFieldWitness<F> {
     //     &self.array_witness.field_witness[3]
@@ -283,7 +287,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         block_header.resize(block_header_config.block_header_rlp_max_bytes, 0);
 
         let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config);
-        let receipts_root = &block_witness.get_parent_hash().field_cells;
+        let receipts_root = &block_witness.get_receipts_root().field_cells;
         let block_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
 
         // compute block number from big-endian bytes
@@ -341,43 +345,35 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
             ctx.constrain_equal(mpt_root, re_root);
         }
 
-        let mut non_prefix_bytes: AssignedBytes<F> = vec![];
+        let transaction_type = receipt_proofs.value_bytes.first().unwrap();
 
-        // Load a prefix and determine if it belongs to a specific prefix
-        let receipt_value_prefix = &receipt_proofs.value_bytes.first().unwrap();
-        let transaction_type = get_transaction_type(ctx, receipt_value_prefix);
-        if transaction_type != 0 {
-            // Todo: Identify nested lists
-            non_prefix_bytes = receipt_proofs.value_bytes[1..].to_vec();
+        let tx_type_critical_value = load_transaction_type(ctx,EIP_TX_TYPE_CRITICAL_VALUE);
+
+        let zero = ctx.load_constant(F::from(0));
+        let is_not_legacy_transaction =
+            self.range().is_less_than(ctx, *transaction_type, tx_type_critical_value, NUM_BITS);
+
+        let mut receipt_rlp_bytes = receipt_proofs.value_bytes.to_vec();
+
+        if is_not_legacy_transaction.value == zero.value{
+            let legacy_transaction_type = load_transaction_type(ctx,EIP_2718_TX_TYPE);
+            ctx.constrain_equal(transaction_type,&legacy_transaction_type);
+        }else{
+            receipt_rlp_bytes = receipt_rlp_bytes[1..].to_vec();
         }
 
-        let non_prefix_bytes_u8 = bytes_to_vec_u8(&non_prefix_bytes);
-
-        // Generate rlp encoding for specific fields and generate a witness
-        let dest_value_bytes = get_receipt_field_rlp(&non_prefix_bytes_u8, 4, TX_RECEIPT_FIELD);
-        let mut load_bytes =
-            |bytes: &[u8]| ctx.assign_witnesses(bytes.iter().map(|x| F::from(*x as u64)));
-        let receipt_rlp_bytes = load_bytes(&dest_value_bytes);
-
-
-        // parse [status,cumulativeGasUsed,logsBloom]
-        // Todo: The logs field will not be parsed for the time being.
-        let array_witness = self.rlp().decompose_rlp_array_phase0(
+        let receipt_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
             receipt_rlp_bytes,
-            &[8, 8, 256],//Maximum number of bytes per field. For example, the uint64 is 8 bytes.
-            false,
+            &RECEIPT_FIELDS_MAX_FIELDS_LEN,//Maximum number of bytes per field. For example, the uint64 is 8 bytes.
+            true,
         );
-
-
-        // minus the length of the removed prefix
-        // array_witness.rlp_len = self.gate().sub(ctx,array_witness.rlp_len,Constant(F::one()));
 
         let tx_status_success = (F::from(TX_STATUS_SUCCESS as u64)).try_into().unwrap();
         let tx_status_success = ctx.load_witness(tx_status_success);
 
         // check tx_status is TX_STATUS_SUCCESS
-        for (tx_status, success_status) in array_witness.field_witness[0].field_cells.iter().zip(vec![tx_status_success].iter()) {
+        for (tx_status, success_status) in receipt_witness.field_witness[0].field_cells.iter().zip(vec![tx_status_success].iter()) {
             ctx.constrain_equal(tx_status, success_status);
         }
 
@@ -385,7 +381,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         let mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, receipt_proofs);
 
         EthReceiptTraceWitness {
-            array_witness,
+            receipt_witness,
             mpt_witness,
         }
     }
@@ -411,12 +407,9 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         witness: EthReceiptTraceWitness<F>,
     ) -> EthReceiptTrace<F> {
         let (ctx_gate, ctx_rlc) = thread_pool.rlc_ctx_pair();
-        let copy_witness = &witness.clone();
         let receipt_trace = self.parse_receipt_proof_phase1((ctx_gate, ctx_rlc), witness);
 
-        let max_len = (2 * &copy_witness.mpt_witness.key_byte_len).max(copy_witness.array_witness.rlp_array.len());
-        let cache_bits = bit_length(max_len as u64);
-        self.rlc().load_rlc_cache((ctx_gate, ctx_rlc), self.gate(), cache_bits);
+        self.rlc().load_rlc_cache((ctx_gate, ctx_rlc), self.gate(), 12);
 
         receipt_trace
     }
@@ -428,26 +421,15 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
     ) -> EthReceiptTrace<F> {
         self.parse_mpt_inclusion_fixed_key_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
 
-        let array_trace: [_; 3] = self
+        let value_trace= self
             .rlp()
-            .decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.array_witness, false)
+            .decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.receipt_witness, true)
             .field_trace
             .try_into()
             .unwrap();
 
-        let [
-        status_trace,
-        cumulative_gas_used_trace,
-        logs_bloom_trace,
-        // logs_trace,
-        ] = array_trace.map(|trace| trace.field_trace);
-
-
         EthReceiptTrace {
-            status_trace,
-            cumulative_gas_used_trace,
-            logs_bloom_trace,
-            // logs_trace,
+            value_trace,
         }
     }
 }

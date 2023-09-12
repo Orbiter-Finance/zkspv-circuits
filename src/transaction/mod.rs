@@ -5,7 +5,7 @@ pub mod ethereum;
 pub mod zksync_era;
 
 /// The theoretical maximum value of Ethereum transaction type is 7f (Except for Legacy transactions:f8) https://ethereum.org/zh/developers/docs/transactions/#typed-transaction-envelope
-const EIP_TX_TYPE_CRITICAL_VALUE:u8 = 0x80;
+pub const EIP_TX_TYPE_CRITICAL_VALUE:u8 = 0x80;
 
 /// The bytecode for EIP_2718_TX_TYPE is f8
 const EIP_2718_TX_TYPE_INTERNAL: u8 = 0xf8;
