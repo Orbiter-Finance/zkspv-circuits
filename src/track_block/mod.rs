@@ -111,17 +111,13 @@ pub struct EIP1186ResponseDigest<F: Field> {
 
 #[derive(Clone, Debug)]
 pub struct EthTrackBlockTrace<F: Field> {
-    pub block_trace: Vec<EthBlockHeaderTrace<F>>,
+    pub blocks_trace: Vec<EthBlockHeaderTrace<F>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct EthTrackBlockTraceWitness<F: Field> {
-    pub block_witness: Vec<EthBlockHeaderTraceWitness<F>>,
+    pub blocks_witness: Vec<EthBlockHeaderTraceWitness<F>>,
 }
-
-// impl<F: Field> EthTrackBlockTraceWitness<F> {
-//
-// }
 
 pub trait EthTrackBlockChip<F: Field> {
 
@@ -153,6 +149,9 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
 
     // ================= FIRST PHASE ================
 
+    /// 1. last_hash <- first.block.hash
+    /// 2. second.block.parent_hash == last_hash;last_hash <- second.block.hash
+    /// 3...
     fn parse_track_block_proof_from_block_phase0(
         &self,
         thread_pool: &mut GateThreadBuilder<F>,
@@ -163,39 +162,38 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         where
             Self: EthBlockHeaderChip<F>, {
         let ctx = thread_pool.main(FIRST_PHASE);
-        let mut parent_hash: Vec<AssignedValue<F>> = Vec::new();
-        let mut block_witness = Vec::with_capacity(input.block_header.len());
-        for (i, value) in input.block_header.iter().enumerate() {
-            let mut block_header = value.to_vec();
+        let mut last_block_hash: Vec<AssignedValue<F>> = Vec::new();
+        let mut blocks_witness = Vec::with_capacity(input.block_header.len());
+        for (i, block_header) in input.block_header.iter().enumerate() {
+            let mut block_header = block_header.to_vec();
             block_header.resize(block_header_config.block_header_rlp_max_bytes, 0);
 
             // It has been checked whether keccak(rlp(block_header)) is equal to block_hash.
             // Therefore, there is no need to declare the qualification repeatedly.
-            let block_witness_temp = self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config);
-            // The parent hash of the current block
-            let parent_hash_element = bytes_be_to_u128(ctx, self.gate(), &block_witness_temp.get_parent_hash().field_cells);
+            let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config);
 
-            let child_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness_temp.block_hash);
-
-            // verify block.parent_hash and local parent_hash
             if i != 0 {
-                for (parent_hash_element, parent_hash) in parent_hash_element.iter().zip(parent_hash.iter()) {
-                    ctx.constrain_equal(parent_hash_element, parent_hash);
+                let parent_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.get_parent_hash().field_cells);
+                for (pre_block_hash, parent_hash) in last_block_hash.iter().zip(parent_hash.iter()) {
+                    println!("pre_block_hash:{:?}", pre_block_hash.value);
+                    println!("parent_hash:{:?}", parent_hash.value);
+
+                    ctx.constrain_equal(pre_block_hash, parent_hash);
                 }
             }
 
-            // Save the block hash of the current block as the parent hash
-            parent_hash = child_hash.to_vec();
+            last_block_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
+            println!("last_block_hash:{:?}", &last_block_hash);
 
-            block_witness.push(block_witness_temp);
+            blocks_witness.push(block_witness);
         }
 
 
         let digest = EIP1186ResponseDigest {
-            last_block_hash: parent_hash.try_into().unwrap(),
+            last_block_hash: last_block_hash.try_into().unwrap(),
         };
 
-        (EthTrackBlockTraceWitness { block_witness }, digest)
+        (EthTrackBlockTraceWitness { blocks_witness }, digest)
     }
 
 
@@ -208,20 +206,17 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
     ) -> EthTrackBlockTrace<F>
         where
             Self: EthBlockHeaderChip<F> {
-        let mut block_trace = Vec::with_capacity(witness.block_witness.len());
-        for i in witness.block_witness {
-            let block_witness = i;
-            let block_trace_element = self.decompose_block_header_phase1(thread_pool.rlc_ctx_pair(), block_witness);
-            block_trace.push(block_trace_element);
+        let mut blocks_trace = Vec::with_capacity(witness.blocks_witness.len());
+        for block_witness in witness.blocks_witness {
+            let block_trace = self.decompose_block_header_phase1(thread_pool.rlc_ctx_pair(), block_witness);
+            blocks_trace.push(block_trace);
         }
 
-        EthTrackBlockTrace { block_trace }
+        EthTrackBlockTrace { blocks_trace }
     }
 }
 
 
-
-
-
+// e0432178a046e21f9d6401defa07cc44e8fd1c2b0b5a0e00fe42c26a0364a203
 
 

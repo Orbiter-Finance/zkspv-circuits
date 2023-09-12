@@ -62,7 +62,7 @@ pub fn test_receipt_mpt() -> Result<(), Box<dyn std::error::Error>> {
     let proof_four = Bytes::from(proof_four_bytes);
 
     let merkle_proof: Vec<Bytes> = vec![proof_one, proof_two, proof_three, proof_four];
-    let input = get_test_circuit(receipt_index, receipt_rlp, merkle_proof, Arbitrum(ArbitrumNetwork::Goerli));
+    let input = get_test_circuit(receipt_index, receipt_rlp, merkle_proof, Ethereum(EthereumNetwork::Goerli));
     let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
 

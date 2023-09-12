@@ -174,19 +174,22 @@ impl<F: ScalarField> RlcThreadBuilder<F> {
         }: KeygenAssignments<F>,
     ) -> KeygenAssignments<F> {
         assert!(!self.witness_gen_only());
+        if rlc.basic_gates.is_empty() {
+            return KeygenAssignments { assigned_advices, assigned_constants, break_points };
+        }
         let use_unknown = self.use_unknown();
         let max_rows = gate.max_rows;
 
         // first we assign all RLC contexts, basically copying gate::builder::assign_all except that the length of the RLC vertical gate is 3 instead of 4 (which was length of basic gate)
         let mut gate_index = 0;
         let mut row_offset = 0;
-        let mut basic_gate = None;
+        let mut basic_gate = rlc.basic_gates[0];
         for ctx in self.threads_rlc.iter() {
             // TODO: if we have more similar vertical gates this should be refactored into a general function
             for (i, (&advice, &q)) in
             ctx.advice.iter().zip(ctx.selector.iter().chain(iter::repeat(&false))).enumerate()
             {
-                let (mut column, mut q_rlc) = basic_gate.unwrap_or(rlc.basic_gates[gate_index]);
+                let (mut column, mut q_rlc) = basic_gate;
                 let value = if use_unknown { Value::unknown() } else { Value::known(advice) };
                 #[cfg(feature = "halo2-axiom")]
                     let cell = *region.assign_advice(column, row_offset, value).cell();
@@ -200,11 +203,11 @@ impl<F: ScalarField> RlcThreadBuilder<F> {
                     row_offset = 0;
                     gate_index += 1;
                     // when there is a break point, because we may have two gates that overlap at the current cell, we must copy the current cell to the next column for safety
-                    basic_gate = Some(*rlc
+                    basic_gate = *rlc
                         .basic_gates
                         .get(gate_index)
-                        .unwrap_or_else(|| panic!("NOT ENOUGH RLC ADVICE COLUMNS. Perhaps blinding factors were not taken into account. The max non-poisoned rows is {max_rows}")));
-                    (column, q_rlc) = basic_gate.unwrap();
+                        .unwrap_or_else(|| panic!("NOT ENOUGH RLC ADVICE COLUMNS. Perhaps blinding factors were not taken into account. The max non-poisoned rows is {max_rows}"));
+                    (column, q_rlc) = basic_gate;
 
                     #[cfg(feature = "halo2-axiom")]
                     {
@@ -229,7 +232,7 @@ impl<F: ScalarField> RlcThreadBuilder<F> {
         }
         // in order to constrain equalities and assign constants, we copy the RLC equality constraints into the gate builder (it doesn't matter which context the equalities are in), so `GateThreadBuilder::assign_all` can take care of it
         // the phase doesn't matter for equality constraints, so we use phase 0 since we're sure there's a main context there
-        let main_ctx = self.gate_builder.main(FIRST_PHASE);
+        let main_ctx = self.gate_builder.main(0);
         for ctx in self.threads_rlc.iter_mut() {
             main_ctx.advice_equality_constraints.append(&mut ctx.advice_equality_constraints);
             main_ctx.constant_equality_constraints.append(&mut ctx.constant_equality_constraints);
@@ -319,7 +322,7 @@ pub fn assign_prover_phase0<F: ScalarField>(
         FIRST_PHASE,
         threads,
         gate,
-        &lookup_advice[FIRST_PHASE],
+        if let Some(col) = lookup_advice.get(FIRST_PHASE) { &col[..] } else { &[] },
         region,
         break_points_gate,
     );
@@ -350,7 +353,7 @@ pub fn assign_prover_phase1<F: ScalarField>(
         RLC_PHASE,
         threads,
         gate,
-        &lookup_advice[RLC_PHASE],
+        lookup_advice.get(RLC_PHASE).unwrap_or(&vec![]),
         region,
         break_points_gate,
     );

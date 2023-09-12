@@ -5,7 +5,7 @@ pub mod ethereum;
 pub mod zksync_era;
 
 /// The theoretical maximum value of Ethereum transaction type is 7f (Except for Legacy transactions:f8) https://ethereum.org/zh/developers/docs/transactions/#typed-transaction-envelope
-const EIP_TX_TYPE_CRITICAL_VALUE:u8 = 0x80;
+pub const EIP_TX_TYPE_CRITICAL_VALUE:u8 = 0x80;
 
 /// The bytecode for EIP_2718_TX_TYPE is f8
 const EIP_2718_TX_TYPE_INTERNAL: u8 = 0xf8;
@@ -50,9 +50,7 @@ pub fn get_transaction_type<F: Field>(ctx: &mut Context<F>, value: &AssignedValu
     transaction_type as u8
 }
 
-// pub fn calculate_max_field_lens()
-
-/// Get the transaction type and validate its support.
+/// Assigns transaction type as a constant value and returns the corresponding assigned cell.
 pub fn load_transaction_type<F: Field>(ctx: &mut Context<F>,tx_type:u8)->AssignedValue<F>{
     let type_value = (F::from(tx_type as u64)).try_into().unwrap();
     ctx.load_constant(type_value)
