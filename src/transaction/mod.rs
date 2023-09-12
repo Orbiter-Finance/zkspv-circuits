@@ -50,9 +50,7 @@ pub fn get_transaction_type<F: Field>(ctx: &mut Context<F>, value: &AssignedValu
     transaction_type as u8
 }
 
-// pub fn calculate_max_field_lens()
-
-/// Get the transaction type and validate its support.
+/// Assigns transaction type as a constant value and returns the corresponding assigned cell.
 pub fn load_transaction_type<F: Field>(ctx: &mut Context<F>,tx_type:u8)->AssignedValue<F>{
     let type_value = (F::from(tx_type as u64)).try_into().unwrap();
     ctx.load_constant(type_value)

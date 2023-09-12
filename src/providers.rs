@@ -15,7 +15,6 @@ use ethers_core::utils::hex::FromHex;
 use ethers_core::utils::keccak256;
 use ethers_providers::{Http, Middleware, Provider, ProviderError, StreamExt};
 use futures::future::{join, join_all};
-// use halo2_mpt::mpt::{max_branch_lens, max_leaf_lens};
 use itertools::Itertools;
 use lazy_static::__Deref;
 use rlp::{decode, decode_list, Encodable, Rlp, RlpIterator, RlpStream};
@@ -44,8 +43,6 @@ use crate::util::helpers::calculate_storage_mapping_key;
 const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 114;
 const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
 
-const TRANSACTION_PROOF_VALUE_MAX_BYTE_LEN: usize = 90000;
-const RECEIPT_PROOF_VALUE_MAX_BYTE_LEN: usize = 90000;
 
 fn get_buffer_rlp(value: u32) -> Vec<u8> {
     let mut rlp: RlpStream = RlpStream::new();
@@ -600,8 +597,7 @@ pub fn get_acct_rlp(pf: &EIP1186ProofResponse) -> Vec<u8> {
 }
 
 pub fn get_block_rlp(block: &Block<H256>) -> Vec<u8> {
-    let withdrawals_root: Option<H256> =
-        block.other.get_deserialized("withdrawalsRoot").and_then(|x| x.ok());
+    let withdrawals_root: Option<H256> = block.withdrawals_root;
     let base_fee = block.base_fee_per_gas;
     let rlp_len = 15 + usize::from(base_fee.is_some()) + usize::from(withdrawals_root.is_some());
     let mut rlp = RlpStream::new_list(rlp_len);
@@ -622,7 +618,9 @@ pub fn get_block_rlp(block: &Block<H256>) -> Vec<u8> {
     rlp.append(&block.nonce.unwrap());
     base_fee.map(|base_fee| rlp.append(&base_fee));
     withdrawals_root.map(|withdrawals_root| rlp.append(&withdrawals_root));
-    rlp.out().into()
+    let encoding: Vec<u8> = rlp.out().into();
+    assert_eq!(keccak256(&encoding), block.hash.unwrap().0);
+    encoding
 }
 
 serde_with::serde_conv!(
