@@ -30,7 +30,7 @@ use crate::util::helpers::get_provider;
 
 use super::*;
 
-fn get_test_circuit(network: Network, num_slots: usize) -> EthBlockStorageCircuit {
+pub fn get_test_circuit(network: Network, num_slots: usize) -> EthBlockStorageCircuit {
 
     assert!(num_slots <= 10);
     let provider = get_provider(&network);

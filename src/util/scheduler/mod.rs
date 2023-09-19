@@ -1,4 +1,5 @@
 pub mod evm_wrapper;
+pub mod arbitration_scheduler;
 
 use ethers_core::types::U256;
 use ethers_providers::{Http, Middleware, Provider};
