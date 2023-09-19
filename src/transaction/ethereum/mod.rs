@@ -1,5 +1,4 @@
 use std::{cell::RefCell};
-use std::collections::HashSet;
 use ethers_core::abi::AbiEncode;
 
 use ethers_core::types::{Block, Bytes, H256};
@@ -7,7 +6,6 @@ use ethers_providers::{Http, Provider};
 use halo2_base::{AssignedValue, Context};
 use halo2_base::gates::{GateInstructions, RangeChip, RangeInstructions};
 use halo2_base::gates::builder::GateThreadBuilder;
-use halo2_base::utils::bit_length;
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -17,12 +15,11 @@ use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Network}
 use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, get_block_header_config};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::mpt::{MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
-use crate::providers::{ get_transaction_field_rlp, get_transaction_input};
+use crate::providers::{ get_transaction_input};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
-use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
-use crate::transaction::{EIP_1559_TX_TYPE_FIELDS_ITEM, EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_1559_TX_TYPE_FIELDS_NUM, EIP_2718_TX_TYPE, EIP_2718_TX_TYPE_FIELDS_ITEM, EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_2718_TX_TYPE_FIELDS_NUM, EIP_2718_TX_TYPE_INTERNAL, EIP_TX_TYPE_CRITICAL_VALUE, get_transaction_type, load_transaction_type, TX_INDEX_MAX_LEN};
-use crate::util::helpers::{bytes_to_vec_u8, load_bytes};
+use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair};
+use crate::transaction::{ EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_2718_TX_TYPE, EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_TX_TYPE_CRITICAL_VALUE, load_transaction_type};
 
 pub mod tests;
 pub mod helper;

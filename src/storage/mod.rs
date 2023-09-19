@@ -444,10 +444,40 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
 }
 
 #[derive(Clone, Debug)]
+pub struct EbcRuleVersion{
+    pub root:H256,
+    pub version:u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct EbcRuleConfig{
+    pub chain_id0:u64,
+    pub chain_id1:u64,
+    pub status0:u8,
+    pub status1:u8,
+    pub token0:usize,
+    pub token1:usize,
+    pub min_price0:u128,
+    pub min_price1:u128,
+    pub max_price0:u128,
+    pub max_price1:u128,
+    pub with_holding_fee0:u128,
+    pub with_holding_fee1:u128,
+    pub trading_fee0:u32,
+    pub trading_fee1:u32,
+    pub response_time0:u32,
+    pub response_time1:u32,
+    pub compensation_ratio0:u32,
+    pub compensation_ratio1:u32,
+}
+
+#[derive(Clone, Debug)]
 pub struct EthStorageInput {
     pub addr: Address,
     pub acct_pf: MPTFixedKeyInput,
     pub storage_pfs: Vec<(H256, U256, MPTFixedKeyInput)>, // (slot, value, proof)
+    pub ebc_rule_version:EbcRuleVersion,
+    pub ebc_rule_config:EbcRuleConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -544,6 +574,7 @@ impl EthBlockStorageCircuit {
         for (slot, value, _) in storage_pfs {
             instance.extend(encode_h256_to_field::<F>(slot));
             instance.extend(encode_u256_to_field::<F>(value));
+            // instance for input
         }
         instance
     }

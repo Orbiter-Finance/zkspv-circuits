@@ -15,14 +15,13 @@ use zkevm_keccak::util::eth_types::Field;
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Network};
 use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, get_block_header_config};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
-use crate::mpt::{AssignedBytes, MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
-use crate::providers::{get_receipt_field_rlp, get_receipt_input};
+use crate::mpt::{ MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
+use crate::providers::{ get_receipt_input};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
-use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair, RlcTrace};
-use crate::transaction::{EIP_2718_TX_TYPE, EIP_TX_TYPE_CRITICAL_VALUE, get_transaction_type, load_transaction_type};
+use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair};
+use crate::transaction::{EIP_2718_TX_TYPE, EIP_TX_TYPE_CRITICAL_VALUE, load_transaction_type};
 use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed};
-use crate::util::helpers::{bytes_to_vec_u8};
 
 const RECEIPT_FIELDS_NUM:usize = 4;
 const RECEIPT_LOGS_BLOOM_MAX_LEN:usize = 256;
@@ -31,9 +30,6 @@ const RECEIPT_FIELDS_MAX_FIELDS_LEN:[usize;RECEIPT_FIELDS_NUM]= [8,8,RECEIPT_LOG
 
 // Status of the transaction
 pub const TX_STATUS_SUCCESS: u8 = 1;
-
-pub const TX_RECEIPT_FIELD: [u8; 3] = [0, 1, 2];
-
 const NUM_BITS :usize = 8;
 
 #[derive(Clone, Debug)]

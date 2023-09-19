@@ -329,7 +329,7 @@ pub fn get_zksync_transaction_and_storage_input(
                     to_tokens.push(get_zksync_era_eth_address());
                 }
             }
-        } else if is_erc20_transaction(transaction.input.clone()) {//非ETH交易
+        } else if is_erc20_transaction(transaction.input.clone()) {//
             let erc20_address = transaction.to.unwrap();
             let transaction_erc20 = decode_input(transaction.input.clone()).unwrap();
             let transaction_erc20_to = transaction_erc20.get(0).unwrap().clone().into_address().unwrap();
@@ -556,35 +556,6 @@ pub fn get_transaction_field_rlp(tx_type: u8, source: &Vec<u8>, item_count: usiz
 
 
     (dest_rlp.out().into(),data)
-}
-
-pub fn get_receipt_field_rlp(source: &Vec<u8>, item_count: usize, new_item: [u8; 3]) -> Vec<u8> {
-    let mut source_rlp = RlpStream::new();
-    source_rlp.append_raw(source, item_count);
-    let source_bytes = source_rlp.as_raw().to_vec();
-    let rlp = Rlp::new(&source_bytes);
-    let mut dest_rlp = RlpStream::new_list(new_item.len());
-    for field_item in new_item {
-        let field_rlp = rlp.at_with_offset(field_item as usize).unwrap();
-        let field = field_rlp.0.data().unwrap();
-        match field_item {
-            0 => {
-                let dest_field = U64::from_big_endian(field);
-                dest_rlp.append(&dest_field);
-            }
-            1 => {
-                let dest_field = U64::from_big_endian(field);
-                dest_rlp.append(&dest_field);
-            }
-            2 => {
-                let dest_field = Bloom::from_slice(field);
-                dest_rlp.append(&dest_field);
-            }
-            _ => panic!()
-        }
-    }
-
-    dest_rlp.out().into()
 }
 
 pub fn get_acct_rlp(pf: &EIP1186ProofResponse) -> Vec<u8> {

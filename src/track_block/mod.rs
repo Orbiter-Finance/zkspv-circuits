@@ -175,19 +175,13 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
             if i != 0 {
                 let parent_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.get_parent_hash().field_cells);
                 for (pre_block_hash, parent_hash) in last_block_hash.iter().zip(parent_hash.iter()) {
-                    println!("pre_block_hash:{:?}", pre_block_hash.value);
-                    println!("parent_hash:{:?}", parent_hash.value);
-
                     ctx.constrain_equal(pre_block_hash, parent_hash);
                 }
             }
 
             last_block_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
-            println!("last_block_hash:{:?}", &last_block_hash);
-
             blocks_witness.push(block_witness);
         }
-
 
         let digest = EIP1186ResponseDigest {
             last_block_hash: last_block_hash.try_into().unwrap(),
@@ -215,8 +209,4 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         EthTrackBlockTrace { blocks_trace }
     }
 }
-
-
-// e0432178a046e21f9d6401defa07cc44e8fd1c2b0b5a0e00fe42c26a0364a203
-
 
