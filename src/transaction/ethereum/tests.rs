@@ -17,7 +17,7 @@ use crate::transaction::ethereum::EthBlockTransactionCircuit;
 use crate::util::EthConfigParams;
 use crate::util::helpers::get_provider;
 
-fn get_test_circuit(
+pub fn get_test_circuit(
     transaction_index: u32,
     transaction_rlp: Vec<u8>,
     merkle_proof: Vec<Bytes>,

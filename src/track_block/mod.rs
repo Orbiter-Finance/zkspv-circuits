@@ -19,6 +19,7 @@ use crate::rlp::RlpChip;
 use crate::util::{AssignedH256, bytes_be_to_u128};
 
 mod tests;
+pub mod util;
 
 #[derive(Clone, Debug)]
 pub struct EthTrackBlockInput {

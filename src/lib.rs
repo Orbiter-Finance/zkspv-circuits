@@ -45,6 +45,7 @@ pub mod receipt;
 pub mod storage;
 pub mod track_block;
 pub mod block_header;
+pub mod arbitration;
 
 #[cfg(feature = "providers")]
 pub mod providers;

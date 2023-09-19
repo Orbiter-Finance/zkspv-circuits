@@ -13,6 +13,10 @@ port = 8100
 host = "0.0.0.0"
 port = 3030
 
+[mdc_config]
+mainnet = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB" # crypto punks address
+goerli = "0xf2d1f94310823fe26cfa9c9b6fd152834b8e7849"
+
 [rpcs]
 mainnet = "https://eth-mainnet.g.alchemy.com/v2/y0S4FG_c5sVLGgF0ny14hNjw0c6DDySz"
 goerli = "https://eth-goerli.g.alchemy.com/v2/jmWy91tpjAUOgBHEyGa-J9rpmXGlnwFD"

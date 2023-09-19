@@ -18,12 +18,38 @@ use halo2_base::{
 };
 use itertools::Itertools;
 use rayon::prelude::*;
-use std::{cell::RefCell, env::var};
+use serde::{Serialize, Deserialize};
+use std::{cell::RefCell, env::var, path::Path, fs::File};
 use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, get_block_header_config};
 use crate::providers::get_storage_input;
 
-#[cfg(all(test, feature = "providers"))]
-mod tests;
+// #[cfg(all(test, feature = "providers"))]
+pub mod tests;
+pub mod util;
+pub mod helper;
+
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
+pub struct StorageConfigParams {
+    pub degree: u32,
+    // number of SecondPhase advice columns used in RlcConfig
+    pub num_rlc_columns: usize,
+    // the number of advice columns in phase _ without lookup enabled that RangeConfig uses
+    pub num_range_advice: Vec<usize>,
+    // the number of advice columns in phase _ with lookup enabled that RangeConfig uses
+    pub num_lookup_advice: Vec<usize>,
+    pub num_fixed: usize,
+    // for keccak chip you should know the number of unusable rows beforehand
+    pub unusable_rows: usize,
+    pub keccak_rows_per_round: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lookup_bits: Option<usize>,
+}
+
+impl StorageConfigParams {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Self {
+        serde_json::from_reader(File::open(&path).expect("path does not exist")).unwrap()
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct EthAccountTrace<F: Field> {
