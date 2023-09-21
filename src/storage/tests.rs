@@ -3,12 +3,14 @@ use std::{
     fs::File,
     io::{BufReader, Write},
 };
+use std::str::FromStr;
 
 use ark_std::{end_timer, start_timer};
 use ethers_core::utils::keccak256;
 use halo2_base::utils::fs::gen_srs;
 use test_log::test;
 use circuit_derive;
+use hex::FromHex;
 use serde::{Deserialize, Serialize};
 
 use crate::{ArbitrumNetwork, EthereumNetwork, halo2_proofs::{
@@ -25,8 +27,8 @@ use crate::{ArbitrumNetwork, EthereumNetwork, halo2_proofs::{
         Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
     },
 }, util::scheduler::Scheduler};
-use crate::block_header::helper::CircuitRouter::ForEvm;
-use crate::util::helpers::get_provider;
+use crate::storage::util::get_mdc_storage_circuit;
+use crate::util::helpers::{  get_provider};
 
 use super::*;
 
@@ -54,6 +56,21 @@ pub fn get_test_circuit(network: Network, num_slots: usize) -> EthBlockStorageCi
         }
         _ => {}
     }
+    // ebc_rule_mpt
+    let ebc_rule_key = H256::zero();
+    let ebc_rule_root = H256::from_low_u64_be(1); // should be consistent with the value corresponding to the slot
+    let ebc_rule_value = vec![];
+    let ebc_rule_merkle_proof = vec![];
+    let ebc_rule_pf_max_depth = ebc_rule_merkle_proof.len().clone();
+
+    let ebc_rule_params = EbcRuleParams{
+        ebc_rule_key,
+        ebc_rule_root,
+        ebc_rule_value,
+        ebc_rule_merkle_proof,
+        ebc_rule_pf_max_depth,
+    };
+
     // For only occupied slots:
     let slot_nums = vec![0u64, 1u64, 2u64, 3u64, 6u64, 8u64];
     let mut slots = (0..4)
@@ -68,7 +85,7 @@ pub fn get_test_circuit(network: Network, num_slots: usize) -> EthBlockStorageCi
     slots.truncate(num_slots);
     // let slots: Vec<_> = (0..num_slots).map(|x| H256::from_low_u64_be(x as u64)).collect();
     slots.truncate(num_slots);
-    EthBlockStorageCircuit::from_provider(&provider, block_number, addr, slots, 8, 8, network)
+    EthBlockStorageCircuit::from_provider(&provider, block_number, addr, slots, 8, 8, ebc_rule_params,network)
 }
 
 #[test]
@@ -78,6 +95,17 @@ pub fn test_mock_single_eip1186() -> Result<(), Box<dyn std::error::Error>> {
     let k = params.degree;
 
     let input = get_test_circuit(Network::Ethereum(EthereumNetwork::Mainnet), 1);
+    let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
+    MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
+    Ok(())
+}
+#[test]
+pub fn test_mdc() -> Result<(), Box<dyn std::error::Error>> {
+    let params = EthConfigParams::from_path("configs/tests/storage.json");
+    set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
+    let k = params.degree;
+
+    let input = get_mdc_storage_circuit(Network::Ethereum(EthereumNetwork::Goerli), 9731724);
     let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())

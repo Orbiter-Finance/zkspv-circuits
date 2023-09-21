@@ -33,6 +33,7 @@ use crate::config::token::zksync_era_token::{get_zksync_era_eth_address, get_zks
 use crate::mpt::MPTUnFixedKeyInput;
 use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
 use crate::proof::arbitrum::{ArbitrumProofBlockTrack, ArbitrumProofInput, ArbitrumProofTransactionOrReceipt};
+use crate::storage::EbcRuleVersion;
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::{EIP_1559_TX_TYPE,EIP_2718_TX_TYPE};
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
@@ -218,6 +219,14 @@ pub fn get_transaction_input(
         transaction: EthTransactionInput { transaction_index, transaction_proofs },
     }
 }
+#[derive(Clone, Debug)]
+pub struct EbcRuleParams{
+    pub ebc_rule_key:H256,
+    pub ebc_rule_root:H256,
+    pub ebc_rule_value:Vec<u8>,
+    pub ebc_rule_merkle_proof:Vec<Bytes>,
+    pub ebc_rule_pf_max_depth:usize,
+}
 
 pub fn get_storage_input(
     provider: &Provider<Http>,
@@ -226,6 +235,7 @@ pub fn get_storage_input(
     slots: Vec<H256>,
     acct_pf_max_depth: usize,
     storage_pf_max_depth: usize,
+    ebc_rule_params:EbcRuleParams,
 ) -> EthBlockStorageInput {
     let rt = Runtime::new().unwrap();
     let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
@@ -272,12 +282,30 @@ pub fn get_storage_input(
         })
         .collect();
 
+    // ebc mpt
+    let mut ebc_rule_pfs;
+    {
+        let path =ebc_rule_params.ebc_rule_key;
+        let value = ebc_rule_params.ebc_rule_value.to_vec();
+        ebc_rule_pfs =  MPTFixedKeyInput{
+            path,
+            value,
+            root_hash: ebc_rule_params.ebc_rule_root,
+            proof: ebc_rule_params.ebc_rule_merkle_proof.into_iter().map(|x|x.to_vec()).collect(),
+            slot_is_empty,
+            value_max_byte_len: ebc_rule_params.ebc_rule_value.len(),
+            max_depth: ebc_rule_params.ebc_rule_pf_max_depth,
+        }
+    }
+
+
+
     EthBlockStorageInput {
         block,
         block_number,
         block_hash,
         block_header,
-        storage: EthStorageInput { addr, acct_pf, storage_pfs },
+        storage: EthStorageInput { addr, acct_pf, storage_pfs, ebc_rule_pfs },
     }
 }
 
