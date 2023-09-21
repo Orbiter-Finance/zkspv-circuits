@@ -1,14 +1,14 @@
 use std::str::FromStr;
-use ethers_core::{types::{Address, H256}, utils::keccak256};
-use ethers_core::types::{Bytes, H160};
+
+use ethers_core::types::H256;
+use ethers_core::types::Bytes;
 use hex::FromHex;
 
-use crate::{Network, EthereumNetwork, config::contract::get_mdc_config, util::helpers::get_provider};
+use crate::{config::contract::get_mdc_config, EthereumNetwork, Network, util::helpers::get_provider};
 use crate::providers::EbcRuleParams;
 use crate::util::helpers::calculate_mk_address_struct;
 
 use super::EthBlockStorageCircuit;
-
 
 pub fn get_mdc_storage_circuit(network: Network, block_number: u32) -> EthBlockStorageCircuit {
     let mut addr = Default::default();

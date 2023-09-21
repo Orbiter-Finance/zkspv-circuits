@@ -1,26 +1,28 @@
-use crate::{keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs}, mpt::{AssignedBytes, MPTFixedKeyInput, MPTFixedKeyProof, MPTFixedKeyProofWitness}, rlp::{
-    builder::{RlcThreadBreakPoints, RlcThreadBuilder},
-    rlc::{RlcContextPair, RlcTrace, FIRST_PHASE, RLC_PHASE},
-    RlpArrayTraceWitness, RlpChip, RlpFieldTraceWitness, RlpFieldWitness,
-}, util::{
-    bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, encode_addr_to_field,
-    encode_h256_to_field, encode_u256_to_field, uint_to_bytes_be, AssignedH256,
-    EthConfigParams,
-}, EthChip, EthCircuitBuilder, Field, Network, ETH_LOOKUP_BITS, EthPreCircuit};
+use std::{cell::RefCell, env::var, fs::File, path::Path};
+use std::io::Read;
+
 use ethers_core::types::{Address, Block, H256, U256};
 #[cfg(feature = "providers")]
 use ethers_providers::{Http, Provider};
 use halo2_base::{
-    gates::{builder::GateThreadBuilder, GateInstructions, RangeChip},
+    AssignedValue,
+    Context,
+    gates::{builder::GateThreadBuilder, GateInstructions, RangeChip}, halo2_proofs::halo2curves::bn256::Fr,
     utils::bit_length,
-    AssignedValue, Context,
-    halo2_proofs::halo2curves::bn256::Fr,
 };
 use itertools::Itertools;
 use rayon::prelude::*;
-use serde::{Serialize, Deserialize};
-use std::{cell::RefCell, env::var, path::Path, fs::File};
-use std::io::Read;
+use serde::{Deserialize, Serialize};
+
+use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Field, keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs}, mpt::{AssignedBytes, MPTFixedKeyInput, MPTFixedKeyProof, MPTFixedKeyProofWitness}, Network, rlp::{
+    builder::{RlcThreadBreakPoints, RlcThreadBuilder},
+    rlc::{FIRST_PHASE, RLC_PHASE, RlcContextPair, RlcTrace},
+    RlpArrayTraceWitness, RlpChip, RlpFieldTraceWitness, RlpFieldWitness,
+}, util::{
+    AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed,
+    encode_addr_to_field, encode_h256_to_field, encode_u256_to_field, EthConfigParams,
+    uint_to_bytes_be,
+}};
 use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, get_block_header_config};
 use crate::providers::{EbcRuleParams, get_storage_input};
 use crate::rlp::RlpFieldTrace;
@@ -548,7 +550,8 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
             .collect_vec();
 
         // ebc rule config
-        let ebc_rule_config = ebc_rule_witness.ebc_rule_rlp_witness.field_witness.iter().map(|field_witness| {
+        let ebc_rule_config = ebc_rule_witness.ebc_rule_rlp_witness.field_witness
+            .iter().map(|field_witness| {
             let value_bytes = &field_witness.field_cells;
             let value_len = field_witness.field_len;
             let value_bytes =
@@ -767,7 +770,7 @@ impl EthPreCircuit for EthBlockStorageCircuit {
             )
             .chain(ebc_rule_config
                 .into_iter()
-                .flat_map(|rule_config|rule_config.into_iter())
+                .flat_map(|rule_config| rule_config.into_iter())
             )
             .collect_vec();
 

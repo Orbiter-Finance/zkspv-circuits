@@ -14,8 +14,8 @@ use crate::{
 
 
 
-fn test_get_storage_circuit(network: Network, num_slots: usize) -> EthBlockStorageCircuit {
-    get_test_storage_circuit(network, num_slots)
+fn test_get_storage_circuit(network: Network, block_number: u32) -> EthBlockStorageCircuit {
+    get_test_storage_circuit(network, block_number)
 }
 
 fn test_get_ethereum_tx_circuit(transaction_index: u32, transaction_rlp: Vec<u8>, merkle_proof: Vec<Bytes>,network: Network) -> EthBlockTransactionCircuit{
@@ -74,7 +74,7 @@ pub fn test_arbitration_circuit() {
     let (storage_snark, storage_proof_time) = {
         set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&storage_param).unwrap());
         let k = storage_param.degree;
-        let input = test_get_storage_circuit(Network::Ethereum(EthereumNetwork::Mainnet), 1);
+        let input = test_get_storage_circuit(Network::Ethereum(EthereumNetwork::Goerli), 9731724);
         let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
         let params = gen_srs(k);
         let pk = gen_pk(&params, &circuit, Some("data/arbitration/storage.pk".as_ref()));
