@@ -11,6 +11,7 @@ use halo2_base::utils::bit_length;
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use serde::{Serialize, Deserialize};
 use zkevm_keccak::util::eth_types::Field;
 
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Network};

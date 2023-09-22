@@ -7,6 +7,7 @@ use crate::util::scheduler::{Task, SchedulerCommon};
 
 pub mod helper;
 pub mod test;
+pub mod circuit_types;
 
 // pub struct ArbitrationScheduler <T: Task> {
     
