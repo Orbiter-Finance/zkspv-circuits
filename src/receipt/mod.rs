@@ -15,7 +15,7 @@ use zkevm_keccak::util::eth_types::Field;
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Network};
 use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, get_block_header_config};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
-use crate::mpt::{ MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
+use crate::mpt::{MPTInput, MPTProof, MPTProofWitness};
 use crate::providers::{ get_receipt_input};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
@@ -35,13 +35,13 @@ const NUM_BITS :usize = 8;
 #[derive(Clone, Debug)]
 pub struct EthReceiptInput {
     pub receipt_index: u32,
-    pub receipt_proofs: MPTUnFixedKeyInput,
+    pub receipt_proofs: MPTInput,
 }
 
 #[derive(Clone, Debug)]
 pub struct EthReceiptInputAssigned<F: Field> {
     pub receipt_index: AssignedValue<F>,
-    pub receipt_proofs: MPTFixedKeyProof<F>,
+    pub receipt_proofs: MPTProof<F>,
 }
 
 impl EthReceiptInput {
@@ -186,7 +186,7 @@ pub struct EthBlockReceiptTrace<F: Field> {
 #[derive(Clone, Debug)]
 pub struct EthReceiptTraceWitness<F: Field> {
     receipt_witness: RlpArrayTraceWitness<F>,
-    mpt_witness: MPTFixedKeyProofWitness<F>,
+    mpt_witness: MPTProofWitness<F>,
 }
 
 impl<F: Field> EthReceiptTraceWitness<F> {
@@ -229,7 +229,7 @@ pub trait EthBlockReceiptChip<F: Field> {
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
         receipts_root: &[AssignedValue<F>],
-        receipt_proofs: MPTFixedKeyProof<F>,
+        receipt_proofs: MPTProof<F>,
     ) -> EthReceiptTraceWitness<F>;
 
     fn parse_receipt_proof_phase0(
@@ -237,7 +237,7 @@ pub trait EthBlockReceiptChip<F: Field> {
         ctx: &mut Context<F>,
         keccak: &mut KeccakChip<F>,
         receipts_root: &[AssignedValue<F>],
-        receipt_proofs: MPTFixedKeyProof<F>,
+        receipt_proofs: MPTProof<F>,
     ) -> EthReceiptTraceWitness<F>;
 
 
@@ -316,7 +316,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
         receipts_root: &[AssignedValue<F>],
-        receipt_proofs: MPTFixedKeyProof<F>,
+        receipt_proofs: MPTProof<F>,
     ) -> EthReceiptTraceWitness<F> {
         let ctx = thread_pool.main(FIRST_PHASE);
         let receipt_trace = self.parse_receipt_proof_phase0(
@@ -333,7 +333,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         ctx: &mut Context<F>,
         keccak: &mut KeccakChip<F>,
         receipts_root: &[AssignedValue<F>],
-        receipt_proofs: MPTFixedKeyProof<F>,
+        receipt_proofs: MPTProof<F>,
     ) -> EthReceiptTraceWitness<F> {
 
         // check MPT root is receipts_root
@@ -374,7 +374,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         }
 
         // check MPT inclusion
-        let mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, receipt_proofs);
+        let mpt_witness = self.parse_mpt_inclusion_phase0(ctx, keccak, receipt_proofs);
 
         EthReceiptTraceWitness {
             receipt_witness,
@@ -415,7 +415,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         (ctx_gate, ctx_rlc): RlcContextPair<F>,
         witness: EthReceiptTraceWitness<F>,
     ) -> EthReceiptTrace<F> {
-        self.parse_mpt_inclusion_fixed_key_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
+        self.parse_mpt_inclusion_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
 
         let value_trace= self
             .rlp()

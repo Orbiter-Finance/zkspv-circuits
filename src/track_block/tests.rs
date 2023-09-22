@@ -22,7 +22,7 @@ pub fn test_track_block() -> Result<(), Box<dyn std::error::Error>> {
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let k = params.degree;
     let mut block_number_interval = vec![];
-    for i in 17113952..17113954 {
+    for i in 17113952..17114052 {
         block_number_interval.push(i as u64);
     }
 

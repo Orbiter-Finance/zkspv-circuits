@@ -14,7 +14,7 @@ use zkevm_keccak::util::eth_types::Field;
 use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Network};
 use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, get_block_header_config};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
-use crate::mpt::{MPTFixedKeyProof, MPTFixedKeyProofWitness, MPTUnFixedKeyInput};
+use crate::mpt::{MPTInput, MPTProof, MPTProofWitness};
 use crate::providers::{ get_transaction_input};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
@@ -34,13 +34,13 @@ const NUM_BITS :usize = 8;
 #[derive(Clone, Debug)]
 pub struct EthTransactionInput {
     pub transaction_index: u32,
-    pub transaction_proofs: MPTUnFixedKeyInput,
+    pub transaction_proofs: MPTInput,
 }
 
 #[derive(Clone, Debug)]
 pub struct EthTransactionInputAssigned<F: Field> {
     pub transaction_index: AssignedValue<F>,
-    pub transaction_proofs: MPTFixedKeyProof<F>,
+    pub transaction_proofs: MPTProof<F>,
 }
 
 impl EthTransactionInput {
@@ -180,7 +180,7 @@ pub struct EthBlockTransactionTrace<F: Field> {
 #[derive(Clone, Debug)]
 pub struct EthTransactionTraceWitness<F: Field> {
     transaction_witness: RlpArrayTraceWitness<F>,
-    mpt_witness: MPTFixedKeyProofWitness<F>,
+    mpt_witness: MPTProofWitness<F>,
 }
 
 impl<F: Field> EthTransactionTraceWitness<F> {
@@ -239,7 +239,7 @@ pub trait EthBlockTransactionChip<F: Field> {
         keccak: &mut KeccakChip<F>,
         transaction_index: &AssignedValue<F>,
         transactions_root: &[AssignedValue<F>],
-        transaction_proofs: MPTFixedKeyProof<F>,
+        transaction_proofs: MPTProof<F>,
     ) -> EthTransactionTraceWitness<F>;
 
     fn parse_transaction_proof_phase0(
@@ -248,7 +248,7 @@ pub trait EthBlockTransactionChip<F: Field> {
         keccak: &mut KeccakChip<F>,
         transaction_index: &AssignedValue<F>,
         transactions_root: &[AssignedValue<F>],
-        transaction_proofs: MPTFixedKeyProof<F>,
+        transaction_proofs: MPTProof<F>,
     ) -> EthTransactionTraceWitness<F>;
 
 
@@ -323,7 +323,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         keccak: &mut KeccakChip<F>,
         transaction_index: &AssignedValue<F>,
         transactions_root: &[AssignedValue<F>],
-        transaction_proofs: MPTFixedKeyProof<F>,
+        transaction_proofs: MPTProof<F>,
     ) -> EthTransactionTraceWitness<F> {
         let ctx = thread_pool.main(FIRST_PHASE);
         let transaction_trace = self.parse_transaction_proof_phase0(
@@ -336,7 +336,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         transaction_trace
     }
 
-    fn parse_transaction_proof_phase0(&self, ctx: &mut Context<F>, keccak: &mut KeccakChip<F>, transaction_index: &AssignedValue<F>,transactions_root: &[AssignedValue<F>], transaction_proofs: MPTFixedKeyProof<F>) -> EthTransactionTraceWitness<F> {
+    fn parse_transaction_proof_phase0(&self, ctx: &mut Context<F>, keccak: &mut KeccakChip<F>, transaction_index: &AssignedValue<F>,transactions_root: &[AssignedValue<F>], transaction_proofs: MPTProof<F>) -> EthTransactionTraceWitness<F> {
 
         // ctx.constrain_equal(&transaction_proofs.key_bytes,transaction_index); key_bytes in transaction_proofs is constructed by transaction_index itself, which seems unnecessary to verify.
 
@@ -373,7 +373,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         );
 
         // check MPT inclusion
-        let mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, transaction_proofs);
+        let mpt_witness = self.parse_mpt_inclusion_phase0(ctx, keccak, transaction_proofs);
         EthTransactionTraceWitness { transaction_witness, mpt_witness }
     }
 
@@ -410,7 +410,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         (ctx_gate, ctx_rlc): RlcContextPair<F>,
         witness: EthTransactionTraceWitness<F>,
     ) -> EthTransactionTrace<F> {
-        self.parse_mpt_inclusion_fixed_key_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
+        self.parse_mpt_inclusion_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
         let value_trace = self
             .rlp()
             .decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.transaction_witness, true)

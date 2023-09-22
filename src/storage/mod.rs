@@ -8,13 +8,12 @@ use halo2_base::{
     AssignedValue,
     Context,
     gates::{builder::GateThreadBuilder, GateInstructions, RangeChip}, halo2_proofs::halo2curves::bn256::Fr,
-    utils::bit_length,
 };
 use itertools::Itertools;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Field, keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs}, mpt::{AssignedBytes, MPTFixedKeyInput, MPTFixedKeyProof, MPTFixedKeyProofWitness}, Network, rlp::{
+use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Field, keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs}, mpt::{AssignedBytes}, Network, rlp::{
     builder::{RlcThreadBreakPoints, RlcThreadBuilder},
     rlc::{FIRST_PHASE, RLC_PHASE, RlcContextPair, RlcTrace},
     RlpArrayTraceWitness, RlpChip, RlpFieldTraceWitness, RlpFieldWitness,
@@ -24,14 +23,17 @@ use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Field, k
     uint_to_bytes_be,
 }};
 use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, get_block_header_config};
+use crate::keccak::{ContainsParallelizableKeccakQueries, parallelize_keccak_phase0};
+use crate::mpt::{MPTInput, MPTProof, MPTProofWitness};
 use crate::providers::{EbcRuleParams, get_storage_input};
+use crate::rlp::builder::parallelize_phase1;
 use crate::rlp::RlpFieldTrace;
 
 // #[cfg(all(test, feature = "providers"))]
 pub mod tests;
 pub mod util;
 pub mod helper;
-
+const CACHE_BITS:usize = 10;
 const EBC_RULE_FIELDS_NUM: usize = 18;
 const EBC_RULE_FIELDS_MAX_FIELDS_LEN: [usize; EBC_RULE_FIELDS_NUM] = [8, 8, 1, 1, 32, 32, 16, 16, 16, 16, 16, 16, 4, 4, 4, 4, 4, 4];
 
@@ -69,7 +71,7 @@ pub struct EthAccountTrace<F: Field> {
 #[derive(Clone, Debug)]
 pub struct EthAccountTraceWitness<F: Field> {
     array_witness: RlpArrayTraceWitness<F>,
-    mpt_witness: MPTFixedKeyProofWitness<F>,
+    mpt_witness: MPTProofWitness<F>,
 }
 
 impl<F: Field> EthAccountTraceWitness<F> {
@@ -95,7 +97,19 @@ pub struct EthStorageTrace<F: Field> {
 #[derive(Clone, Debug)]
 pub struct EthStorageTraceWitness<F: Field> {
     value_witness: RlpFieldTraceWitness<F>,
-    mpt_witness: MPTFixedKeyProofWitness<F>,
+    mpt_witness: MPTProofWitness<F>,
+}
+
+impl<F: Field> ContainsParallelizableKeccakQueries for EthStorageTraceWitness<F> {
+    fn shift_query_indices(&mut self, fixed_shift: usize, var_shift: usize) {
+        self.mpt_witness.shift_query_indices(fixed_shift, var_shift);
+    }
+}
+
+impl<F: Field> ContainsParallelizableKeccakQueries for EthAccountTraceWitness<F> {
+    fn shift_query_indices(&mut self, fixed_shift: usize, var_shift: usize) {
+        self.mpt_witness.shift_query_indices(fixed_shift, var_shift);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -106,7 +120,7 @@ pub struct EthEbcRuleTrace<F: Field> {
 #[derive(Clone, Debug)]
 pub struct EthEbcRuleTraceWitness<F: Field> {
     ebc_rule_rlp_witness: RlpArrayTraceWitness<F>,
-    ebc_rule_mpt_witness: MPTFixedKeyProofWitness<F>,
+    ebc_rule_mpt_witness: MPTProofWitness<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -144,7 +158,7 @@ pub trait EthStorageChip<F: Field> {
         keccak: &mut KeccakChip<F>,
         state_root_bytes: &[AssignedValue<F>],
         addr: AssignedBytes<F>,
-        proof: MPTFixedKeyProof<F>,
+        proof: MPTProof<F>,
     ) -> EthAccountTraceWitness<F>;
 
     fn parse_account_proof_phase1(
@@ -159,7 +173,7 @@ pub trait EthStorageChip<F: Field> {
         keccak: &mut KeccakChip<F>,
         storage_root_bytes: &[AssignedValue<F>],
         slot_bytes: AssignedBytes<F>,
-        proof: MPTFixedKeyProof<F>,
+        proof: MPTProof<F>,
     ) -> EthStorageTraceWitness<F>;
 
     fn parse_storage_proof_phase1(
@@ -173,7 +187,7 @@ pub trait EthStorageChip<F: Field> {
         ctx: &mut Context<F>,
         keccak: &mut KeccakChip<F>,
         ebc_rule_root_bytes: &[AssignedValue<F>],
-        proof: MPTFixedKeyProof<F>,
+        proof: MPTProof<F>,
     ) -> EthEbcRuleTraceWitness<F>;
 
     fn parse_ebc_rule_proof_phase1(
@@ -188,10 +202,12 @@ pub trait EthStorageChip<F: Field> {
         keccak: &mut KeccakChip<F>,
         state_root_bytes: &[AssignedValue<F>],
         addr: AssignedBytes<F>,
-        acct_pf: MPTFixedKeyProof<F>,
-        storage_pfs: Vec<(AssignedBytes<F>, MPTFixedKeyProof<F>)>, // (slot_bytes, storage_proof)
-        ebc_rule_pfs: MPTFixedKeyProof<F>,
-    ) -> (EthAccountTraceWitness<F>, Vec<EthStorageTraceWitness<F>>, EthEbcRuleTraceWitness<F>);
+        acct_pf: MPTProof<F>,
+        storage_pfs: Vec<(AssignedBytes<F>, MPTProof<F>)>, // (slot_bytes, storage_proof)
+        ebc_rule_pfs: MPTProof<F>,
+    ) -> (EthAccountTraceWitness<F>, Vec<EthStorageTraceWitness<F>>, EthEbcRuleTraceWitness<F>)
+        where
+            Self: Sync;
 
     fn parse_eip1186_proofs_phase1(
         &self,
@@ -228,7 +244,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         keccak: &mut KeccakChip<F>,
         state_root_bytes: &[AssignedValue<F>],
         addr: AssignedBytes<F>,
-        proof: MPTFixedKeyProof<F>,
+        proof: MPTProof<F>,
     ) -> EthAccountTraceWitness<F> {
         assert_eq!(32, proof.key_bytes.len());
 
@@ -255,7 +271,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         );
         // Check MPT inclusion for:
         // keccak(addr) => RLP([nonce, balance, storage_root, code_hash])
-        let mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, proof); // 32, 114, max_depth);
+        let mpt_witness = self.parse_mpt_inclusion_phase0(ctx, keccak, proof); // 32, 114, max_depth);
 
         EthAccountTraceWitness { array_witness, mpt_witness }
     }
@@ -265,7 +281,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         (ctx_gate, ctx_rlc): RlcContextPair<F>,
         witness: EthAccountTraceWitness<F>,
     ) -> EthAccountTrace<F> {
-        self.parse_mpt_inclusion_fixed_key_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
+        self.parse_mpt_inclusion_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
         let array_trace: [_; 4] = self
             .rlp()
             .decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.array_witness, false)
@@ -283,7 +299,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         keccak: &mut KeccakChip<F>,
         storage_root_bytes: &[AssignedValue<F>],
         slot: AssignedBytes<F>,
-        proof: MPTFixedKeyProof<F>,
+        proof: MPTProof<F>,
     ) -> EthStorageTraceWitness<F> {
         assert_eq!(32, proof.key_bytes.len());
 
@@ -304,7 +320,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
             self.rlp().decompose_rlp_field_phase0(ctx, proof.value_bytes.clone(), 32);
 
         // check stroage MPT inclusion
-        let mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, proof);
+        let mpt_witness = self.parse_mpt_inclusion_phase0(ctx, keccak, proof);
 
         EthStorageTraceWitness { value_witness, mpt_witness }
     }
@@ -316,7 +332,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
     ) -> EthStorageTrace<F> {
         // Comments below just to log what load_rlc_cache calls are done in the internal functions:
         // load_rlc_cache bit_length(2*mpt_witness.key_byte_len)
-        self.parse_mpt_inclusion_fixed_key_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
+        self.parse_mpt_inclusion_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
         // load rlc_cache bit_length(value_witness.rlp_field.len())
         let value_trace =
             self.rlp().decompose_rlp_field_phase1((ctx_gate, ctx_rlc), witness.value_witness);
@@ -330,7 +346,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         ctx: &mut Context<F>,
         keccak: &mut KeccakChip<F>,
         ebc_rule_root_bytes: &[AssignedValue<F>],
-        proof: MPTFixedKeyProof<F>,
+        proof: MPTProof<F>,
     ) -> EthEbcRuleTraceWitness<F> {
 
         // check MPT root is ebc rule root
@@ -357,7 +373,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         );
 
         // check ebc rule MPT inclusion
-        let ebc_rule_mpt_witness = self.parse_mpt_inclusion_fixed_key_phase0(ctx, keccak, proof);
+        let ebc_rule_mpt_witness = self.parse_mpt_inclusion_phase0(ctx, keccak, proof);
 
         EthEbcRuleTraceWitness { ebc_rule_rlp_witness, ebc_rule_mpt_witness }
     }
@@ -367,7 +383,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         (ctx_gate, ctx_rlc): RlcContextPair<F>,
         witness: EthEbcRuleTraceWitness<F>,
     ) -> EthEbcRuleTrace<F> {
-        self.parse_mpt_inclusion_fixed_key_phase1((ctx_gate, ctx_rlc), witness.ebc_rule_mpt_witness);
+        self.parse_mpt_inclusion_phase1((ctx_gate, ctx_rlc), witness.ebc_rule_mpt_witness);
 
         let value_trace = self
             .rlp()
@@ -385,10 +401,12 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         keccak: &mut KeccakChip<F>,
         state_root: &[AssignedValue<F>],
         addr: AssignedBytes<F>,
-        acct_pf: MPTFixedKeyProof<F>,
-        storage_pfs: Vec<(AssignedBytes<F>, MPTFixedKeyProof<F>)>, // (slot_bytes, storage_proof)
-        ebc_rule_pfs: MPTFixedKeyProof<F>,
-    ) -> (EthAccountTraceWitness<F>, Vec<EthStorageTraceWitness<F>>, EthEbcRuleTraceWitness<F>) {
+        acct_pf: MPTProof<F>,
+        storage_pfs: Vec<(AssignedBytes<F>, MPTProof<F>)>, // (slot_bytes, storage_proof)
+        ebc_rule_pfs: MPTProof<F>,
+    ) -> (EthAccountTraceWitness<F>, Vec<EthStorageTraceWitness<F>>, EthEbcRuleTraceWitness<F>)
+        where
+            Self: Sync,{
         // TODO: spawn separate thread for account proof; just need to get storage_root first somehow
         let ctx = thread_pool.main(FIRST_PHASE);
         let acct_trace = self.parse_account_proof_phase0(ctx, keccak, state_root, addr, acct_pf);
@@ -396,25 +414,14 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         let storage_root = &acct_trace.get_storage_root().field_cells;
 
         // parallelize storage proofs
-        let witness_gen_only = thread_pool.witness_gen_only();
-        let ctx_ids = storage_pfs.iter().map(|_| thread_pool.get_new_thread_id()).collect_vec();
-        let (mut storage_trace, ctx_keccaks): (Vec<_>, Vec<_>) = storage_pfs
-            .into_par_iter()
-            .zip(ctx_ids.into_par_iter())
-            .map(|((slot, storage_pf), ctx_id)| {
-                let mut ctx = Context::new(witness_gen_only, ctx_id);
-                let mut keccak = KeccakChip::default();
-                let trace = self.parse_storage_proof_phase0(
-                    &mut ctx,
-                    &mut keccak,
-                    storage_root,
-                    slot,
-                    storage_pf,
-                );
-                (trace, (ctx, keccak))
-            })
-            .unzip();
-
+        let storage_trace = parallelize_keccak_phase0(
+            thread_pool,
+            keccak,
+            storage_pfs,
+            |ctx, keccak, (slot, storage_pf)| {
+                self.parse_storage_proof_phase0(ctx, keccak, storage_root,slot, storage_pf)
+            },
+        );
 
         // verify ebc rule proofs
         // storage_trace[ebc_rule_root,ebc_rule_version]
@@ -427,14 +434,6 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
             ebc_rule_root,
             ebc_rule_pfs,
         );
-
-        // join gate contexts and keccak queries; need to shift keccak query indices because of the join
-        for (trace, (ctx, mut keccak_)) in storage_trace.iter_mut().zip(ctx_keccaks.into_iter()) {
-            thread_pool.threads[FIRST_PHASE].push(ctx);
-            keccak.fixed_len_queries.append(&mut keccak_.fixed_len_queries);
-            trace.mpt_witness.shift_query_indices(keccak.var_len_queries.len());
-            keccak.var_len_queries.append(&mut keccak_.var_len_queries);
-        }
 
         (acct_trace, storage_trace, ebc_trace)
     }
@@ -454,33 +453,14 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         let ebc_rule_trace = self.parse_ebc_rule_proof_phase1((ctx_gate, ctx_rlc), ebc_rule_witness);
 
         // pre-load rlc cache so later parallelization is deterministic
-        let max_len = storage_witness
-            .iter()
-            .map(|w| (2 * w.mpt_witness.key_byte_len).max(w.value_witness.rlp_field.len()))
-            .max()
-            .unwrap_or(1);
-        let cache_bits = bit_length(max_len as u64);
-        self.rlc().load_rlc_cache((ctx_gate, ctx_rlc), self.gate(), cache_bits);
-        // parallelize
-        let witness_gen_only = thread_pool.witness_gen_only();
-        let ctx_ids = storage_witness
-            .iter()
-            .map(|_| (thread_pool.get_new_thread_id(), thread_pool.get_new_thread_id()))
-            .collect_vec();
-        let (storage_trace, ctxs): (Vec<_>, Vec<_>) = storage_witness
-            .into_par_iter()
-            .zip(ctx_ids.into_par_iter())
-            .map(|(storage_witness, (gate_id, rlc_id))| {
-                let mut ctx_gate = Context::new(witness_gen_only, gate_id);
-                let mut ctx_rlc = Context::new(witness_gen_only, rlc_id);
-                let trace =
-                    self.parse_storage_proof_phase1((&mut ctx_gate, &mut ctx_rlc), storage_witness);
-                (trace, (ctx_gate, ctx_rlc))
-            })
-            .unzip();
-        let (mut ctxs_gate, mut ctxs_rlc): (Vec<_>, Vec<_>) = ctxs.into_iter().unzip();
-        thread_pool.gate_builder.threads[RLC_PHASE].append(&mut ctxs_gate);
-        thread_pool.threads_rlc.append(&mut ctxs_rlc);
+        self.rlc().load_rlc_cache((ctx_gate, ctx_rlc), self.gate(), CACHE_BITS);
+        let storage_trace = parallelize_phase1(
+            thread_pool,
+            storage_witness,
+            |(ctx_gate, ctx_rlc),
+             witness| {
+            self.parse_storage_proof_phase1((ctx_gate, ctx_rlc), witness)
+        });
         (acct_trace, storage_trace, ebc_rule_trace)
     }
 
@@ -618,20 +598,20 @@ pub struct EbcRuleVersion {
 pub struct EthStorageInput {
     pub addr: Address,
     // MDC
-    pub acct_pf: MPTFixedKeyInput,
-    pub storage_pfs: Vec<(H256, U256, MPTFixedKeyInput)>,
+    pub acct_pf: MPTInput,
+    pub storage_pfs: Vec<(H256, U256, MPTInput)>,
     // (slot, value, proof)
-    pub ebc_rule_pfs: MPTFixedKeyInput,// key:keccak256(chain_id0, chain_id1, token0, token1) value:rule_config_rlp
+    pub ebc_rule_pfs: MPTInput,// key:keccak256(chain_id0, chain_id1, token0, token1) value:rule_config_rlp
 }
 
 #[derive(Clone, Debug)]
 pub struct EthStorageInputAssigned<F: Field> {
     pub address: AssignedValue<F>,
     // U160
-    pub acct_pf: MPTFixedKeyProof<F>,
-    pub storage_pfs: Vec<(AssignedH256<F>, MPTFixedKeyProof<F>)>,
+    pub acct_pf: MPTProof<F>,
+    pub storage_pfs: Vec<(AssignedH256<F>, MPTProof<F>)>,
     // (slot, proof) where slot is H256 as (u128, u128)
-    pub ebc_rule_pfs: MPTFixedKeyProof<F>,
+    pub ebc_rule_pfs: MPTProof<F>,
 }
 
 impl EthStorageInput {

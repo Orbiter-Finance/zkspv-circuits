@@ -23,14 +23,13 @@ use serde_with::serde_as;
 use tokio::runtime::Runtime;
 
 use crate::{
-    mpt::MPTFixedKeyInput,
     Network,
     storage::{EthBlockStorageInput, EthStorageInput},
     util::{get_merkle_mountain_range, u256_to_bytes32_be},
 };
 use crate::config::contract::zksync_era_contract::{get_zksync_era_nonce_holder_contract_address, get_zksync_era_nonce_holder_contract_layout};
 use crate::config::token::zksync_era_token::{get_zksync_era_eth_address, get_zksync_era_token_layout_by_address};
-use crate::mpt::MPTUnFixedKeyInput;
+use crate::mpt::MPTInput;
 use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
 use crate::proof::arbitrum::{ArbitrumProofBlockTrack, ArbitrumProofInput, ArbitrumProofTransactionOrReceipt};
 use crate::storage::EbcRuleVersion;
@@ -43,6 +42,8 @@ use crate::util::helpers::calculate_storage_mapping_key;
 
 const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 114;
 const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
+const TRANSACTION_INDEX_MAX_KEY_BYTES_LEN:usize = 3;
+const K256_MAX_KEY_BYTES_LEN:usize = 32;
 
 
 fn get_buffer_rlp(value: u32) -> Vec<u8> {
@@ -167,14 +168,16 @@ pub fn get_receipt_input(
     let receipt_key = get_buffer_rlp(receipt_key_u256.as_u32());
     let slot_is_empty = false;
 
-    let receipt_proofs = MPTUnFixedKeyInput {
-        path: receipt_key,
+    let receipt_proofs = MPTInput {
+        path: (&receipt_key).into(),
         value: receipt_rlp.to_vec(),
         root_hash: block.receipts_root,
         proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
         slot_is_empty,
         value_max_byte_len: receipt_rlp.len(),
         max_depth: receipt_pf_max_depth,
+        max_key_byte_len: TRANSACTION_INDEX_MAX_KEY_BYTES_LEN,
+        key_byte_len: Some(receipt_key.len()),
     };
 
     EthBlockReceiptInput {
@@ -201,14 +204,16 @@ pub fn get_transaction_input(
     let transaction_key_u256 = U256::from(transaction_index);
     let transaction_key = get_buffer_rlp(transaction_key_u256.as_u32());
     let slot_is_empty = false;
-    let transaction_proofs = MPTUnFixedKeyInput {
-        path: transaction_key,
+    let transaction_proofs = MPTInput {
+        path: (&transaction_key).into(),
         value: transaction_rlp.to_vec(),
         root_hash: block.transactions_root,
         proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
         slot_is_empty,
         value_max_byte_len: transaction_rlp.len(),
         max_depth: transaction_pf_max_depth,
+        max_key_byte_len: TRANSACTION_INDEX_MAX_KEY_BYTES_LEN,
+        key_byte_len: Some(transaction_key.len()),
     };
 
     EthBlockTransactionInput {
@@ -248,14 +253,16 @@ pub fn get_storage_input(
 
     let acct_key = H256(keccak256(addr));
     let slot_is_empty = !is_assigned_slot(&acct_key, &pf.account_proof);
-    let acct_pf = MPTFixedKeyInput {
-        path: acct_key,
+    let acct_pf = MPTInput {
+        path: acct_key.into(),
         value: get_acct_rlp(&pf),
         root_hash: block.state_root,
         proof: pf.account_proof.into_iter().map(|x| x.to_vec()).collect(),
         value_max_byte_len: ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN,
         max_depth: acct_pf_max_depth,
+        max_key_byte_len: K256_MAX_KEY_BYTES_LEN,
         slot_is_empty,
+        key_byte_len: None,
     };
 
     let storage_pfs = pf
@@ -269,14 +276,16 @@ pub fn get_storage_input(
             (
                 storage_pf.key,
                 storage_pf.value,
-                MPTFixedKeyInput {
-                    path,
+                MPTInput {
+                    path:path.into(),
                     value,
                     root_hash: pf.storage_hash,
                     proof: storage_pf.proof.into_iter().map(|x| x.to_vec()).collect(),
                     value_max_byte_len: STORAGE_PROOF_VALUE_MAX_BYTE_LEN,
                     max_depth: storage_pf_max_depth,
+                    max_key_byte_len: K256_MAX_KEY_BYTES_LEN,
                     slot_is_empty,
+                    key_byte_len: None,
                 },
             )
         })
@@ -287,14 +296,16 @@ pub fn get_storage_input(
     {
         let path =ebc_rule_params.ebc_rule_key;
         let value = ebc_rule_params.ebc_rule_value.to_vec();
-        ebc_rule_pfs =  MPTFixedKeyInput{
-            path,
+        ebc_rule_pfs =  MPTInput{
+            path:path.into(),
             value,
             root_hash: ebc_rule_params.ebc_rule_root,
             proof: ebc_rule_params.ebc_rule_merkle_proof.into_iter().map(|x|x.to_vec()).collect(),
             slot_is_empty,
             value_max_byte_len: ebc_rule_params.ebc_rule_value.len(),
             max_depth: ebc_rule_params.ebc_rule_pf_max_depth,
+            max_key_byte_len: K256_MAX_KEY_BYTES_LEN,
+            key_byte_len: None,
         }
     }
 

@@ -2,18 +2,19 @@
 //!
 //! See https://hackmd.io/@axiom/ry35GZ4l3 for a technical walkthrough of circuit structure and logic
 use crate::{
-    keccak::{self, KeccakChip},
+    keccak::{self, ContainsParallelizableKeccakQueries, KeccakChip},
     rlp::{
         max_rlp_len_len,
         rlc::{
-            rlc_constrain_equal, rlc_is_equal, rlc_select, rlc_select_by_indicator,
-            rlc_select_from_idx, RlcContextPair, RlcTrace, RlcVar,
+            rlc_is_equal, rlc_select, rlc_select_by_indicator, rlc_select_from_idx, RlcContextPair,
+            RlcFixedTrace, RlcTrace, RlcVar,
         },
         RlpChip, RlpFieldTrace,
     },
     rlp::{rlc::RlcChip, RlpArrayTraceWitness},
     Field,
 };
+use ark_std::log2;
 use ethers_core::{types::H256, utils::hex::FromHex};
 use halo2_base::{
     gates::{GateChip, GateInstructions, RangeChip, RangeInstructions},
@@ -24,13 +25,12 @@ use halo2_base::{
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use rlp::Rlp;
+use serde::{Deserialize, Serialize};
 use std::{
     cmp::max,
-    iter::{self, once},
+    iter::{self},
 };
 
-#[cfg(test)]
-mod tests;
 
 lazy_static! {
     pub static ref MAX_BRANCH_LENS: (Vec<usize>, usize) = max_branch_lens();
@@ -48,10 +48,25 @@ lazy_static! {
 }
 
 #[derive(Clone, Debug)]
+pub struct TerminalTraceWitness<F: Field> {
+    pub node_type: AssignedValue<F>,
+    pub ext: LeafTraceWitness<F>,
+    pub branch: BranchTraceWitness<F>,
+    // pub max_leaf_bytes: usize,
+}
+
+pub struct TerminalTrace<F: Field> {
+    pub node_type: AssignedValue<F>,
+    pub ext: LeafTrace<F>,
+    pub branch: BranchTrace<F>,
+    // pub max_leaf_bytes: usize,
+}
+
+#[derive(Clone, Debug)]
 pub struct LeafTrace<F: Field> {
     key_path: RlpFieldTrace<F>,
     value: RlpFieldTrace<F>,
-    hash_rlc: RlcVar<F>,
+    rlcs: RlcVarPair<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -65,7 +80,7 @@ pub struct LeafTraceWitness<F: Field> {
 pub struct ExtensionTrace<F: Field> {
     key_path: RlpFieldTrace<F>,
     node_ref: RlpFieldTrace<F>,
-    hash_rlc: RlcVar<F>,
+    rlcs: RlcVarPair<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -77,8 +92,11 @@ pub struct ExtensionTraceWitness<F: Field> {
 
 #[derive(Clone, Debug)]
 pub struct BranchTrace<F: Field> {
+    // rlc without rlp prefix
     node_refs: [RlpFieldTrace<F>; 17],
-    hash_rlc: RlcVar<F>,
+    // rlc with prefix
+    node_rlp_refs: [RlcVar<F>; 17],
+    rlcs: RlcVarPair<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -123,7 +141,7 @@ pub struct MPTNodeTrace<F: Field> {
 
 #[derive(Clone, Debug)]
 /// A fragment of the key (bytes), stored as nibbles before hex-prefix encoding
-pub struct MPTKeyFragment<F: Field> {
+pub struct MPTFragment<F: Field> {
     /// A variable length string of hex-numbers, resized to a fixed max length with 0s
     pub nibbles: AssignedNibbles<F>,
     pub is_odd: AssignedValue<F>,
@@ -134,7 +152,7 @@ pub struct MPTKeyFragment<F: Field> {
 }
 
 #[derive(Clone, Debug)]
-pub struct MPTFixedKeyProof<F: Field> {
+pub struct MPTProof<F: Field> {
     // claim specification: (key, value)
     /// The key bytes, fixed length
     pub key_bytes: AssignedBytes<F>,
@@ -144,49 +162,53 @@ pub struct MPTFixedKeyProof<F: Field> {
     pub root_hash_bytes: AssignedBytes<F>,
 
     // proof specification
+    /// The variable length of the key
+    pub key_byte_len: Option<AssignedValue<F>>,
     /// The variable length of the proof, including the leaf node if !slot_is_empty.
     pub depth: AssignedValue<F>,
     /// RLP encoding of the final leaf node
-    pub leaf_bytes: AssignedBytes<F>,
+    pub leaf: MPTNode<F>,
     /// The non-leaf nodes of the mpt proof, resized to `max_depth - 1` with dummy **branch** nodes.
     /// The actual variable length is `depth - 1` if `slot_is_empty == true` (excludes leaf node), otherwise `depth`.
     pub nodes: Vec<MPTNode<F>>,
     /// The key fragments of the mpt proof, variable length, resized to `max_depth` with dummy fragments.
     /// Each fragment (nibbles aka hexes) is variable length, resized to `2 * key_byte_len` with 0s
-    pub key_frag: Vec<MPTKeyFragment<F>>,
+    pub key_frag: Vec<MPTFragment<F>>,
     /// Boolean indicating whether the MPT contains a value at `key`
     pub slot_is_empty: AssignedValue<F>,
 
-    // pub key_byte_len: usize,
-    // pub value_max_byte_len: usize,
+    /// The maximum byte length of the key
+    pub max_key_byte_len: usize,
     /// `max_depth` should be `>=1`
     pub max_depth: usize,
 }
 
 #[derive(Clone, Debug)]
-pub struct MPTFixedKeyProofWitness<F: Field> {
-    // pub proof: MPTFixedKeyProof<F>,
+pub struct MPTProofWitness<F: Field> {
+    // pub proof: MPTProof<F>,
     // we keep only the parts of the proof necessary:
     pub value_bytes: AssignedBytes<F>,
     pub value_byte_len: AssignedValue<F>,
     pub root_hash_bytes: AssignedBytes<F>,
+    /// The variable length of the key
+    pub key_byte_len: Option<AssignedValue<F>>,
     /// The variable length of the proof. This includes the leaf node in the case of an inclusion proof. There is no leaf node in the case of a non-inclusion proof.
     pub depth: AssignedValue<F>,
     /// The non-leaf nodes of the mpt proof, resized to `max_depth - 1`. Each node has been parsed with both a hypothetical branch and extension node. The actual type is determined by the `node_type` flag.
     ///
     /// The actual variable length of `nodes` is `depth - 1` if `slot_is_empty == true` (excludes leaf node), otherwise `depth`.
     pub nodes: Vec<MPTNodeWitness<F>>,
-    /// The leaf parsed
-    pub leaf_parsed: LeafTraceWitness<F>,
+    /// The last node parsed
+    pub terminal_node_parsed: TerminalTraceWitness<F>,
 
     /// Boolean indicating whether the MPT contains a value at `key`
     pub slot_is_empty: AssignedValue<F>,
 
-    pub key_byte_len: usize,
+    pub max_key_byte_len: usize,
     pub max_depth: usize,
 
     /// The key fragments (nibbles), without encoding, provided as private inputs
-    pub key_frag: Vec<MPTKeyFragment<F>>,
+    pub key_frag: Vec<MPTFragment<F>>,
     /// The hex-prefix encoded path for (potential) extension nodes (hex-prefix encoding has leaf vs. extension distinction).
     /// These are derived from the nodes themselves.
     pub key_frag_ext_bytes: Vec<AssignedBytes<F>>,
@@ -197,13 +219,21 @@ pub struct MPTFixedKeyProofWitness<F: Field> {
     pub key_hexs: AssignedNibbles<F>,
 }
 
-impl<F: Field> MPTFixedKeyProofWitness<F> {
-    /// Shifts all keccak query indices by `shift`. This is necessary when
-    /// joining parallel (multi-threaded) keccak chips into one.
-    ///
-    /// Currently all indices are with respect to `keccak.var_len_queries` (see [`EthChip::mpt_hash_phase0`]).
-    pub fn shift_query_indices(&mut self, shift: usize) {
-        self.leaf_parsed.hash_query_idx += shift;
+#[derive(Clone, Copy, Debug)]
+pub struct RlcVarPair<F: Field> {
+    /// 32-byte hash rlc
+    pub hash_rlc: RlcVar<F>,
+    /// Input rlc
+    pub input_rlc: RlcVar<F>,
+    /// input_rlc if len < 32, hash_rlc otherwise.
+    pub mpt_hash_rlc: RlcVar<F>,
+}
+
+impl<F: Field> ContainsParallelizableKeccakQueries for MPTProofWitness<F> {
+    // Currently all indices are with respect to `keccak.var_len_queries` (see `EthChip::mpt_hash_phase0`).
+    fn shift_query_indices(&mut self, _: usize, shift: usize) {
+        self.terminal_node_parsed.ext.hash_query_idx += shift;
+        self.terminal_node_parsed.branch.hash_query_idx += shift;
         for node in self.nodes.iter_mut() {
             node.ext.hash_query_idx += shift;
             node.branch.hash_query_idx += shift;
@@ -211,15 +241,42 @@ impl<F: Field> MPTFixedKeyProofWitness<F> {
     }
 }
 
-#[derive(Clone, Debug)]
-/// The pre-assigned inputs for the MPT fixed key proof
-pub struct MPTFixedKeyInput {
+#[derive(Clone, Debug, Serialize, Deserialize, Hash)]
+pub struct PathBytes(pub Vec<u8>);
+
+impl<T: AsRef<[u8]>> From<&T> for PathBytes {
+    fn from(value: &T) -> Self {
+        Self(value.as_ref().to_vec())
+    }
+}
+
+impl From<Vec<u8>> for PathBytes {
+    fn from(value: Vec<u8>) -> Self {
+        Self(value)
+    }
+}
+
+impl From<H256> for PathBytes {
+    fn from(value: H256) -> Self {
+        Self(value.0.to_vec())
+    }
+}
+
+impl AsRef<[u8]> for PathBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, Hash, Serialize, Deserialize)]
+/// The pre-assigned inputs for the MPT proof
+pub struct MPTInput {
     // claim specification: (path, value)
     /// A Merkle-Patricia Trie is a mapping `path => value`
     ///
     /// As an example, the MPT state trie of Ethereum has
-    /// `path = rlp(transaction_index) => value = rlp(transaction)`
-    pub path: H256,
+    /// `path = keccak256(address) => value = rlp(account)`
+    pub path: PathBytes,
     pub value: Vec<u8>,
     pub root_hash: H256,
 
@@ -229,195 +286,9 @@ pub struct MPTFixedKeyInput {
 
     pub value_max_byte_len: usize,
     pub max_depth: usize,
+    pub max_key_byte_len: usize,
+    pub key_byte_len: Option<usize>,
 }
-
-#[derive(Clone, Debug)]
-pub struct MPTUnFixedKeyInput {
-    // claim specification: (path, value)
-    /// A Merkle-Patricia Trie is a mapping `path => value`
-    ///
-    /// As an example, the MPT transaction trie of Ethereum has
-    /// `path = rlp(transaction_index) => value = rlp(transaction)`
-    pub path: Vec<u8>,
-
-    pub value: Vec<u8>,
-
-    pub root_hash: H256,
-
-    pub proof: Vec<Vec<u8>>,
-
-    pub slot_is_empty: bool,
-
-    pub value_max_byte_len: usize,
-    pub max_depth: usize,
-}
-
-impl MPTUnFixedKeyInput {
-    pub fn assign<F: Field>(self, ctx: &mut Context<F>) -> MPTFixedKeyProof<F> {
-        let Self {
-            path,
-            mut value,
-            root_hash,
-            mut proof,
-            value_max_byte_len,
-            max_depth,
-            slot_is_empty,
-        } = self;
-        let depth = proof.len();
-        let key_byte_len = path.len();
-        //assert!(depth <= max_depth - usize::from(slot_is_empty));
-
-        let bytes_to_nibbles = |bytes: &[u8]| {
-            let mut nibbles = Vec::with_capacity(bytes.len() * 2);
-            for byte in bytes {
-                nibbles.push(byte >> 4);
-                nibbles.push(byte & 0xf);
-            }
-            nibbles
-        };
-        let hex_len = |byte_len: usize, is_odd: bool| 2 * byte_len + usize::from(is_odd) - 2;
-
-        let path_nibbles = bytes_to_nibbles(&*path);
-        let mut path_idx = 0;
-
-        // below "key" and "path" are used interchangeably, sorry for confusion
-        // if slot_is_empty, leaf is dummy, but with value 0x0 to make constraints pass (assuming claimed value is also 0x0)
-        let mut leaf = if slot_is_empty { NULL_LEAF.clone() } else { proof.pop().unwrap() };
-        let (_, max_leaf_bytes) = max_leaf_lens(key_byte_len, value_max_byte_len);
-
-        let (_, max_ext_bytes) = max_ext_lens(key_byte_len);
-        let max_branch_bytes = MAX_BRANCH_LENS.1;
-        let max_node_bytes = max(max_ext_bytes, max_branch_bytes);
-
-        let mut key_frag = Vec::with_capacity(max_depth);
-        let mut nodes = Vec::with_capacity(max_depth - 1);
-        let mut process_node = |node: &[u8]| {
-            let decode = Rlp::new(node);
-            let node_type = decode.item_count().unwrap() == 2;
-            if node_type {
-                let encoded_path = decode.at(0).unwrap().data().unwrap();
-                let byte_len = encoded_path.len();
-                let encoded_nibbles = bytes_to_nibbles(encoded_path);
-                let is_odd = encoded_nibbles[0] == 1u8 || encoded_nibbles[0] == 3u8;
-                let mut frag = encoded_nibbles[2 - usize::from(is_odd)..].to_vec();
-                path_idx += frag.len();
-                frag.resize(2 * key_byte_len, 0);
-                key_frag.push((frag, byte_len, is_odd));
-            } else {
-                let mut frag = vec![0u8; 2 * key_byte_len];
-                frag[0] = path_nibbles[path_idx];
-                key_frag.push((frag, 1, true));
-                path_idx += 1;
-            }
-            node_type
-        };
-        for mut node in proof {
-            let node_type = process_node(&node);
-            node.resize(max_node_bytes, 0);
-            nodes.push((node, node_type));
-        }
-        let mut dummy_branch = DUMMY_BRANCH.clone();
-        dummy_branch.resize(max_node_bytes, 0);
-        nodes.resize(max_depth - 1, (dummy_branch, false));
-
-        process_node(&leaf);
-        leaf.resize(max_leaf_bytes, 0);
-
-        // if slot_is_empty, we make modify key_frag so it still concatenates to `path`
-        if slot_is_empty {
-            // remove just added leaf frag
-            key_frag.pop().unwrap();
-            if key_frag.is_empty() {
-                let nibbles = bytes_to_nibbles(&*path); // that means proof was empty
-
-                key_frag = vec![(nibbles, 33, false)];
-            } else {
-                // the last frag in non-inclusion doesn't match path
-                key_frag.pop().unwrap();
-                let hex_len = key_frag
-                    .iter()
-                    .map(|(_, byte_len, is_odd)| hex_len(*byte_len, *is_odd))
-                    .sum::<usize>();
-                let mut remaining = path_nibbles[hex_len..].to_vec();
-                let is_odd = remaining.len() % 2 == 1;
-                let byte_len = (remaining.len() + 2 - usize::from(is_odd)) / 2;
-                remaining.resize(2 * key_byte_len, 0);
-                key_frag.push((remaining, byte_len, is_odd));
-            }
-        }
-        key_frag.resize(max_depth, (vec![0u8; 2 * key_byte_len], 0, false));
-
-        // assign all values
-        let value_byte_len = ctx.load_witness(F::from(value.len() as u64));
-        let depth = ctx.load_witness(F::from(depth as u64));
-        let mut load_bytes =
-            |bytes: &[u8]| ctx.assign_witnesses(bytes.iter().map(|x| F::from(*x as u64)));
-        let key_bytes = load_bytes(&*path);
-        value.resize(value_max_byte_len, 0);
-        let value_bytes = load_bytes(&value);
-        let root_hash_bytes = load_bytes(root_hash.as_bytes());
-        let leaf_bytes = load_bytes(&leaf);
-        let nodes = nodes
-            .into_iter()
-            .map(|(node_bytes, node_type)| {
-                let rlp_bytes = ctx.assign_witnesses(node_bytes.iter().map(|x| F::from(*x as u64)));
-                let node_type = ctx.load_witness(F::from(node_type));
-                MPTNode { rlp_bytes, node_type }
-            })
-            .collect_vec();
-        let key_frag = key_frag
-            .into_iter()
-            .map(|(nibbles, byte_len, is_odd)| {
-                let nibbles = ctx.assign_witnesses(nibbles.iter().map(|x| F::from(*x as u64)));
-                let byte_len = ctx.load_witness(F::from(byte_len as u64));
-                let is_odd = ctx.load_witness(F::from(is_odd));
-                MPTKeyFragment { nibbles, is_odd, byte_len }
-            })
-            .collect_vec();
-
-        let slot_is_empty = ctx.load_witness(F::from(slot_is_empty));
-
-        MPTFixedKeyProof {
-            key_bytes,
-            value_bytes,
-            value_byte_len,
-            root_hash_bytes,
-            leaf_bytes,
-            nodes,
-            depth,
-            key_frag,
-            max_depth,
-            slot_is_empty,
-        }
-    }
-}
-
-/* // TODO
-#[circuit_derive(Clone, Debug)]
-pub struct MPTVarKeyProof<F: Field> {
-    // claim specification
-    key_bytes: AssignedBytes<F>,
-    key_byte_len: AssignedValue<F>,
-    value_bytes: AssignedBytes<F>,
-    value_byte_len: AssignedValue<F>,
-    root_hash_bytes: AssignedBytes<F>,
-
-    // proof specification
-    leaf_bytes: AssignedBytes<F>,
-    proof_nodes: Vec<AssignedBytes<F>>,
-    node_types: Vec<AssignedValue<F>>, // index 0 = root; 0 = branch, 1 = extension
-    depth: AssignedValue<F>,
-
-    key_frag_hexs: Vec<AssignedNibbles<F>>,
-    // hex_len = 2 * byte_len + is_odd - 2
-    key_frag_is_odd: Vec<AssignedValue<F>>,
-    key_frag_byte_len: Vec<AssignedValue<F>>,
-
-    key_max_byte_len: usize,
-    value_max_byte_len: usize,
-    max_depth: usize,
-}
-*/
 
 pub fn max_leaf_lens(max_key_bytes: usize, max_value_bytes: usize) -> (Vec<usize>, usize) {
     let max_encoded_path_bytes = max_key_bytes + 1;
@@ -527,7 +398,7 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         &self,
         ctx_gate: &mut Context<F>, // ctx in SecondPhase
         hash_query_idx: usize,
-    ) -> RlcVar<F> {
+    ) -> RlcVarPair<F> {
         let keccak_query = &self.keccak_var_len_rlcs()[hash_query_idx];
         let hash_rlc = keccak_query.1.rlc_val;
         let input_rlc = keccak_query.0.rlc_val;
@@ -542,7 +413,11 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         );
         let mpt_hash_len = self.gate().select(ctx_gate, len, Constant(thirty_two), is_short);
         let mpt_hash_rlc = self.gate().select(ctx_gate, input_rlc, hash_rlc, is_short);
-        RlcVar { rlc_val: mpt_hash_rlc, len: mpt_hash_len }
+        RlcVarPair {
+            hash_rlc: RlcVar { rlc_val: hash_rlc, len: ctx_gate.load_witness(thirty_two) },
+            input_rlc: RlcVar { rlc_val: input_rlc, len },
+            mpt_hash_rlc: RlcVar { rlc_val: mpt_hash_rlc, len: mpt_hash_len },
+        }
     }
 
     /// Parse the RLP encoding of an assumed leaf node.
@@ -550,6 +425,89 @@ impl<'chip, F: Field> EthChip<'chip, F> {
     ///
     /// This is the same as [`parse_ext_phase0`] except that the assumed maximum length of a leaf node
     /// may be different from that of an extension node.
+
+    pub fn parse_terminal_node_phase0(
+        &self,
+        ctx: &mut Context<F>,
+        keccak: &mut KeccakChip<F>,
+        leaf_bytes: MPTNode<F>,
+        max_key_bytes: usize,
+        max_value_bytes: usize,
+    ) -> TerminalTraceWitness<F> {
+        let (_, max_leaf_bytes) = max_leaf_lens(max_key_bytes, max_value_bytes);
+        let (_, max_ext_bytes) = max_ext_lens(max_key_bytes);
+        let max_branch_bytes = MAX_BRANCH_LENS.1;
+        let max_ext_bytes = max(max_ext_bytes, max_branch_bytes);
+        let max_leaf_bytes = max(max_ext_bytes, max_leaf_bytes);
+        let mut dummy_branch = DUMMY_BRANCH.clone();
+        dummy_branch.resize(max_leaf_bytes, 0);
+        let mut dummy_ext = DUMMY_EXT.clone();
+        dummy_ext.resize(max_leaf_bytes, 0);
+        assert_eq!(leaf_bytes.rlp_bytes.len(), max_leaf_bytes);
+        let dummy_ext: Vec<_> =
+            dummy_ext.into_iter().map(|b| Constant(F::from(b as u64))).collect();
+        let dummy_branch: Vec<_> =
+            dummy_branch.into_iter().map(|b| Constant(F::from(b as u64))).collect();
+        debug_assert_eq!(leaf_bytes.rlp_bytes.len(), max_leaf_bytes);
+        let (ext_in, branch_in): (AssignedBytes<F>, AssignedBytes<F>) = leaf_bytes
+            .rlp_bytes
+            .iter()
+            .zip(dummy_ext.iter())
+            .zip(dummy_branch.iter())
+            .map(|((&node_byte, &dummy_ext_byte), &dummy_branch_byte)| {
+                (
+                    self.gate().select(ctx, node_byte, dummy_ext_byte, leaf_bytes.node_type),
+                    self.gate().select(ctx, dummy_branch_byte, node_byte, leaf_bytes.node_type),
+                )
+            })
+            .unzip();
+
+        let ext_parsed =
+            self.parse_leaf_phase0(ctx, keccak, ext_in, max_key_bytes, max_value_bytes);
+        let branch_parsed = {
+            let max_field_bytes = &MAX_BRANCH_LENS.0;
+            let max_leaf_bytes = max(max_ext_bytes, max_leaf_bytes);
+            assert_eq!(branch_in.len(), max_leaf_bytes);
+
+            let rlp_witness =
+                self.rlp.decompose_rlp_array_phase0(ctx, branch_in, max_field_bytes, false);
+            let hash_query_idx = self.mpt_hash_phase0(
+                ctx,
+                keccak,
+                rlp_witness.rlp_array.clone(),
+                rlp_witness.rlp_len,
+            );
+            BranchTraceWitness { rlp: rlp_witness, hash_query_idx }
+        };
+        TerminalTraceWitness {
+            node_type: leaf_bytes.node_type,
+            ext: ext_parsed,
+            branch: branch_parsed,
+        }
+    }
+
+    pub fn parse_terminal_node_phase1(
+        &self,
+        (ctx_gate, ctx_rlc): RlcContextPair<F>,
+        witness: TerminalTraceWitness<F>,
+    ) -> TerminalTrace<F> {
+        let rlp_trace =
+            self.rlp.decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.ext.rlp, false);
+        let [key_path, value]: [RlpFieldTrace<F>; 2] = rlp_trace.field_trace.try_into().unwrap();
+        let rlcs = self.mpt_hash_phase1(ctx_gate, witness.ext.hash_query_idx);
+        let ext = LeafTrace { key_path, value, rlcs };
+        let (rlp_trace, rlp_rlc) = self.rlp.decompose_rlp_array_phase1_expensive(
+            (ctx_gate, ctx_rlc),
+            witness.branch.rlp,
+            false,
+        );
+        let node_refs: [RlpFieldTrace<F>; 17] = rlp_trace.field_trace.try_into().unwrap();
+        let node_rlp_refs = rlp_rlc.try_into().unwrap();
+        let rlcs = self.mpt_hash_phase1(ctx_gate, witness.branch.hash_query_idx);
+        let branch = BranchTrace { node_refs, node_rlp_refs, rlcs };
+        TerminalTrace { node_type: witness.node_type, ext, branch }
+    }
+
     pub fn parse_leaf_phase0(
         &self,
         ctx: &mut Context<F>,
@@ -559,8 +517,13 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         max_value_bytes: usize,
     ) -> LeafTraceWitness<F> {
         let (max_field_bytes, max_leaf_bytes) = max_leaf_lens(max_key_bytes, max_value_bytes);
+        let (max_ext_field_bytes, max_ext_bytes) = max_ext_lens(max_key_bytes);
+        let max_branch_bytes = MAX_BRANCH_LENS.1;
+        let max_ext_bytes = max(max_ext_bytes, max_branch_bytes);
+        let max_leaf_bytes = max(max_ext_bytes, max_leaf_bytes);
+        let max_field_bytes =
+            vec![max_field_bytes[0], max(max_field_bytes[1], max_ext_field_bytes[1])];
         assert_eq!(leaf_bytes.len(), max_leaf_bytes);
-
         let rlp_witness =
             self.rlp.decompose_rlp_array_phase0(ctx, leaf_bytes, &max_field_bytes, false);
         // TODO: remove unnecessary clones somehow?
@@ -579,8 +542,8 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         let rlp_trace =
             self.rlp.decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.rlp, false);
         let [key_path, value]: [RlpFieldTrace<F>; 2] = rlp_trace.field_trace.try_into().unwrap();
-        let hash_rlc = self.mpt_hash_phase1(ctx_gate, witness.hash_query_idx);
-        LeafTrace { key_path, value, hash_rlc }
+        let rlcs = self.mpt_hash_phase1(ctx_gate, witness.hash_query_idx);
+        LeafTrace { key_path, value, rlcs }
     }
 
     /// Parse the RLP encoding of an assumed extension node.
@@ -595,7 +558,7 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         let (max_field_bytes, max_ext_bytes) = max_ext_lens(max_key_bytes);
         let max_branch_bytes = MAX_BRANCH_LENS.1;
         let max_ext_bytes = max(max_ext_bytes, max_branch_bytes);
-        debug_assert_eq!(ext_bytes.len(), max_ext_bytes);
+        assert_eq!(ext_bytes.len(), max_ext_bytes);
 
         let rlp_witness =
             self.rlp.decompose_rlp_array_phase0(ctx, ext_bytes, &max_field_bytes, false);
@@ -614,8 +577,8 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         let rlp_trace =
             self.rlp.decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.rlp, false);
         let [key_path, node_ref]: [RlpFieldTrace<F>; 2] = rlp_trace.field_trace.try_into().unwrap();
-        let hash_rlc = self.mpt_hash_phase1(ctx_gate, witness.hash_query_idx);
-        ExtensionTrace { key_path, node_ref, hash_rlc }
+        let rlcs = self.mpt_hash_phase1(ctx_gate, witness.hash_query_idx);
+        ExtensionTrace { key_path, node_ref, rlcs }
     }
 
     /// Parse the RLP encoding of an assumed branch node.
@@ -628,8 +591,8 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         max_key_bytes: usize,
     ) -> BranchTraceWitness<F> {
         let max_field_bytes = &MAX_BRANCH_LENS.0;
-        let max_branch_bytes = MAX_BRANCH_LENS.1;
         let (_, max_ext_bytes) = max_ext_lens(max_key_bytes);
+        let max_branch_bytes = MAX_BRANCH_LENS.1;
         let max_branch_bytes = max(max_ext_bytes, max_branch_bytes);
         assert_eq!(branch_bytes.len(), max_branch_bytes);
 
@@ -637,6 +600,8 @@ impl<'chip, F: Field> EthChip<'chip, F> {
             self.rlp.decompose_rlp_array_phase0(ctx, branch_bytes, max_field_bytes, false);
         let hash_query_idx =
             self.mpt_hash_phase0(ctx, keccak, rlp_witness.rlp_array.clone(), rlp_witness.rlp_len);
+        // Note that the rlp_witnesses are tweaked to fit our use case
+        // It no longer reflects an actual field_witness.
         BranchTraceWitness { rlp: rlp_witness, hash_query_idx }
     }
 
@@ -645,11 +610,12 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         (ctx_gate, ctx_rlc): RlcContextPair<F>,
         witness: BranchTraceWitness<F>,
     ) -> BranchTrace<F> {
-        let rlp_trace =
-            self.rlp.decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.rlp, false);
+        let (rlp_trace, rlp_rlc) =
+            self.rlp.decompose_rlp_array_phase1_expensive((ctx_gate, ctx_rlc), witness.rlp, false);
         let node_refs: [RlpFieldTrace<F>; 17] = rlp_trace.field_trace.try_into().unwrap();
-        let hash_rlc = self.mpt_hash_phase1(ctx_gate, witness.hash_query_idx);
-        BranchTrace { node_refs, hash_rlc }
+        let node_rlp_refs = rlp_rlc.try_into().unwrap();
+        let rlcs = self.mpt_hash_phase1(ctx_gate, witness.hash_query_idx);
+        BranchTrace { node_refs, node_rlp_refs, rlcs }
     }
 
     pub fn compute_rlc_trace(
@@ -661,19 +627,25 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         self.rlc().compute_rlc(ctx, self.gate(), inputs, len)
     }
 
-    pub fn parse_mpt_inclusion_fixed_key_phase0(
+    /* Inputs must follow the following unchecked constraints:
+     * keys must have positive length
+     * values must have length at least 32
+     * trie has to be nonempty (root is not KECCAK_RLP_EMPTY_STRING)
+     */
+    /// Loads input witnesses into the circuit and parses the RLP encoding of nodes and leaves
+    pub fn parse_mpt_inclusion_phase0(
         &self,
         ctx: &mut Context<F>,
         keccak: &mut KeccakChip<F>,
-        proof: MPTFixedKeyProof<F>,
-    ) -> MPTFixedKeyProofWitness<F> {
-        let key_byte_len = proof.key_bytes.len();
+        proof: MPTProof<F>,
+    ) -> MPTProofWitness<F> {
+        let max_key_byte_len = proof.max_key_byte_len;
         let value_max_byte_len = proof.value_bytes.len();
         let max_depth = proof.max_depth;
         assert_eq!(proof.nodes.len(), max_depth - 1);
         assert_eq!(proof.root_hash_bytes.len(), 32);
-
-        let ext_max_byte_len = Self::ext_max_byte_len(key_byte_len);
+        assert_eq!(proof.key_bytes.len(), proof.max_key_byte_len);
+        let ext_max_byte_len = Self::ext_max_byte_len(proof.max_key_byte_len);
         let branch_max_byte_len = MAX_BRANCH_LENS.1;
         let node_max_byte_len = max(ext_max_byte_len, branch_max_byte_len);
 
@@ -685,7 +657,6 @@ impl<'chip, F: Field> EthChip<'chip, F> {
             dummy_ext.into_iter().map(|b| Constant(F::from(b as u64))).collect();
         let dummy_branch: Vec<_> =
             dummy_branch.into_iter().map(|b| Constant(F::from(b as u64))).collect();
-
         /* Validate inputs, check that:
          * all inputs are bytes
          * node_types[idx] in {0, 1}
@@ -700,7 +671,7 @@ impl<'chip, F: Field> EthChip<'chip, F> {
             .chain(proof.key_bytes.iter())
             .chain(proof.value_bytes.iter())
             .chain(proof.root_hash_bytes.iter())
-            .chain(proof.leaf_bytes.iter())
+            .chain(proof.leaf.rlp_bytes.iter())
             .chain(proof.nodes.iter().flat_map(|node| node.rlp_bytes.iter()))
         {
             self.range().range_check(ctx, *byte, 8);
@@ -716,23 +687,44 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         }
         self.range().check_less_than_safe(ctx, proof.depth, max_depth as u64 + 1);
         self.range().check_less_than_safe(ctx, proof.value_byte_len, value_max_byte_len as u64 + 1);
-        for frag_len in proof.key_frag.iter().map(|frag| frag.byte_len) {
-            self.range().check_less_than_safe(ctx, frag_len, key_byte_len as u64 + 2);
+        if let Some(key_byte_len) = proof.key_byte_len {
+            self.range().check_less_than_safe(ctx, key_byte_len, max_key_byte_len as u64 + 1);
+            let two = ctx.load_constant(F::from(2u64));
+            let frag_ub = self.gate().add(ctx, two, key_byte_len);
+            for frag_len in proof.key_frag.iter().map(|frag| frag.byte_len) {
+                self.range().check_less_than(
+                    ctx,
+                    frag_len,
+                    frag_ub,
+                    log2(max_key_byte_len) as usize + 2,
+                );
+            }
+        } else {
+            for frag_len in proof.key_frag.iter().map(|frag| frag.byte_len) {
+                self.range().check_less_than_safe(ctx, frag_len, max_key_byte_len as u64 + 2);
+            }
         }
-
         /* Parse RLP
-         * RLP Leaf      for leaf_bytes
+         * RLP Terminal  for leaf
          * RLP Extension for select(dummy_extension[idx], nodes[idx], node_types[idx])
          * RLP Branch    for select(nodes[idx], dummy_branch[idx], node_types[idx])
          */
-        let leaf_parsed =
-            self.parse_leaf_phase0(ctx, keccak, proof.leaf_bytes, key_byte_len, value_max_byte_len);
-
+        let terminal_node_parsed = self.parse_terminal_node_phase0(
+            ctx,
+            keccak,
+            proof.leaf,
+            max_key_byte_len,
+            value_max_byte_len,
+        );
+        // let mut indices = Vec::with_capacity(max_depth);
+        // for i in 1..max_depth + 1 {
+        //     indices.push(ctx.load_constant(F::from(i as u64)));
+        // }
         let nodes: Vec<_> = proof
             .nodes
             .into_iter()
             .map(|node| {
-                debug_assert_eq!(node.rlp_bytes.len(), node_max_byte_len);
+                assert_eq!(node.rlp_bytes.len(), node_max_byte_len);
                 let (ext_in, branch_in): (AssignedBytes<F>, AssignedBytes<F>) = node
                     .rlp_bytes
                     .iter()
@@ -746,27 +738,27 @@ impl<'chip, F: Field> EthChip<'chip, F> {
                     })
                     .unzip();
 
-                let ext_parsed = self.parse_ext_phase0(ctx, keccak, ext_in, key_byte_len);
+                let ext_parsed = self.parse_ext_phase0(ctx, keccak, ext_in, max_key_byte_len);
                 let branch_parsed =
-                    self.parse_nonterminal_branch_phase0(ctx, keccak, branch_in, key_byte_len);
+                    self.parse_nonterminal_branch_phase0(ctx, keccak, branch_in, max_key_byte_len);
                 MPTNodeWitness { node_type: node.node_type, ext: ext_parsed, branch: branch_parsed }
             })
             .collect();
-
         // Check key fragment and prefix consistency
         let mut key_frag_ext_bytes = Vec::with_capacity(max_depth - 1);
         let mut key_frag_leaf_bytes = Vec::with_capacity(max_depth);
         let mut frag_lens = Vec::with_capacity(max_depth);
         // assert to avoid capacity checks?
         assert_eq!(proof.key_frag.len(), max_depth);
+
         for (idx, key_frag) in proof.key_frag.iter().enumerate() {
-            debug_assert_eq!(key_frag.nibbles.len(), 2 * key_byte_len);
+            assert_eq!(key_frag.nibbles.len(), 2 * max_key_byte_len);
             let leaf_path_bytes = hex_prefix_encode(
                 ctx,
                 self.gate(),
                 &key_frag.nibbles,
                 key_frag.is_odd,
-                key_byte_len,
+                max_key_byte_len,
                 false,
             );
             if idx < max_depth - 1 {
@@ -787,7 +779,7 @@ impl<'chip, F: Field> EthChip<'chip, F> {
             frag_lens.push(frag_len);
         }
 
-        let mut key_hexs = Vec::with_capacity(2 * key_byte_len);
+        let mut key_hexs = Vec::with_capacity(2 * max_key_byte_len);
         for byte in proof.key_bytes.into_iter() {
             let bits = self.gate().num_to_bits(ctx, byte, 8);
             let hexs = [4, 0].map(|i| {
@@ -799,32 +791,34 @@ impl<'chip, F: Field> EthChip<'chip, F> {
             });
             key_hexs.extend(hexs);
         }
-
-        MPTFixedKeyProofWitness {
+        MPTProofWitness {
             value_bytes: proof.value_bytes,
             value_byte_len: proof.value_byte_len,
             root_hash_bytes: proof.root_hash_bytes,
+            key_byte_len: proof.key_byte_len,
             depth: proof.depth,
             nodes,
-            key_frag: proof.key_frag,
-            key_byte_len,
+            terminal_node_parsed,
+            slot_is_empty: proof.slot_is_empty,
+            max_key_byte_len,
             max_depth,
-            leaf_parsed,
+            key_frag: proof.key_frag,
             key_frag_ext_bytes,
             key_frag_leaf_bytes,
-            key_hexs,
             frag_lens,
-            slot_is_empty: proof.slot_is_empty,
+            key_hexs,
         }
     }
 
-    pub fn parse_mpt_inclusion_fixed_key_phase1(
+    /// Checks constraints after the proof is parsed in phase 0
+    pub fn parse_mpt_inclusion_phase1(
         &self,
         (ctx_gate, ctx_rlc): RlcContextPair<F>,
-        mut witness: MPTFixedKeyProofWitness<F>,
+        mut witness: MPTProofWitness<F>,
     ) {
         let max_depth = witness.max_depth;
-        let leaf_parsed = self.parse_leaf_phase1((ctx_gate, ctx_rlc), witness.leaf_parsed);
+        let terminal_node_parsed = self
+            .parse_terminal_node_phase1((ctx_gate, ctx_rlc), witness.terminal_node_parsed.clone());
         let nodes: Vec<MPTNodeTrace<F>> = witness
             .nodes
             .into_iter()
@@ -848,37 +842,47 @@ impl<'chip, F: Field> EthChip<'chip, F> {
             .map(|(bytes, frag)| self.compute_rlc_trace((ctx_gate, ctx_rlc), bytes, frag.byte_len))
             .collect();
         let key_hexs = witness.key_hexs;
-
         let slot_is_empty = witness.slot_is_empty;
         let slot_is_occupied = self.gate().not(ctx_gate, slot_is_empty);
-
-        let depth_minus_one = self.gate().sub(ctx_gate, witness.depth, Constant(F::one()));
-        // depth_minus_one_indicator[idx] = (idx == depth - 1); this is used many times below
-        let depth_minus_one_indicator =
-            self.gate().idx_to_indicator(ctx_gate, depth_minus_one, max_depth);
+        let mut proof_is_empty = self.gate().is_zero(ctx_gate, witness.depth);
+        proof_is_empty = self.gate().and(ctx_gate, proof_is_empty, slot_is_empty);
+        // set `depth = 1` if proof is empty
+        let pseudo_depth = self.gate().add(ctx_gate, witness.depth, proof_is_empty);
+        let pseudo_depth_minus_one = self.gate().sub(ctx_gate, pseudo_depth, Constant(F::one()));
+        // pseudo_depth_minus_one_indicator[idx] = (idx == pseudo_depth - 1); this is used many times below
+        let pseudo_depth_minus_one_indicator =
+            self.gate().idx_to_indicator(ctx_gate, pseudo_depth_minus_one, max_depth);
 
         // Match fragments to node key
         for (((key_frag_ext_rlc, node), is_last), frag_len) in key_frag_ext_rlcs
             .into_iter()
             .zip(nodes.iter())
-            .zip(depth_minus_one_indicator.iter())
+            .zip(pseudo_depth_minus_one_indicator.iter())
             .zip(witness.frag_lens.iter_mut())
         {
             // When node is extension, check node key RLC equals key frag RLC
-            let mut node_key_is_equal = rlc_is_equal(
+            let node_key_path_rlc = rlc_select(
                 ctx_gate,
                 self.gate(),
+                terminal_node_parsed.ext.key_path.field_trace,
                 node.ext.key_path.field_trace,
-                key_frag_ext_rlc,
+                *is_last,
             );
+            let node_type = self.gate().select(
+                ctx_gate,
+                terminal_node_parsed.node_type,
+                node.node_type,
+                *is_last,
+            );
+            let mut node_key_is_equal =
+                rlc_is_equal(ctx_gate, self.gate(), node_key_path_rlc, key_frag_ext_rlc);
             // The key fragments must be equal unless either:
             // * node is not extension
             // * slot_is_empty and this is the last node
-
             // If slot_is_empty && this is the last node && node is extension, then node key fragment must NOT equal key fragment (which is the last key fragment)
             // Reminder: node_type = 1 if extension, 0 if branch
-            let is_ext = node.node_type;
-            let is_branch = self.gate().not(ctx_gate, node.node_type);
+            let is_ext = node_type;
+            let is_branch = self.gate().not(ctx_gate, node_type);
             // is_ext ? node_key_is_equal : 1
             node_key_is_equal = self.gate().mul_add(ctx_gate, node_key_is_equal, is_ext, is_branch);
             // !is_last || !is_ext = !(is_last && is_ext) = 1 - is_last * is_ext
@@ -891,17 +895,20 @@ impl<'chip, F: Field> EthChip<'chip, F> {
                 ctx_gate.get(-4)
             };
             // (slot_is_empty ? !(is_last && is_ext) : 1), we cache slot_is_occupied as an optimization
-            expected = self.gate().mul_add(ctx_gate, expected, slot_is_empty, slot_is_occupied);
+            let is_not_last = self.gate().not(ctx_gate, *is_last);
+            let slot_is_occupied_expected =
+                self.gate().and(ctx_gate, slot_is_occupied, is_not_last);
+            expected =
+                self.gate().mul_add(ctx_gate, expected, slot_is_empty, slot_is_occupied_expected);
             // assuming node type is not extension if idx > pf.len() [we don't care what happens for these idx]
             ctx_gate.constrain_equal(&node_key_is_equal, &expected);
 
             // We enforce that the frag_len is 1 if the node is a branch, unless it is the last node (idx = depth - 1)
-            // This check is only necessary if slot_is_empty; otherwise, the fixed key length and overall concatenation check will enforce this
+            // This check is only necessary if slot_is_empty; otherwise, the key length and overall concatenation check will enforce this
             let is_branch_and_not_last = self.gate().mul_not(ctx_gate, *is_last, is_branch);
             *frag_len =
                 self.gate().select(ctx_gate, Constant(F::one()), *frag_len, is_branch_and_not_last);
         }
-
         // Question for auditers: is the following necessary?
         // match hex-prefix encoding of leaf path (gotten from witness.key_frag) to the parsed leaf encoded path
         // ignore leaf if slot_is_empty
@@ -910,13 +917,13 @@ impl<'chip, F: Field> EthChip<'chip, F> {
                 ctx_gate,
                 self.gate(),
                 key_frag_leaf_rlcs,
-                depth_minus_one_indicator.clone(),
+                pseudo_depth_minus_one_indicator.clone(),
             );
             let mut check = rlc_is_equal(
                 ctx_gate,
                 self.gate(),
                 leaf_encoded_path_rlc,
-                leaf_parsed.key_path.field_trace,
+                terminal_node_parsed.ext.key_path.field_trace,
             );
             check = self.gate().or(ctx_gate, check, slot_is_empty);
             self.gate().assert_is_const(ctx_gate, &check, &F::one());
@@ -925,7 +932,16 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         // Check key fragments concatenate to key using hex RLC
         // We supply witness key fragments so this check passes even if the slot is empty
         let fragment_first_nibbles = {
-            let key_hex_rlc = self.rlc().compute_rlc_fixed_len(ctx_rlc, key_hexs);
+            let key_hex_rlc = if let Some(key_byte_len) = witness.key_byte_len {
+                // key_hex_len = 2 * key_byte_len
+                let key_hex_len = self.gate().add(ctx_gate, key_byte_len, key_byte_len);
+                self.rlc().compute_rlc((ctx_gate, ctx_rlc), self.gate(), key_hexs, key_hex_len)
+            } else {
+                let RlcFixedTrace { rlc_val, len: max_len } =
+                    self.rlc().compute_rlc_fixed_len(ctx_rlc, key_hexs);
+                let len = ctx_gate.load_constant(self.gate().get_field_element(max_len as u64));
+                RlcTrace { rlc_val, len, max_len }
+            };
             let (fragment_rlcs, fragment_first_nibbles): (Vec<_>, Vec<_>) = witness
                 .key_frag
                 .into_iter()
@@ -943,26 +959,20 @@ impl<'chip, F: Field> EthChip<'chip, F> {
                     )
                 })
                 .unzip();
-
             self.rlc().load_rlc_cache(
                 (ctx_gate, ctx_rlc),
                 self.gate(),
-                bit_length(2 * witness.key_byte_len as u64),
+                bit_length(2 * witness.max_key_byte_len as u64),
             );
-            let key_len =
-                ctx_gate.load_constant(self.gate().get_field_element(key_hex_rlc.len as u64));
-
             self.rlc().constrain_rlc_concat_var(
                 ctx_gate,
                 self.gate(),
                 fragment_rlcs.into_iter().map(|f| (f.rlc_val, f.len, f.max_len)),
-                (&key_hex_rlc.rlc_val, &key_len),
-                witness.depth,
+                (&key_hex_rlc.rlc_val, &key_hex_rlc.len),
+                pseudo_depth,
             );
-
             fragment_first_nibbles
         };
-
         /* Check value matches. Currently value_bytes is RLC encoded
          * and value_byte_len is the RLC encoding's length
          */
@@ -970,17 +980,23 @@ impl<'chip, F: Field> EthChip<'chip, F> {
             let value_rlc_trace = self.rlp.rlc().compute_rlc(
                 (ctx_gate, ctx_rlc),
                 self.gate(),
-                witness.value_bytes,
+                witness.value_bytes.clone(),
                 witness.value_byte_len,
             );
-            // value doesn't matter if slot is empty; by default we will make value = 0 and leaf.value = 0 in that case
-            rlc_constrain_equal(ctx_gate, &value_rlc_trace, &leaf_parsed.value.field_trace);
+            // value doesn't matter if slot is empty; by default we will make leaf.value = 0 in that case
+            let branch_value_trace = terminal_node_parsed.branch.node_refs[16].field_trace;
+            let value_trace = rlc_select(
+                ctx_gate,
+                self.gate(),
+                terminal_node_parsed.ext.value.field_trace,
+                branch_value_trace,
+                terminal_node_parsed.node_type,
+            );
+            let value_equals_leaf =
+                rlc_is_equal(ctx_gate, self.gate(), value_rlc_trace, value_trace);
+            let value_check = self.gate().or(ctx_gate, value_equals_leaf, slot_is_empty);
+            self.gate().assert_is_const(ctx_gate, &value_check, &F::one());
         }
-
-        // if proof_is_empty, then root_hash = keccak(rlp("")) = keccak(0x80) = 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421
-        let mut proof_is_empty = self.gate().is_zero(ctx_gate, witness.depth);
-        proof_is_empty = self.gate().and(ctx_gate, proof_is_empty, slot_is_empty);
-
         /*
         Check hash chains:
         Recall that nodes.len() = slot_is_empty ? depth : depth - 1
@@ -992,8 +1008,9 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         if slot_is_empty:
             we assume that depth < max_depth: if depth == max_depth, then we set hash(nodes[depth - 1]) := 0. The circuit will try to prove 0 in nodes[max_depth - 2], which will either fail or (succeed => still shows MPT does not include `key`)
         if proof_is_empty:
-
+            then root_hash = keccak(rlp("")) = keccak(0x80) = 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421
         */
+        // if proof_is_empty, then root_hash = keccak(rlp("")) = keccak(0x80) = 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421
         let root_hash_rlc = self.rlc().compute_rlc_fixed_len(ctx_rlc, witness.root_hash_bytes);
 
         let thirty_two = ctx_gate.load_constant(self.gate().get_field_element(32));
@@ -1007,48 +1024,135 @@ impl<'chip, F: Field> EthChip<'chip, F> {
         let root_is_null =
             self.gate().is_equal(ctx_gate, root_hash_rlc.rlc_val, null_root_rlc.rlc_val);
 
-        let mut matches = Vec::with_capacity(max_depth - 1);
-        let mut branch_refs_are_null = Vec::with_capacity(max_depth - 1);
+        let mut matches = Vec::with_capacity(max_depth);
+        let mut branch_refs_are_null = Vec::with_capacity(max_depth);
         // assert so later array indexing doesn't do bound check
         assert_eq!(nodes.len(), max_depth - 1);
+
+        // makes match_sums[idx] = idx later on
+        matches.push(ctx_gate.load_constant(F::zero()));
+
+        let pseudo_depth_indicator =
+            self.gate().idx_to_indicator(ctx_gate, pseudo_depth, max_depth);
+
         // TODO: maybe use rust iterators instead here, would make it harder to read though
+        let leaf_hash_rlc = rlc_select(
+            ctx_gate,
+            self.gate(),
+            terminal_node_parsed.ext.rlcs.mpt_hash_rlc,
+            terminal_node_parsed.branch.rlcs.mpt_hash_rlc,
+            terminal_node_parsed.node_type,
+        );
+
         for idx in 0..max_depth {
             // `node_hash_rlc` can be viewed as a fixed length RLC
-            let mut node_hash_rlc = leaf_parsed.hash_rlc;
+            let mut node_hash_rlc = leaf_hash_rlc;
             if idx < max_depth - 1 {
                 node_hash_rlc = rlc_select(
                     ctx_gate,
                     self.gate(),
-                    nodes[idx].ext.hash_rlc,
-                    nodes[idx].branch.hash_rlc,
+                    nodes[idx].ext.rlcs.mpt_hash_rlc,
+                    nodes[idx].branch.rlcs.mpt_hash_rlc,
                     nodes[idx].node_type,
                 );
-                // is_leaf = (idx == depth - 1) && !slot_is_empty
-                let is_last = depth_minus_one_indicator[idx];
-                let is_leaf = self.gate().mul_not(ctx_gate, slot_is_empty, is_last);
+                // is_last = (idx == pseudo_depth - 1)
+                let is_last = pseudo_depth_minus_one_indicator[idx];
                 node_hash_rlc =
-                    rlc_select(ctx_gate, self.gate(), leaf_parsed.hash_rlc, node_hash_rlc, is_leaf);
+                    rlc_select(ctx_gate, self.gate(), leaf_hash_rlc, node_hash_rlc, is_last);
             }
             if idx == 0 {
                 // if !proof_is_empty:
                 //     check hash(nodes[0]) == root_hash
                 // else:
                 //     check root_hash == keccak(rlp(""))
+                let leaf_hash32_rlc = rlc_select(
+                    ctx_gate,
+                    self.gate(),
+                    terminal_node_parsed.ext.rlcs.hash_rlc,
+                    terminal_node_parsed.branch.rlcs.hash_rlc,
+                    terminal_node_parsed.node_type,
+                );
+                let node_hash32_rlc = if idx < max_depth - 1 {
+                    let node_hash32_rlc = rlc_select(
+                        ctx_gate,
+                        self.gate(),
+                        nodes[idx].ext.rlcs.mpt_hash_rlc,
+                        nodes[idx].branch.rlcs.mpt_hash_rlc,
+                        nodes[idx].node_type,
+                    );
+                    // is_leaf = (idx == depth - 1) && !slot_is_empty
+                    let is_last = pseudo_depth_minus_one_indicator[idx];
+                    let is_leaf = is_last;
+                    //self.gate().mul_not(ctx_gate, slot_is_empty, is_last);
+                    rlc_select(ctx_gate, self.gate(), leaf_hash32_rlc, node_hash32_rlc, is_leaf)
+                } else {
+                    leaf_hash32_rlc
+                };
                 let mut root_check = rlc_is_equal(
                     ctx_gate,
                     self.gate(),
-                    node_hash_rlc,
+                    node_hash32_rlc,
                     RlcVar { rlc_val: root_hash_rlc.rlc_val, len: thirty_two },
                 );
                 root_check = self.gate().select(ctx_gate, root_is_null, root_check, proof_is_empty);
                 self.gate().assert_is_const(ctx_gate, &root_check, &F::one());
             } else {
+                let prev_is_last = pseudo_depth_indicator[idx];
                 let ext_ref_rlc = nodes[idx - 1].ext.node_ref.field_trace;
-                let branch_ref_rlc = rlc_select_from_idx(
+                let mut branch_ref_rlc = rlc_select_from_idx(
                     ctx_gate,
                     self.gate(),
                     nodes[idx - 1].branch.node_refs.iter().map(|node| node.field_trace),
                     fragment_first_nibbles[idx - 1],
+                );
+                let branch_ref_rlp_rlc = rlc_select_from_idx(
+                    ctx_gate,
+                    self.gate(),
+                    nodes[idx - 1].branch.node_rlp_refs,
+                    fragment_first_nibbles[idx - 1],
+                );
+                let mut terminal_branch_ref_rlc = rlc_select_from_idx(
+                    ctx_gate,
+                    self.gate(),
+                    terminal_node_parsed.branch.node_refs.iter().map(|node| node.field_trace),
+                    fragment_first_nibbles[idx - 1],
+                );
+                let terminal_branch_ref_rlp_rlc = rlc_select_from_idx(
+                    ctx_gate,
+                    self.gate(),
+                    terminal_node_parsed.branch.node_rlp_refs,
+                    fragment_first_nibbles[idx - 1],
+                );
+                let is_short = self.range().is_less_than_safe(ctx_gate, branch_ref_rlc.len, 32);
+                let is_null = self.range().is_less_than_safe(ctx_gate, branch_ref_rlc.len, 2);
+                let is_not_null = self.gate().not(ctx_gate, is_null);
+                let is_not_hash = self.gate().and(ctx_gate, is_short, is_not_null);
+                branch_ref_rlc = rlc_select(
+                    ctx_gate,
+                    self.gate(),
+                    branch_ref_rlp_rlc,
+                    branch_ref_rlc,
+                    is_not_hash,
+                );
+                let is_short =
+                    self.range().is_less_than_safe(ctx_gate, terminal_branch_ref_rlc.len, 32);
+                let is_null =
+                    self.range().is_less_than_safe(ctx_gate, terminal_branch_ref_rlc.len, 1);
+                let is_not_null = self.gate().not(ctx_gate, is_null);
+                let is_not_hash = self.gate().and(ctx_gate, is_short, is_not_null);
+                terminal_branch_ref_rlc = rlc_select(
+                    ctx_gate,
+                    self.gate(),
+                    terminal_branch_ref_rlp_rlc,
+                    terminal_branch_ref_rlc,
+                    is_not_hash,
+                );
+                branch_ref_rlc = rlc_select(
+                    ctx_gate,
+                    self.gate(),
+                    terminal_branch_ref_rlc,
+                    branch_ref_rlc,
+                    prev_is_last,
                 );
                 // branch_ref_rlc should equal NULL = "" (empty string) if slot_is_empty and idx == depth and nodes[idx - 1] is a branch node; we save these checks for all idx and `select` for `depth` later
                 let mut branch_ref_is_null = self.gate().is_zero(ctx_gate, branch_ref_rlc.len);
@@ -1073,24 +1177,25 @@ impl<'chip, F: Field> EthChip<'chip, F> {
                 matches.push(is_match);
             }
         }
+        // padding by 0 to avoid empty vector
+        branch_refs_are_null.push(ctx_gate.load_constant(F::from(0)));
         // constrain hash chain
         {
             let match_sums =
                 self.gate().partial_sums(ctx_gate, matches.iter().copied()).collect_vec();
             let match_cnt = self.gate().select_by_indicator(
                 ctx_gate,
-                once(Constant(F::zero())).chain(match_sums.into_iter().map(Existing)),
-                depth_minus_one_indicator.clone(),
+                match_sums.into_iter().map(Existing),
+                pseudo_depth_minus_one_indicator.clone(),
             );
-
-            ctx_gate.constrain_equal(&match_cnt, &depth_minus_one);
+            ctx_gate.constrain_equal(&match_cnt, &pseudo_depth_minus_one);
         }
         // if slot_is_empty: check that nodes[depth - 1] points to null if it is branch node
         {
             let mut branch_ref_check = self.gate().select_by_indicator(
                 ctx_gate,
                 branch_refs_are_null.into_iter().map(Existing),
-                depth_minus_one_indicator,
+                pseudo_depth_minus_one_indicator,
             );
             branch_ref_check =
                 self.gate().select(ctx_gate, branch_ref_check, Constant(F::one()), slot_is_empty);
@@ -1099,26 +1204,10 @@ impl<'chip, F: Field> EthChip<'chip, F> {
             self.gate().assert_is_const(ctx_gate, &branch_ref_check, &F::one());
         }
     }
-
-    /*
-    pub fn parse_mpt_inclusion_var_key(
-        &self,
-        _ctx: &mut Context<F>,
-        _range: &RangeConfig<F>,
-        proof: &MPTVarKeyProof<F>,
-        key_max_byte_len: usize,
-        value_max_byte_len: usize,
-        max_depth: usize,
-    ) {
-        assert_eq!(proof.key_max_byte_len, key_max_byte_len);
-        assert_eq!(proof.value_max_byte_len, value_max_byte_len);
-        assert_eq!(proof.max_depth, max_depth);
-
-        todo!()
-    }
-    */
 }
 
+/// # Assumptions
+/// * `is_odd` is either 0 or 1
 pub fn hex_prefix_encode_first<F: ScalarField>(
     ctx: &mut Context<F>,
     gate: &impl GateInstructions<F>,
@@ -1154,6 +1243,8 @@ pub fn hex_prefix_encode_first<F: ScalarField>(
     }
 }
 
+/// # Assumptions
+/// * `is_odd` is either 0 or 1
 pub fn hex_prefix_encode<F: ScalarField>(
     ctx: &mut Context<F>,
     gate: &impl GateInstructions<F>,
@@ -1215,8 +1306,8 @@ pub fn hex_prefix_len<F: ScalarField>(
     gate.select(ctx, Constant(F::zero()), hex_len, byte_len_is_zero)
 }
 
-impl MPTFixedKeyInput {
-    pub fn assign<F: Field>(self, ctx: &mut Context<F>) -> MPTFixedKeyProof<F> {
+impl MPTInput {
+    pub fn assign<F: Field>(self, ctx: &mut Context<F>) -> MPTProof<F> {
         let Self {
             path,
             mut value,
@@ -1225,10 +1316,19 @@ impl MPTFixedKeyInput {
             value_max_byte_len,
             max_depth,
             slot_is_empty,
+            max_key_byte_len,
+            key_byte_len,
         } = self;
         let depth = proof.len();
-        let key_byte_len = 32;
+        // if empty, we have a dummy node stored as a terminal node so that the circuit still works
+        // we ignore any results from the node, however.
+        if proof.is_empty() {
+            proof.push(NULL_LEAF.clone());
+        }
+        let max_key_byte_len = max_key_byte_len;
         //assert!(depth <= max_depth - usize::from(slot_is_empty));
+        assert!(max_depth > 0);
+        assert!(max_key_byte_len > 0);
 
         let bytes_to_nibbles = |bytes: &[u8]| {
             let mut nibbles = Vec::with_capacity(bytes.len() * 2);
@@ -1239,16 +1339,15 @@ impl MPTFixedKeyInput {
             nibbles
         };
         let hex_len = |byte_len: usize, is_odd: bool| 2 * byte_len + usize::from(is_odd) - 2;
-
-        let path_nibbles = bytes_to_nibbles(path.as_bytes());
+        let path_nibbles = bytes_to_nibbles(path.as_ref());
         let mut path_idx = 0;
 
         // below "key" and "path" are used interchangeably, sorry for confusion
         // if slot_is_empty, leaf is dummy, but with value 0x0 to make constraints pass (assuming claimed value is also 0x0)
-        let mut leaf = if slot_is_empty { NULL_LEAF.clone() } else { proof.pop().unwrap() };
-        let (_, max_leaf_bytes) = max_leaf_lens(key_byte_len, value_max_byte_len);
+        let mut leaf = proof.pop().unwrap();
+        let (_, max_leaf_bytes) = max_leaf_lens(max_key_byte_len, value_max_byte_len);
 
-        let (_, max_ext_bytes) = max_ext_lens(key_byte_len);
+        let (_, max_ext_bytes) = max_ext_lens(max_key_byte_len);
         let max_branch_bytes = MAX_BRANCH_LENS.1;
         let max_node_bytes = max(max_ext_bytes, max_branch_bytes);
 
@@ -1264,10 +1363,10 @@ impl MPTFixedKeyInput {
                 let is_odd = encoded_nibbles[0] == 1u8 || encoded_nibbles[0] == 3u8;
                 let mut frag = encoded_nibbles[2 - usize::from(is_odd)..].to_vec();
                 path_idx += frag.len();
-                frag.resize(2 * key_byte_len, 0);
+                frag.resize(2 * max_key_byte_len, 0);
                 key_frag.push((frag, byte_len, is_odd));
             } else {
-                let mut frag = vec![0u8; 2 * key_byte_len];
+                let mut frag = vec![0u8; 2 * max_key_byte_len];
                 frag[0] = path_nibbles[path_idx];
                 key_frag.push((frag, 1, true));
                 path_idx += 1;
@@ -1276,22 +1375,35 @@ impl MPTFixedKeyInput {
         };
         for mut node in proof {
             let node_type = process_node(&node);
+            assert!(node.len() <= max_node_bytes);
             node.resize(max_node_bytes, 0);
             nodes.push((node, node_type));
         }
         let mut dummy_branch = DUMMY_BRANCH.clone();
         dummy_branch.resize(max_node_bytes, 0);
         nodes.resize(max_depth - 1, (dummy_branch, false));
-        process_node(&leaf);
-        leaf.resize(max_leaf_bytes, 0);
 
-        // if slot_is_empty, we make modify key_frag so it still concatenates to `path`
+        let leaf_type = process_node(&leaf);
+        let leaf_type = ctx.load_witness(F::from(leaf_type));
+        let max_leaf_bytes = max(max_node_bytes, max_leaf_bytes);
+        assert!(leaf.len() <= max_leaf_bytes);
+        leaf.resize(max_leaf_bytes, 0);
+        let mut path_bytes = path.0;
+
+        let key_byte_len = key_byte_len.map(|key_byte_len| {
+            #[cfg(not(test))]
+            assert_eq!(key_byte_len, path_bytes.len());
+            ctx.load_witness(F::from(key_byte_len as u64))
+        });
+        // if slot_is_empty, we modify key_frag so it still concatenates to `path`
         if slot_is_empty {
             // remove just added leaf frag
-            key_frag.pop().unwrap();
+            // key_frag.pop().unwrap();
             if key_frag.is_empty() {
-                let nibbles = bytes_to_nibbles(path.as_bytes()); // that means proof was empty
-                key_frag = vec![(nibbles, 33, false)];
+                // that means proof was empty
+                let mut nibbles = path_nibbles;
+                nibbles.resize(2 * max_key_byte_len, 0);
+                key_frag = vec![(nibbles, path_bytes.len() + 1, false)];
             } else {
                 // the last frag in non-inclusion doesn't match path
                 key_frag.pop().unwrap();
@@ -1302,22 +1414,25 @@ impl MPTFixedKeyInput {
                 let mut remaining = path_nibbles[hex_len..].to_vec();
                 let is_odd = remaining.len() % 2 == 1;
                 let byte_len = (remaining.len() + 2 - usize::from(is_odd)) / 2;
-                remaining.resize(2 * key_byte_len, 0);
+                remaining.resize(2 * max_key_byte_len, 0);
                 key_frag.push((remaining, byte_len, is_odd));
             }
         }
-        key_frag.resize(max_depth, (vec![0u8; 2 * key_byte_len], 0, false));
+        assert!(key_frag.len() <= max_depth);
+        key_frag.resize(max_depth, (vec![0u8; 2 * max_key_byte_len], 0, false));
 
         // assign all values
         let value_byte_len = ctx.load_witness(F::from(value.len() as u64));
         let depth = ctx.load_witness(F::from(depth as u64));
-        let mut load_bytes =
-            |bytes: &[u8]| ctx.assign_witnesses(bytes.iter().map(|x| F::from(*x as u64)));
-        let key_bytes = load_bytes(path.as_bytes());
+        let load_bytes = |bytes: Vec<u8>, ctx: &mut Context<F>| {
+            ctx.assign_witnesses(bytes.iter().map(|x| F::from(*x as u64)))
+        };
+        path_bytes.resize(max_key_byte_len, 0);
+        let key_bytes = load_bytes(path_bytes, ctx);
         value.resize(value_max_byte_len, 0);
-        let value_bytes = load_bytes(&value);
-        let root_hash_bytes = load_bytes(root_hash.as_bytes());
-        let leaf_bytes = load_bytes(&leaf);
+        let value_bytes = load_bytes(value.to_vec(), ctx);
+        let root_hash_bytes = load_bytes(root_hash.as_bytes().to_vec(), ctx);
+        let leaf_bytes = load_bytes(leaf.to_vec(), ctx);
         let nodes = nodes
             .into_iter()
             .map(|(node_bytes, node_type)| {
@@ -1332,23 +1447,23 @@ impl MPTFixedKeyInput {
                 let nibbles = ctx.assign_witnesses(nibbles.iter().map(|x| F::from(*x as u64)));
                 let byte_len = ctx.load_witness(F::from(byte_len as u64));
                 let is_odd = ctx.load_witness(F::from(is_odd));
-                MPTKeyFragment { nibbles, is_odd, byte_len }
+                MPTFragment { nibbles, is_odd, byte_len }
             })
             .collect_vec();
-
         let slot_is_empty = ctx.load_witness(F::from(slot_is_empty));
-
-        MPTFixedKeyProof {
+        MPTProof {
             key_bytes,
             value_bytes,
             value_byte_len,
             root_hash_bytes,
-            leaf_bytes,
-            nodes,
+            key_byte_len,
             depth,
+            leaf: MPTNode { rlp_bytes: leaf_bytes, node_type: leaf_type },
+            nodes,
             key_frag,
-            max_depth,
             slot_is_empty,
+            max_key_byte_len,
+            max_depth,
         }
     }
 }
