@@ -2,6 +2,7 @@ use std::cell::RefCell;
 
 use ethers_core::types::{Block, H256};
 use ethers_providers::{Http, Provider};
+use futures::AsyncReadExt;
 use halo2_base::{AssignedValue, Context};
 use halo2_base::gates::RangeChip;
 use halo2_base::gates::builder::GateThreadBuilder;
@@ -82,12 +83,15 @@ impl EthPreCircuit for EthTrackBlockCircuit {
             &self.block_header_config);
 
         let EIP1186ResponseDigest {
-            last_block_hash,
+            start_block_hash,
+            end_block_hash,
         } = digest;
 
-        let assigned_instances = last_block_hash
+        let assigned_instances = start_block_hash
             .into_iter()
+            .chain(end_block_hash)
             .collect_vec();
+
         EthCircuitBuilder::new(
             assigned_instances,
             builder,
@@ -107,7 +111,8 @@ impl EthPreCircuit for EthTrackBlockCircuit {
 
 #[derive(Clone, Debug)]
 pub struct EIP1186ResponseDigest<F: Field> {
-    pub last_block_hash: AssignedH256<F>,
+    pub start_block_hash:AssignedH256<F>,
+    pub end_block_hash: AssignedH256<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -164,6 +169,7 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
             Self: EthBlockHeaderChip<F>, {
         let ctx = thread_pool.main(FIRST_PHASE);
         let mut last_block_hash: Vec<AssignedValue<F>> = Vec::new();
+        let mut start_block_hash:Vec<AssignedValue<F>> = Vec::new();
         let mut blocks_witness = Vec::with_capacity(input.block_header.len());
         for (i, block_header) in input.block_header.iter().enumerate() {
             let mut block_header = block_header.to_vec();
@@ -174,24 +180,29 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
             let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config);
 
             if i != 0 {
+                let mut temp_block_hash: Vec<AssignedValue<F>> = Vec::new();
+                for block_hash in &last_block_hash {
+                    temp_block_hash.push(*block_hash);
+                }
                 let parent_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.get_parent_hash().field_cells);
-                for (pre_block_hash, parent_hash) in last_block_hash.iter().zip(parent_hash.iter()) {
-                    println!("pre_block_hash:{:?}", pre_block_hash.value);
-                    println!("parent_hash:{:?}", parent_hash.value);
-
+                for (pre_block_hash, parent_hash) in temp_block_hash.iter().zip(parent_hash.iter()) {
                     ctx.constrain_equal(pre_block_hash, parent_hash);
                 }
             }
 
             last_block_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
-            println!("last_block_hash:{:?}", &last_block_hash);
 
+            if i == 0{
+                for block_hash in &last_block_hash {
+                    start_block_hash.push(*block_hash);
+                }
+            }
             blocks_witness.push(block_witness);
         }
 
-
         let digest = EIP1186ResponseDigest {
-            last_block_hash: last_block_hash.try_into().unwrap(),
+            start_block_hash:start_block_hash.try_into().unwrap(),
+            end_block_hash: last_block_hash.try_into().unwrap(),
         };
 
         (EthTrackBlockTraceWitness { blocks_witness }, digest)
@@ -216,8 +227,4 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         EthTrackBlockTrace { blocks_trace }
     }
 }
-
-
-// e0432178a046e21f9d6401defa07cc44e8fd1c2b0b5a0e00fe42c26a0364a203
-
 
