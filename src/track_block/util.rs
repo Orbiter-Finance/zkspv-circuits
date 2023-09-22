@@ -8,5 +8,6 @@ pub fn get_eth_track_block_circuit(
     network: Network,
 ) -> EthTrackBlockCircuit {
     let provider = get_provider(&network);
+
     EthTrackBlockCircuit::from_provider(&provider, block_number_interval, network)
 }

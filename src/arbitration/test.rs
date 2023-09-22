@@ -1,6 +1,7 @@
 use std::{
     env::set_var,
     fs,
+    ops::Range,
     path::{Path, PathBuf},
 };
 
@@ -24,12 +25,19 @@ use crate::{
         tests::get_test_circuit as get_test_storage_circuit, EthBlockStorageCircuit,
         StorageConfigParams,
     },
+    track_block::{util::get_eth_track_block_circuit, EthTrackBlockCircuit},
     transaction::ethereum::{
         tests::get_test_circuit as get_test_ethereum_tx_circuit, EthBlockTransactionCircuit,
     },
-    util::{circuit::custom_gen_evm_verifier_shplonk, EthConfigParams},
+    util::{
+        circuit::custom_gen_evm_verifier_shplonk,
+        scheduler::{arbitration_scheduler::ArbitrationScheduler, Scheduler},
+        EthConfigParams,
+    },
     EthPreCircuit, EthereumNetwork, Network,
 };
+
+use super::helper::{ArbitrationTask, ETHBlockTrackTask};
 
 fn test_get_storage_circuit(network: Network, block_number: u32) -> EthBlockStorageCircuit {
     get_test_storage_circuit(network, block_number)
@@ -42,6 +50,40 @@ fn test_get_ethereum_tx_circuit(
     network: Network,
 ) -> EthBlockTransactionCircuit {
     get_test_ethereum_tx_circuit(transaction_index, transaction_rlp, merkle_proof, network)
+}
+
+fn test_get_block_track_circuit(
+    block_number_interval: Vec<u64>,
+    network: Network,
+) -> EthTrackBlockCircuit {
+    get_eth_track_block_circuit(block_number_interval, network)
+}
+
+fn test_scheduler(network: Network) -> ArbitrationScheduler {
+    ArbitrationScheduler::new(
+        network,
+        false,
+        false,
+        PathBuf::from("configs/arbitration/"),
+        PathBuf::from("data/arbitration/"),
+    )
+}
+
+#[test]
+pub fn test_arbitration_scheduler_block_track_task() {
+    let scheduler = test_scheduler(Network::Ethereum(EthereumNetwork::Mainnet));
+    let _task = ETHBlockTrackTask {
+        input: test_get_block_track_circuit(
+            [1, 2, 3].to_vec(),
+            Network::Ethereum(EthereumNetwork::Mainnet),
+        ),
+        network: Network::Ethereum(EthereumNetwork::Mainnet),
+        tasks_len: 2,
+        task_width: 1,
+        track_task_interval: [(17113952..17113953), (17113955..17113956)].to_vec(),
+    };
+
+    scheduler.get_snark(ArbitrationTask::ETHBlockTrack(_task));
 }
 
 #[test]
@@ -142,46 +184,46 @@ pub fn test_arbitration_circuit() {
         (snark, storage_proof_time)
     };
 
-    // let k = evm_param.degree;
-    // let params = gen_srs(k);
-    // set_var("LOOKUP_BITS", evm_param.lookup_bits.to_string());
-    // let evm_circuit = AggregationCircuit::public::<SHPLONK>(
-    //     CircuitBuilderStage::Keygen,
-    //     None,
-    //     evm_param.lookup_bits,
-    //     &params,
-    //     // vec![eth_tx_snark.clone(), storage_snark.clone()],
-    //     vec![eth_tx_snark.clone()],
-    //     false,
-    // );
-    // evm_circuit.config(k, Some(10));
-    // let pk = gen_pk(&params, &evm_circuit, Some("data/arbitration/aribtration_evm.pk".as_ref()));
-    // let break_points = evm_circuit.break_points();
-    // println!("arbitration evm break_points {:?}", break_points);
+    let k = evm_param.degree;
+    let params = gen_srs(k);
+    set_var("LOOKUP_BITS", evm_param.lookup_bits.to_string());
+    let evm_circuit = AggregationCircuit::public::<SHPLONK>(
+        CircuitBuilderStage::Keygen,
+        None,
+        evm_param.lookup_bits,
+        &params,
+        // vec![eth_tx_snark.clone(), storage_snark.clone()],
+        vec![eth_tx_snark.clone()],
+        false,
+    );
+    evm_circuit.config(k, Some(10));
+    let pk = gen_pk(&params, &evm_circuit, Some("data/arbitration/aribtration_evm.pk".as_ref()));
+    let break_points = evm_circuit.break_points();
+    println!("arbitration evm break_points {:?}", break_points);
 
-    // let instances = evm_circuit.instances();
-    // let evm_proof_time = start_timer!(|| "EVM Proof SHPLONK");
-    // let pf_circuit = AggregationCircuit::public::<SHPLONK>(
-    //     CircuitBuilderStage::Prover,
-    //     Some(break_points),
-    //     evm_param.lookup_bits,
-    //     &params,
-    //     vec![eth_tx_snark.clone(), storage_snark.clone()],
-    //     // vec![eth_tx_snark.clone()],
-    //     false,
-    // );
-    // let proof = gen_evm_proof_shplonk(&params, &pk, pf_circuit, instances.clone());
-    // end_timer!(evm_proof_time);
-    // fs::create_dir_all("data/transaction").unwrap();
-    // write_calldata(&instances, &proof, Path::new("data/arbitration/test.calldata")).unwrap();
+    let instances = evm_circuit.instances();
+    let evm_proof_time = start_timer!(|| "EVM Proof SHPLONK");
+    let pf_circuit = AggregationCircuit::public::<SHPLONK>(
+        CircuitBuilderStage::Prover,
+        Some(break_points),
+        evm_param.lookup_bits,
+        &params,
+        vec![eth_tx_snark.clone(), storage_snark.clone()],
+        // vec![eth_tx_snark.clone()],
+        false,
+    );
+    let proof = gen_evm_proof_shplonk(&params, &pk, pf_circuit, instances.clone());
+    end_timer!(evm_proof_time);
+    fs::create_dir_all("data/transaction").unwrap();
+    write_calldata(&instances, &proof, Path::new("data/arbitration/test.calldata")).unwrap();
 
-    // let deployment_code = custom_gen_evm_verifier_shplonk(
-    //     &params,
-    //     pk.get_vk(),
-    //     &evm_circuit,
-    //     Some(Path::new("data/arbitration/test.yul")),
-    // );
+    let deployment_code = custom_gen_evm_verifier_shplonk(
+        &params,
+        pk.get_vk(),
+        &evm_circuit,
+        Some(Path::new("data/arbitration/test.yul")),
+    );
 
-    // // this verifies proof in EVM and outputs gas cost (if successful)
-    // evm_verify(deployment_code, instances, proof);
+    // this verifies proof in EVM and outputs gas cost (if successful)
+    evm_verify(deployment_code, instances, proof);
 }

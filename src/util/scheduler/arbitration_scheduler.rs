@@ -2,16 +2,60 @@ use crate::{
     arbitration::helper::ArbitrationTask,
     storage::{util::get_mdc_storage_circuit, EthBlockStorageCircuit},
     track_block::{util::get_eth_track_block_circuit, EthTrackBlockCircuit},
+    util::circuit::PublicAggregationCircuit,
     Network,
 };
 
 use super::EthScheduler;
+use crate::util::scheduler::{self, AnyCircuit};
+use circuit_derive::AnyCircuit;
+use halo2_base::halo2_proofs::{
+    halo2curves::bn256::{Bn256, G1Affine},
+    plonk::ProvingKey,
+    poly::kzg::commitment::ParamsKZG,
+};
+use snark_verifier_sdk::Snark;
+use std::path::Path;
 
-// #[allow(clippy::large_enum_variant)]
-// #[derive(Clone, Debug, AnyCircuit)]
-pub enum CircuitRouter {}
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, AnyCircuit)]
+pub enum CircuitRouter {
+    BlockTrackInterval(EthTrackBlockCircuit),
+    AggreateBlockTracks(PublicAggregationCircuit),
+}
 
 pub type ArbitrationScheduler = EthScheduler<ArbitrationTask>;
+
+impl scheduler::Scheduler for ArbitrationScheduler {
+    type Task = ArbitrationTask;
+
+    type CircuitRouter = CircuitRouter;
+
+    fn get_circuit(&self, task: Self::Task, prev_snarks: Vec<Snark>) -> Self::CircuitRouter {
+        match task {
+            ArbitrationTask::Transaction() => todo!(),
+            ArbitrationTask::MDCState(_) => todo!(),
+            ArbitrationTask::ETHBlockTrack(task) => {
+                if task.tasks_len == 1 {
+                    println!("TASK_LEN1======");
+                    CircuitRouter::BlockTrackInterval(task.input)
+                } else {
+                    println!("AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
+                    return CircuitRouter::AggreateBlockTracks(PublicAggregationCircuit::new(
+                        prev_snarks
+                            .into_iter()
+                            .map(|snark| {
+                                println!("instances num {}", snark.instances.len());
+                                (snark, false)
+                            })
+                            .collect(),
+                    ));
+                }
+            }
+            ArbitrationTask::Final(_) => todo!(),
+        }
+    }
+}
 
 // a trait for arbitration, in our business, each network(Arb, OP, ZKS, Ethereum...) should have
 // their own circuit and verifiy contract
