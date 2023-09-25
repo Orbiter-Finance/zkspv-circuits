@@ -1,39 +1,36 @@
 use crate::{
-    storage::{util::get_mdc_storage_circuit, EthBlockStorageCircuit}, 
-    Network, 
-    track_block::{util::get_eth_track_block_circuit, EthTrackBlockCircuit}, arbitration::helper::ArbitrationTask,
+    arbitration::helper::ArbitrationTask,
+    storage::{util::get_mdc_storage_circuit, EthBlockStorageCircuit},
+    track_block::{util::get_eth_track_block_circuit, EthTrackBlockCircuit},
+    Network,
 };
 
-use super::{EthScheduler};
-
+use super::EthScheduler;
 
 // #[allow(clippy::large_enum_variant)]
 // #[derive(Clone, Debug, AnyCircuit)]
-pub enum CircuitRouter {
-    
-}
+pub enum CircuitRouter {}
 
 pub type ArbitrationScheduler = EthScheduler<ArbitrationTask>;
 
-
-
-// a trait for arbitration, in our business, each network(Arb, OP, ZKS, Ethereum...) should have 
+// a trait for arbitration, in our business, each network(Arb, OP, ZKS, Ethereum...) should have
 // their own circuit and verifiy contract
 pub trait ArbitrationBus {
-
-    // Every Network would have own tx circuit 
+    // Every Network would have own tx circuit
     fn get_cross_tx_circuit();
 
     // for MDC config on L1(Ethereum)
     fn get_storage_circuit(network: Network, block_number: u32) -> EthBlockStorageCircuit {
         get_mdc_storage_circuit(network, block_number)
     }
-    
+
     // Track Block from L1(Ethereum)
-    fn get_track_block_circuit(network: Network, block_number_interval: Vec<u64>) -> EthTrackBlockCircuit{
+    fn get_track_block_circuit(
+        network: Network,
+        block_number_interval: Vec<u64>,
+    ) -> EthTrackBlockCircuit {
         get_eth_track_block_circuit(block_number_interval, network)
     }
-
 
     // need to proof three mdc config, tx_time as tx happened in cross chain network, block_n as the tx_time in L1 block number
     // then proof $block_{n-1}$, $block_{n}$, $block{n+1}$, so the correspond public input should contain
@@ -42,10 +39,8 @@ pub trait ArbitrationBus {
     // - time_{n+1}, block_{n+1}, mdc_{n}
     // mdc: {token_address, min_amt, max_amt, repay_time, exp_time}
     // so on Arbitration Verify Contract, should constraint
-    // 
-    fn generate_mdc_continuity_proof(&self, network: Network,block_range: [u32;3]) {
-       
-    }
+    //
+    fn generate_mdc_continuity_proof(&self, network: Network, block_range: [u32; 3]) {}
 
     // for Arb, Op, ZKS, Ethereum... Cross Chain Tx validation
     // public input should contain
@@ -75,12 +70,8 @@ pub trait ArbitrationBus {
     fn gen_proving_key();
 }
 
-pub struct EthereumArbitration {
-
-}
+pub struct EthereumArbitration {}
 
 impl EthereumArbitration {
-    pub fn new() {
-
-    }
+    pub fn new() {}
 }

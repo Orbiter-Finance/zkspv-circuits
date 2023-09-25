@@ -166,7 +166,7 @@ fn bench_keccak() {
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
             _,
         >(&params, &pk, &[circuit], &[&[]], OsRng, &mut transcript)
-            .unwrap();
+        .unwrap();
         let proof = transcript.finalize();
         end_timer!(proof_time);
 
@@ -181,7 +181,7 @@ fn bench_keccak() {
             Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
             SingleStrategy<'_, Bn256>,
         >(verifier_params, pk.get_vk(), strategy, &[&[]], &mut transcript)
-            .unwrap();
+        .unwrap();
         end_timer!(verify_time);
 
         let auto_params: EthConfigParams =
@@ -202,6 +202,6 @@ fn bench_keccak() {
             proof_time.time.elapsed().as_secs_f64(),
             verify_time.time.elapsed()
         )
-            .unwrap();
+        .unwrap();
     }
 }

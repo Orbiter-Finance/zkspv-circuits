@@ -136,7 +136,7 @@ impl<F: ScalarField> RlcThreadBuilder<F> {
                 .chain(self.threads_rlc.iter())
                 .flat_map(|ctx| ctx.constant_equality_constraints.iter().map(|(c, _)| *c)),
         )
-            .len();
+        .len();
         let num_fixed = (total_fixed + (1 << k) - 1) >> k;
         // assemble into new config params
         let params = EthConfigParams {
@@ -187,14 +187,14 @@ impl<F: ScalarField> RlcThreadBuilder<F> {
         for ctx in self.threads_rlc.iter() {
             // TODO: if we have more similar vertical gates this should be refactored into a general function
             for (i, (&advice, &q)) in
-            ctx.advice.iter().zip(ctx.selector.iter().chain(iter::repeat(&false))).enumerate()
+                ctx.advice.iter().zip(ctx.selector.iter().chain(iter::repeat(&false))).enumerate()
             {
                 let (mut column, mut q_rlc) = basic_gate;
                 let value = if use_unknown { Value::unknown() } else { Value::known(advice) };
                 #[cfg(feature = "halo2-axiom")]
-                    let cell = *region.assign_advice(column, row_offset, value).cell();
+                let cell = *region.assign_advice(column, row_offset, value).cell();
                 #[cfg(not(feature = "halo2-axiom"))]
-                    let cell =
+                let cell =
                     region.assign_advice(|| "", column, row_offset, || value).unwrap().cell();
                 assigned_advices.insert((ctx.context_id, i), (cell, row_offset));
 
@@ -372,11 +372,11 @@ pub fn parallelize_phase1<F, T, R, FR>(
     input: Vec<T>,
     f: FR,
 ) -> Vec<R>
-    where
-        F: ScalarField,
-        T: Send,
-        R: Send,
-        FR: Fn(RlcContextPair<F>, T) -> R + Send + Sync,
+where
+    F: ScalarField,
+    T: Send,
+    R: Send,
+    FR: Fn(RlcContextPair<F>, T) -> R + Send + Sync,
 {
     let witness_gen_only = thread_pool.witness_gen_only();
     let ctx_ids = input

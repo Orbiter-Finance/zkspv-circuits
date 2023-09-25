@@ -1,35 +1,50 @@
-use std::{cell::RefCell};
 use ethers_core::abi::AbiEncode;
+use std::cell::RefCell;
 
 use ethers_core::types::{Block, Bytes, H256};
 use ethers_providers::{Http, Provider};
-use halo2_base::{AssignedValue, Context};
-use halo2_base::gates::{GateInstructions, RangeChip, RangeInstructions};
 use halo2_base::gates::builder::GateThreadBuilder;
+use halo2_base::gates::{GateInstructions, RangeChip, RangeInstructions};
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
+use halo2_base::{AssignedValue, Context};
+use hex::FromHex;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use zkevm_keccak::util::eth_types::Field;
 
-use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Network};
-use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, get_block_header_config};
+use crate::block_header::{
+    get_block_header_config, BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace,
+    EthBlockHeaderTraceWitness,
+};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::mpt::{MPTInput, MPTProof, MPTProofWitness};
-use crate::providers::{ get_transaction_input};
-use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
+use crate::providers::get_transaction_input;
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
-use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair};
-use crate::transaction::{ EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_2718_TX_TYPE, EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_TX_TYPE_CRITICAL_VALUE, load_transaction_type};
+use crate::rlp::rlc::{RlcContextPair, FIRST_PHASE};
+use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
+use crate::transaction::{
+    load_transaction_type, EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_2718_TX_TYPE,
+    EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_TX_TYPE_CRITICAL_VALUE,
+};
+use crate::util::helpers::load_bytes;
+use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS};
 
-pub mod tests;
 pub mod helper;
+pub mod tests;
 
 // lazy_static! {
 //     static ref KECCAK_RLP_EMPTY_STRING: Vec<u8> =
 //         Vec::from_hex("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421").unwrap();
 // }
 
-const NUM_BITS :usize = 8;
+const NUM_BITS: usize = 8;
+
+const FUNCTION_SELECTOR_BYTES_LEN: usize = 4;
+const ERC20_TO_ADDRESS_BYTES_LEN: usize = 32;
+const ERC20_AMOUNT_BYTES_LEN: usize = 32;
+const FUNCTION_SELECTOR_ERC20_TRANSFER: [u8; FUNCTION_SELECTOR_BYTES_LEN] = [169, 5, 156, 187];
+const CALLDATA_BYTES_LEN: usize =
+    FUNCTION_SELECTOR_BYTES_LEN + ERC20_TO_ADDRESS_BYTES_LEN + ERC20_AMOUNT_BYTES_LEN;
 
 #[derive(Clone, Debug)]
 pub struct EthTransactionInput {
@@ -77,7 +92,7 @@ impl EthBlockTransactionInput {
 }
 
 #[derive(Clone, Debug)]
-pub struct EthBlockTransactionCircuit{
+pub struct EthBlockTransactionCircuit {
     pub inputs: EthBlockTransactionInput,
     pub block_header_config: BlockHeaderConfig,
 }
@@ -122,19 +137,12 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
             &mut builder.gate_builder,
             &mut keccak,
             input,
-            &self.block_header_config);
+            &self.block_header_config,
+        );
 
-        let EIP1186ResponseDigest {
-            index,
-            slots_values,
-            transaction_is_empty
-        } = digest;
+        let EIP1186ResponseDigest { index, slots_values, transaction_is_empty } = digest;
 
-        let assigned_instances = vec![index].into_iter()
-            .chain(
-                slots_values
-            )
-            .collect_vec();
+        let assigned_instances = vec![index].into_iter().chain(slots_values).collect_vec();
         {
             let ctx = builder.gate_builder.main(FIRST_PHASE);
             range.gate.assert_is_const(ctx, &transaction_is_empty, &Fr::zero());
@@ -165,10 +173,9 @@ pub struct EIP1186ResponseDigest<F: Field> {
     pub transaction_is_empty: AssignedValue<F>,
 }
 
-
 #[derive(Clone, Debug)]
 pub struct EthTransactionTrace<F: Field> {
-    pub value_trace:Vec<RlpFieldTrace<F>>,
+    pub value_trace: Vec<RlpFieldTrace<F>>,
 }
 
 #[derive(Clone, Debug)]
@@ -220,7 +227,6 @@ pub struct EthBlockTransactionTraceWitness<F: Field> {
 }
 
 pub trait EthBlockTransactionChip<F: Field> {
-
     // ================= FIRST PHASE ================
 
     fn parse_transaction_proof_from_block_phase0(
@@ -230,8 +236,8 @@ pub trait EthBlockTransactionChip<F: Field> {
         input: EthBlockTransactionInputAssigned<F>,
         block_header_config: &BlockHeaderConfig,
     ) -> (EthBlockTransactionTraceWitness<F>, EIP1186ResponseDigest<F>)
-        where
-            Self: EthBlockHeaderChip<F>;
+    where
+        Self: EthBlockHeaderChip<F>;
 
     fn parse_eip1186_proof_phase0(
         &self,
@@ -251,7 +257,6 @@ pub trait EthBlockTransactionChip<F: Field> {
         transaction_proofs: MPTProof<F>,
     ) -> EthTransactionTraceWitness<F>;
 
-
     // ================= SECOND PHASE ================
 
     fn parse_transaction_proof_from_block_phase1(
@@ -259,8 +264,8 @@ pub trait EthBlockTransactionChip<F: Field> {
         thread_pool: &mut RlcThreadBuilder<F>,
         witness: EthBlockTransactionTraceWitness<F>,
     ) -> EthBlockTransactionTrace<F>
-        where
-            Self: EthBlockHeaderChip<F>;
+    where
+        Self: EthBlockHeaderChip<F>;
 
     fn parse_eip1186_proof_phase1(
         &self,
@@ -276,7 +281,6 @@ pub trait EthBlockTransactionChip<F: Field> {
 }
 
 impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
-
     // ================= FIRST PHASE ================
 
     fn parse_transaction_proof_from_block_phase0(
@@ -286,9 +290,9 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         input: EthBlockTransactionInputAssigned<F>,
         block_header_config: &BlockHeaderConfig,
     ) -> (EthBlockTransactionTraceWitness<F>, EIP1186ResponseDigest<F>)
-        where
-            Self: EthBlockHeaderChip<F>, {
-
+    where
+        Self: EthBlockHeaderChip<F>,
+    {
         let transaction_index = input.transaction.transaction_index;
 
         let block_witness = {
@@ -336,31 +340,38 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         transaction_trace
     }
 
-    fn parse_transaction_proof_phase0(&self, ctx: &mut Context<F>, keccak: &mut KeccakChip<F>, transaction_index: &AssignedValue<F>,transactions_root: &[AssignedValue<F>], transaction_proofs: MPTProof<F>) -> EthTransactionTraceWitness<F> {
-
+    fn parse_transaction_proof_phase0(
+        &self,
+        ctx: &mut Context<F>,
+        keccak: &mut KeccakChip<F>,
+        transaction_index: &AssignedValue<F>,
+        transactions_root: &[AssignedValue<F>],
+        transaction_proofs: MPTProof<F>,
+    ) -> EthTransactionTraceWitness<F> {
         // ctx.constrain_equal(&transaction_proofs.key_bytes,transaction_index); key_bytes in transaction_proofs is constructed by transaction_index itself, which seems unnecessary to verify.
 
         // check MPT root is transactions_root
-        for (pf_root, root) in transaction_proofs.root_hash_bytes.iter().zip(transactions_root.iter()) {
+        for (pf_root, root) in
+            transaction_proofs.root_hash_bytes.iter().zip(transactions_root.iter())
+        {
             ctx.constrain_equal(pf_root, root);
         }
 
-
         let transaction_type = transaction_proofs.value_bytes.first().unwrap();
 
-        let tx_type_critical_value = load_transaction_type(ctx,EIP_TX_TYPE_CRITICAL_VALUE);
+        let tx_type_critical_value = load_transaction_type(ctx, EIP_TX_TYPE_CRITICAL_VALUE);
 
         let zero = ctx.load_constant(F::from(0));
         let is_not_legacy_transaction =
             self.range().is_less_than(ctx, *transaction_type, tx_type_critical_value, NUM_BITS);
 
-        let mut transaction_rlp_bytes= transaction_proofs.value_bytes.to_vec();
+        let mut transaction_rlp_bytes = transaction_proofs.value_bytes.to_vec();
         let mut field_lens = EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN.to_vec();
 
-        if is_not_legacy_transaction.value == zero.value{
-            let legacy_transaction_type = load_transaction_type(ctx,EIP_2718_TX_TYPE);
-            ctx.constrain_equal(transaction_type,&legacy_transaction_type);
-        }else{
+        if is_not_legacy_transaction.value == zero.value {
+            let legacy_transaction_type = load_transaction_type(ctx, EIP_2718_TX_TYPE);
+            ctx.constrain_equal(transaction_type, &legacy_transaction_type);
+        } else {
             transaction_rlp_bytes = transaction_rlp_bytes[1..].to_vec();
             field_lens = EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN.to_vec();
         }
@@ -368,15 +379,48 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let transaction_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
             transaction_rlp_bytes,
-            &field_lens.as_slice(),//Maximum number of bytes per field. For example, the uint256 is 32 bytes.
+            &field_lens.as_slice(), //Maximum number of bytes per field. For example, the uint256 is 32 bytes.
             true,
         );
+
+        // parse calldata
+        let calldata = &transaction_witness.field_witness[7].field_cells;
+        let function_selector = load_bytes(ctx, &FUNCTION_SELECTOR_ERC20_TRANSFER);
+        // let mock_calldata = Vec::from_hex("a9059cbb0000000000000000000000003620401ebbc40533218d2d0f2c01398dc9148b6f0000000000000000000000000000000000000000000000000000000000116520").unwrap();
+        // let calldata = load_bytes(ctx, calldata.as_slice());
+
+        let mut new_calldata = Vec::with_capacity(CALLDATA_BYTES_LEN);
+
+        if calldata.len() >= CALLDATA_BYTES_LEN {
+            let mut is_function_selector = ctx.load_constant(F::from(1));
+
+            for i in 0..CALLDATA_BYTES_LEN - 1 {
+                let val_byte = self.gate().select(ctx, calldata[i + 1], calldata[i], zero);
+
+                if i >= 0 && i <= FUNCTION_SELECTOR_BYTES_LEN - 1 {
+                    let byte_is_equal =
+                        self.gate().is_equal(ctx, calldata[i], function_selector[i]);
+                    is_function_selector =
+                        self.gate().mul(ctx, is_function_selector, byte_is_equal);
+                }
+                new_calldata.push(val_byte);
+            }
+
+            let val_byte = self.gate().select(ctx, zero, calldata[CALLDATA_BYTES_LEN - 1], zero);
+            new_calldata.push(val_byte);
+
+            if is_function_selector.value != zero.value {
+                let erc20_to_address = &new_calldata[FUNCTION_SELECTOR_BYTES_LEN
+                    ..FUNCTION_SELECTOR_BYTES_LEN + ERC20_TO_ADDRESS_BYTES_LEN];
+                let erc20_amount = &new_calldata
+                    [FUNCTION_SELECTOR_BYTES_LEN + ERC20_TO_ADDRESS_BYTES_LEN..CALLDATA_BYTES_LEN];
+            }
+        }
 
         // check MPT inclusion
         let mpt_witness = self.parse_mpt_inclusion_phase0(ctx, keccak, transaction_proofs);
         EthTransactionTraceWitness { transaction_witness, mpt_witness }
     }
-
 
     // ================= SECOND PHASE ================
 
@@ -385,10 +429,13 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         thread_pool: &mut RlcThreadBuilder<F>,
         witness: EthBlockTransactionTraceWitness<F>,
     ) -> EthBlockTransactionTrace<F>
-        where
-            Self: EthBlockHeaderChip<F> {
-        let block_trace = self.decompose_block_header_phase1(thread_pool.rlc_ctx_pair(), witness.block_witness);
-        let transaction_trace = self.parse_eip1186_proof_phase1(thread_pool, witness.transaction_witness);
+    where
+        Self: EthBlockHeaderChip<F>,
+    {
+        let block_trace =
+            self.decompose_block_header_phase1(thread_pool.rlc_ctx_pair(), witness.block_witness);
+        let transaction_trace =
+            self.parse_eip1186_proof_phase1(thread_pool, witness.transaction_witness);
         EthBlockTransactionTrace { block_trace, transaction_trace }
     }
 
@@ -417,15 +464,6 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             .field_trace
             .try_into()
             .unwrap();
-        EthTransactionTrace {
-            value_trace
-        }
+        EthTransactionTrace { value_trace }
     }
 }
-
-
-
-
-
-
-

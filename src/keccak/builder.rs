@@ -6,11 +6,11 @@ use super::*;
 
 /// We need a more custom synthesize function to work with the outputs of keccak RLCs.
 pub trait FnSynthesize<F> =
-FnOnce(&mut RlcThreadBuilder<F>, RlpChip<F>, (FixedLenRLCs<F>, VarLenRLCs<F>)) + Clone;
+    FnOnce(&mut RlcThreadBuilder<F>, RlpChip<F>, (FixedLenRLCs<F>, VarLenRLCs<F>)) + Clone;
 
 pub struct KeccakCircuitBuilder<F: Field, FnPhase1>
-    where
-        FnPhase1: FnSynthesize<F>,
+where
+    FnPhase1: FnSynthesize<F>,
 {
     pub builder: RefCell<RlcThreadBuilder<F>>,
     pub break_points: RefCell<RlcThreadBreakPoints>,
@@ -20,8 +20,8 @@ pub struct KeccakCircuitBuilder<F: Field, FnPhase1>
 }
 
 impl<F: Field, FnPhase1> KeccakCircuitBuilder<F, FnPhase1>
-    where
-        FnPhase1: FnSynthesize<F>,
+where
+    FnPhase1: FnSynthesize<F>,
 {
     pub fn new(
         builder: RlcThreadBuilder<F>,
@@ -270,11 +270,11 @@ pub fn parallelize_keccak_phase0<F, T, R, FR>(
     input: Vec<T>,
     f: FR,
 ) -> Vec<R>
-    where
-        F: Field,
-        T: Send,
-        R: ContainsParallelizableKeccakQueries + Send,
-        FR: Fn(&mut Context<F>, &mut KeccakChip<F>, T) -> R + Send + Sync,
+where
+    F: Field,
+    T: Send,
+    R: ContainsParallelizableKeccakQueries + Send,
+    FR: Fn(&mut Context<F>, &mut KeccakChip<F>, T) -> R + Send + Sync,
 {
     let witness_gen_only = thread_pool.witness_gen_only();
     let ctx_ids = input.iter().map(|_| thread_pool.get_new_thread_id()).collect_vec();

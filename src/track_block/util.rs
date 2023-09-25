@@ -1,5 +1,5 @@
-use crate::{ Network };
 use crate::track_block::EthTrackBlockCircuit;
+use crate::Network;
 
 use crate::util::helpers::get_provider;
 

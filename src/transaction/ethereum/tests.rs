@@ -1,21 +1,18 @@
+use ark_std::{end_timer, start_timer};
 use std::env::{set_var, var};
 use std::fs::File;
-use std::io::{ Write};
-use ark_std::{end_timer, start_timer};
+use std::io::Write;
 
 use ethers_core::types::Bytes;
-use halo2_base::utils::fs::gen_srs;
 use ethers_core::utils::hex::FromHex;
+use halo2_base::utils::fs::gen_srs;
 
-
-use crate::{ArbitrumNetwork, EthereumNetwork, EthPreCircuit, Network};
-use crate::halo2_proofs::{
-    dev::MockProver,
-};
+use crate::halo2_proofs::dev::MockProver;
 use crate::rlp::builder::RlcThreadBuilder;
 use crate::transaction::ethereum::EthBlockTransactionCircuit;
-use crate::util::EthConfigParams;
 use crate::util::helpers::get_provider;
+use crate::util::EthConfigParams;
+use crate::{ArbitrumNetwork, EthPreCircuit, EthereumNetwork, Network};
 
 pub fn get_test_circuit(
     transaction_index: u32,
@@ -40,7 +37,15 @@ pub fn get_test_circuit(
         }
         _ => {}
     }
-    EthBlockTransactionCircuit::from_provider(&provider, block_number, transaction_index, transaction_rlp, merkle_proof, 3, network)
+    EthBlockTransactionCircuit::from_provider(
+        &provider,
+        block_number,
+        transaction_index,
+        transaction_rlp,
+        merkle_proof,
+        3,
+        network,
+    )
 }
 
 #[test]
@@ -61,7 +66,12 @@ pub fn test_2718_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
     let proof_three = Bytes::from(proof_three_str);
 
     let merkle_proof: Vec<Bytes> = vec![proof_one, proof_two, proof_three];
-    let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof, Network::Ethereum(EthereumNetwork::Goerli));
+    let input = get_test_circuit(
+        transaction_index,
+        transaction_rlp,
+        merkle_proof,
+        Network::Ethereum(EthereumNetwork::Goerli),
+    );
     let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
     // println!("instance:{:?}", circuit.instance());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
@@ -86,7 +96,12 @@ pub fn test_1559_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
     let proof_three = Bytes::from(proof_three_str);
 
     let merkle_proof: Vec<Bytes> = vec![proof_one, proof_two, proof_three];
-    let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof, Network::Ethereum(EthereumNetwork::Mainnet));
+    let input = get_test_circuit(
+        transaction_index,
+        transaction_rlp,
+        merkle_proof,
+        Network::Ethereum(EthereumNetwork::Mainnet),
+    );
     let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())
@@ -136,7 +151,12 @@ pub fn evm() -> Result<(), Box<dyn std::error::Error>> {
         let merkle_proof: Vec<Bytes> = vec![proof_one, proof_two, proof_three];
 
         let k = transaction_param.degree;
-        let input = get_test_circuit(transaction_index, transaction_rlp, merkle_proof, Network::Ethereum(EthereumNetwork::Mainnet));
+        let input = get_test_circuit(
+            transaction_index,
+            transaction_rlp,
+            merkle_proof,
+            Network::Ethereum(EthereumNetwork::Mainnet),
+        );
         let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
         let params = gen_srs(k);
         let pk = gen_pk(&params, &circuit, None);
@@ -212,5 +232,3 @@ pub fn evm() -> Result<(), Box<dyn std::error::Error>> {
     //     .unwrap();
     Ok(())
 }
-
-

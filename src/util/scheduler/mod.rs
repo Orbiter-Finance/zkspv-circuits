@@ -1,5 +1,5 @@
-pub mod evm_wrapper;
 pub mod arbitration_scheduler;
+pub mod evm_wrapper;
 
 use ethers_core::types::U256;
 use ethers_providers::{Http, Middleware, Provider};
@@ -14,6 +14,8 @@ use halo2_base::{
 #[cfg(feature = "halo2-axiom")]
 use snark_verifier_sdk::halo2::read_snark;
 use snark_verifier_sdk::Snark;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::{
     collections::HashMap,
     env::var,
@@ -24,11 +26,9 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
 };
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 
-use crate::{ Network};
 use crate::util::helpers::get_provider;
+use crate::Network;
 
 use super::circuit::AnyCircuit;
 
@@ -257,7 +257,6 @@ pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::Circuit
             self.insert_pkey(circuit_type.clone(), pk);
             self.get_pkey(&circuit_type).unwrap()
         };
-
 
         let deployment_code = generate_smart_contract.then(|| {
             pre_circuit.clone().gen_evm_verifier_shplonk(params, &pk, self.yul_path(&circuit_type))

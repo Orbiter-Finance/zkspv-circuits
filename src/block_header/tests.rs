@@ -1,11 +1,12 @@
 use crate::{
-    keccak::SharedKeccakChip,
     keccak::FnSynthesize,
+    keccak::SharedKeccakChip,
     util::{EthConfigParams, EthConfigPinning, Halo2ConfigPinning},
 };
 
 use super::*;
 use ark_std::{end_timer, start_timer};
+use ethers_core::utils::hex::FromHex;
 use halo2_base::{
     halo2_proofs::{
         dev::MockProver,
@@ -23,13 +24,12 @@ use halo2_base::{
     },
     utils::fs::gen_srs,
 };
- use ethers_core::utils::hex::FromHex;
 use rand_core::OsRng;
+use rayon::ThreadPoolBuilder;
 use std::{
     env::{set_var, var},
     fs::File,
 };
-use rayon::ThreadPoolBuilder;
 use test_log::test;
 
 fn block_header_test_circuit<F: Field>(
@@ -47,7 +47,7 @@ fn block_header_test_circuit<F: Field>(
         &mut builder.gate_builder,
         &mut keccak.borrow_mut(),
         inputs,
-        &block_header_config
+        &block_header_config,
     );
 
     let circuit = EthCircuitBuilder::new(
@@ -68,7 +68,7 @@ fn block_header_test_circuit<F: Field>(
         let config_params: EthConfigParams = serde_json::from_str(
             var("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
         )
-            .unwrap();
+        .unwrap();
         circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
     }
     circuit
@@ -85,12 +85,8 @@ pub fn test_one_mainnet_header_mock() {
     let mut input_bytes: Vec<u8> = Vec::from_hex(input_hex).unwrap();
     input_bytes.resize(config.block_header_rlp_max_bytes, 0);
 
-    let circuit = block_header_test_circuit::<Fr>(
-        RlcThreadBuilder::mock(),
-        vec![input_bytes],
-        network,
-        None,
-    );
+    let circuit =
+        block_header_test_circuit::<Fr>(RlcThreadBuilder::mock(), vec![input_bytes], network, None);
     MockProver::run(k, &circuit, vec![vec![]]).unwrap().assert_satisfied();
 }
 
@@ -105,12 +101,8 @@ pub fn test_one_mainnet_header_before_london_mock() {
     let mut input_bytes: Vec<u8> = Vec::from_hex(input_hex).unwrap();
     input_bytes.resize(config.block_header_rlp_max_bytes, 0);
 
-    let circuit = block_header_test_circuit::<Fr>(
-        RlcThreadBuilder::mock(),
-        vec![input_bytes],
-        network,
-        None,
-    );
+    let circuit =
+        block_header_test_circuit::<Fr>(RlcThreadBuilder::mock(), vec![input_bytes], network, None);
     MockProver::run(k, &circuit, vec![vec![]]).unwrap().assert_satisfied();
 }
 
@@ -125,18 +117,13 @@ pub fn test_one_mainnet_header_withdrawals_mock() {
     let mut input_bytes: Vec<u8> = Vec::from_hex(input_hex).unwrap();
     input_bytes.resize(config.block_header_rlp_max_bytes, 0);
 
-    let circuit = block_header_test_circuit::<Fr>(
-        RlcThreadBuilder::mock(),
-        vec![input_bytes],
-        network,
-        None,
-    );
+    let circuit =
+        block_header_test_circuit::<Fr>(RlcThreadBuilder::mock(), vec![input_bytes], network, None);
     MockProver::run(k, &circuit, vec![vec![]]).unwrap().assert_satisfied();
 }
 
 #[test]
 pub fn test_one_mainnet_header_prover() -> Result<(), Box<dyn std::error::Error>> {
-
     ThreadPoolBuilder::new().num_threads(256).build_global().unwrap();
     let params = EthConfigPinning::from_path("configs/tests/one_block.json").params;
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
@@ -199,7 +186,7 @@ pub fn test_one_mainnet_header_prover() -> Result<(), Box<dyn std::error::Error>
         Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
         SingleStrategy<'_, Bn256>,
     >(verifier_params, pk.get_vk(), strategy, &[&[&[]]], &mut transcript)
-        .unwrap();
+    .unwrap();
     end_timer!(verify_time);
 
     Ok(())
@@ -280,7 +267,7 @@ pub fn test_multi_goerli_header_prover() {
         Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
         _,
     >(&params, &pk, &[circuit], &[&[&instance]], OsRng, &mut transcript)
-        .unwrap();
+    .unwrap();
     let proof = transcript.finalize();
     end_timer!(pf_time);
 
@@ -295,7 +282,7 @@ pub fn test_multi_goerli_header_prover() {
         Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
         SingleStrategy<'_, Bn256>,
     >(verifier_params, pk.get_vk(), strategy, &[&[&instance]], &mut transcript)
-        .unwrap();
+    .unwrap();
     end_timer!(verify_time);
 }
 
@@ -305,10 +292,8 @@ mod aggregation {
 
     use super::test;
     use super::*;
-    use crate::{
-        util::scheduler::Scheduler,
-    };
     use crate::block_header::helper::{BlockHeaderScheduler, CircuitType, Finality, Task};
+    use crate::util::scheduler::Scheduler;
 
     fn test_scheduler(network: Network) -> BlockHeaderScheduler {
         BlockHeaderScheduler::new(
@@ -360,13 +345,17 @@ mod aggregation {
             Task::new(
                 0x765fb3,
                 0x765fb3 + 1,
-                CircuitType::new(4, 3, Finality::Evm(1), Network::Ethereum(EthereumNetwork::Goerli)),
+                CircuitType::new(
+                    4,
+                    3,
+                    Finality::Evm(1),
+                    Network::Ethereum(EthereumNetwork::Goerli),
+                ),
             ),
             true,
         );
     }
 }
-
 
 #[test]
 pub fn test_one_arbitrum_goerli_header_mock() {
@@ -379,12 +368,8 @@ pub fn test_one_arbitrum_goerli_header_mock() {
     let mut input_bytes: Vec<u8> = Vec::from_hex(input_hex).unwrap();
     input_bytes.resize(config.block_header_rlp_max_bytes, 0);
 
-    let circuit = block_header_test_circuit::<Fr>(
-        RlcThreadBuilder::mock(),
-        vec![input_bytes],
-        network,
-        None,
-    );
+    let circuit =
+        block_header_test_circuit::<Fr>(RlcThreadBuilder::mock(), vec![input_bytes], network, None);
     MockProver::run(k, &circuit, vec![vec![]]).unwrap().assert_satisfied();
 }
 

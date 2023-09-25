@@ -1,30 +1,51 @@
-use std::{env::set_var, fs, path::{Path, PathBuf}};
-
-use ark_std::{start_timer, end_timer};
-use ethers_core::types::Bytes;
-use halo2_base::{utils::fs::gen_srs, gates::builder::CircuitBuilderStage};
-use hex::FromHex;
-use snark_verifier_sdk::{halo2::{aggregation::{AggregationConfigParams, AggregationCircuit}, gen_snark_shplonk}, gen_pk, SHPLONK, CircuitExt, evm::{gen_evm_proof_shplonk, write_calldata, evm_verify}};
-
-use crate::{
-    storage::{EthBlockStorageCircuit, tests::get_test_circuit as get_test_storage_circuit, StorageConfigParams}, 
-    Network,
-    transaction::ethereum::{tests::get_test_circuit as get_test_ethereum_tx_circuit, EthBlockTransactionCircuit}, util::{EthConfigParams, circuit::custom_gen_evm_verifier_shplonk}, EthereumNetwork, rlp::builder::{RlcThreadBuilder, RlcThreadBreakPoints}, EthPreCircuit
+use std::{
+    env::set_var,
+    fs,
+    path::{Path, PathBuf},
 };
 
+use ark_std::{end_timer, start_timer};
+use ethers_core::types::Bytes;
+use halo2_base::{gates::builder::CircuitBuilderStage, utils::fs::gen_srs};
+use hex::FromHex;
+use snark_verifier_sdk::{
+    evm::{evm_verify, gen_evm_proof_shplonk, write_calldata},
+    gen_pk,
+    halo2::{
+        aggregation::{AggregationCircuit, AggregationConfigParams},
+        gen_snark_shplonk,
+    },
+    CircuitExt, SHPLONK,
+};
 
+use crate::{
+    rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder},
+    storage::{
+        tests::get_test_circuit as get_test_storage_circuit, EthBlockStorageCircuit,
+        StorageConfigParams,
+    },
+    transaction::ethereum::{
+        tests::get_test_circuit as get_test_ethereum_tx_circuit, EthBlockTransactionCircuit,
+    },
+    util::{circuit::custom_gen_evm_verifier_shplonk, EthConfigParams},
+    EthPreCircuit, EthereumNetwork, Network,
+};
 
 fn test_get_storage_circuit(network: Network, block_number: u32) -> EthBlockStorageCircuit {
     get_test_storage_circuit(network, block_number)
 }
 
-fn test_get_ethereum_tx_circuit(transaction_index: u32, transaction_rlp: Vec<u8>, merkle_proof: Vec<Bytes>,network: Network) -> EthBlockTransactionCircuit{
+fn test_get_ethereum_tx_circuit(
+    transaction_index: u32,
+    transaction_rlp: Vec<u8>,
+    merkle_proof: Vec<Bytes>,
+    network: Network,
+) -> EthBlockTransactionCircuit {
     get_test_ethereum_tx_circuit(transaction_index, transaction_rlp, merkle_proof, network)
 }
 
 #[test]
 pub fn test_arbitration_circuit() {
-
     let transaction_param = EthConfigParams::from_path("configs/arbitration/ethereum_tx.json");
     let storage_param = StorageConfigParams::from_path("configs/arbitration/storage.json");
     let evm_param = AggregationConfigParams::from_path("configs/arbitration/arbitration_evm.json");
@@ -46,18 +67,33 @@ pub fn test_arbitration_circuit() {
         let merkle_proof: Vec<Bytes> = vec![proof_one, proof_two, proof_three];
 
         let k = transaction_param.degree;
-        let input = test_get_ethereum_tx_circuit(transaction_index, transaction_rlp, merkle_proof, Network::Ethereum(EthereumNetwork::Mainnet));
+        let input = test_get_ethereum_tx_circuit(
+            transaction_index,
+            transaction_rlp,
+            merkle_proof,
+            Network::Ethereum(EthereumNetwork::Mainnet),
+        );
         let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
         let manual_break_points = RlcThreadBreakPoints {
             gate: [
-                [8108, 8109, 8108, 8110, 8109, 8108, 8109, 8109, 8110, 8110, 8110, 8110, 8108, 8110, 8110, 8110, 8109, 8108, 8108, 8110, 8109, 8109, 8110, 8110, 8110, 8109, 8110, 8108, 8108, 8108, 8109, 8110, 8110, 8110, 8110].into(), 
-                [8110, 8108, 8108, 8108, 8108, 8109, 8110, 8108, 8109, 8109, 8108, 8108, 8110, 8109, 8108, 8109, 8110, 8109].into(), 
-                [].into()
-            ].into(), 
-            rlc: [8109, 8110].into()
+                [
+                    8108, 8109, 8108, 8110, 8109, 8108, 8109, 8109, 8110, 8110, 8110, 8110, 8108,
+                    8110, 8110, 8110, 8109, 8108, 8108, 8110, 8109, 8109, 8110, 8110, 8110, 8109,
+                    8110, 8108, 8108, 8108, 8109, 8110, 8110, 8110, 8110,
+                ]
+                .into(),
+                [
+                    8110, 8108, 8108, 8108, 8108, 8109, 8110, 8108, 8109, 8109, 8108, 8108, 8110,
+                    8109, 8108, 8109, 8110, 8109,
+                ]
+                .into(),
+                [].into(),
+            ]
+            .into(),
+            rlc: [8109, 8110].into(),
         };
         // let manual_break_points = RlcThreadBreakPoints {
-        //     gate: [[].into(), [].into(), [].into()].into(), 
+        //     gate: [[].into(), [].into(), [].into()].into(),
         //     rlc: [8109, 8110].into()
         // };
         let break_points_t = circuit.circuit.break_points.take();
@@ -66,7 +102,12 @@ pub fn test_arbitration_circuit() {
         let break_points = circuit.circuit.break_points.take();
         let storage_proof_time = start_timer!(|| "Ethereum Tx Proof SHPLONK");
         let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(manual_break_points));
-        let snark = gen_snark_shplonk(&params, &pk, circuit, Some(PathBuf::from("data/arbitration/eth_tx.snark")));
+        let snark = gen_snark_shplonk(
+            &params,
+            &pk,
+            circuit,
+            Some(PathBuf::from("data/arbitration/eth_tx.snark")),
+        );
         end_timer!(storage_proof_time);
         (snark, storage_proof_time)
     };
@@ -82,16 +123,21 @@ pub fn test_arbitration_circuit() {
         println!("break_points {:?}", break_points);
         let manual_break_points = RlcThreadBreakPoints {
             gate: [
-                [262034, 262034, 262034, 262032, 262032].into(), 
-                [262034, 262034].into(), 
-                [].into()
-            ].into(), 
-            rlc: [].into()
+                [262034, 262034, 262034, 262032, 262032].into(),
+                [262034, 262034].into(),
+                [].into(),
+            ]
+            .into(),
+            rlc: [].into(),
         };
         let storage_proof_time = start_timer!(|| "Storage Proof SHPLONK");
-        let circuit =
-            input.create_circuit(RlcThreadBuilder::prover(), Some(manual_break_points));
-        let snark = gen_snark_shplonk(&params, &pk, circuit, Some(PathBuf::from("data/arbitration/storage.snark")));
+        let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(manual_break_points));
+        let snark = gen_snark_shplonk(
+            &params,
+            &pk,
+            circuit,
+            Some(PathBuf::from("data/arbitration/storage.snark")),
+        );
         end_timer!(storage_proof_time);
         (snark, storage_proof_time)
     };
@@ -138,6 +184,4 @@ pub fn test_arbitration_circuit() {
 
     // // this verifies proof in EVM and outputs gas cost (if successful)
     // evm_verify(deployment_code, instances, proof);
-
-
 }

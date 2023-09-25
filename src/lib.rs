@@ -3,25 +3,25 @@
 #![feature(return_position_impl_trait_in_trait)]
 #![allow(incomplete_features)]
 
-use std::env::{set_var, var};
 use ark_std::{end_timer, start_timer};
+use std::env::{set_var, var};
 
+use halo2_base::gates::builder::{CircuitBuilderStage, MultiPhaseThreadBreakPoints};
 use halo2_base::{
-    AssignedValue,
     gates::{flex_gate::FlexGateConfig, range::RangeConfig, RangeChip},
     halo2_proofs::{
         self,
         circuit::{Layouter, SimpleFloorPlanner},
-        plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
         halo2curves::bn256::{Bn256, Fr},
+        plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
         poly::{commitment::Params, kzg::commitment::ParamsKZG},
     },
+    AssignedValue,
 };
-use halo2_base::gates::builder::{CircuitBuilderStage, MultiPhaseThreadBreakPoints};
 use serde::{Deserialize, Serialize};
 use snark_verifier_sdk::halo2::aggregation::AggregationCircuit;
-use zkevm_keccak::KeccakConfig;
 pub use zkevm_keccak::util::eth_types::Field;
+use zkevm_keccak::KeccakConfig;
 
 use keccak::{FnSynthesize, KeccakCircuitBuilder, SharedKeccakChip};
 pub use mpt::EthChip;
@@ -33,26 +33,24 @@ use crate::rlp::{
     RlpConfig,
 };
 
-
 pub mod keccak;
 pub mod mpt;
 pub mod rlp;
 
 pub mod proof;
 
-pub mod transaction;
+pub mod arbitration;
+pub mod block_header;
 pub mod receipt;
 pub mod storage;
 pub mod track_block;
-pub mod block_header;
-pub mod arbitration;
+pub mod transaction;
 
+pub mod config;
 #[cfg(feature = "providers")]
 pub mod providers;
-pub mod config;
 pub mod util;
 // pub mod server;
-
 
 pub(crate) const ETH_LOOKUP_BITS: usize = 8; // always want 8 to range check bytes
 
@@ -96,30 +94,22 @@ pub enum Network {
 impl std::fmt::Display for Network {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Network::Ethereum(ethereum_network) => {
-                match ethereum_network {
-                    EthereumNetwork::Mainnet => write!(f, "mainnet"),
-                    EthereumNetwork::Goerli => write!(f, "goerli"),
-                }
-            }
-            Network::Arbitrum(arbitrum_network) => {
-                match arbitrum_network {
-                    ArbitrumNetwork::Mainnet => write!(f, "arbitrum mainnet"),
-                    ArbitrumNetwork::Goerli => write!(f, "arbitrum goerli"),
-                }
-            }
-            Network::Optimism(optimism_network) => {
-                match optimism_network {
-                    OptimismNetwork::Mainnet => write!(f, "optimism mainnet"),
-                    OptimismNetwork::Goerli => write!(f, "optimism goerli"),
-                }
-            }
-            Network::ZkSync(optimism_network) => {
-                match optimism_network {
-                    ZkSyncEraNetwork::Mainnet => write!(f, "zkSync mainnet"),
-                    ZkSyncEraNetwork::Goerli => write!(f, "zkSync goerli"),
-                }
-            }
+            Network::Ethereum(ethereum_network) => match ethereum_network {
+                EthereumNetwork::Mainnet => write!(f, "mainnet"),
+                EthereumNetwork::Goerli => write!(f, "goerli"),
+            },
+            Network::Arbitrum(arbitrum_network) => match arbitrum_network {
+                ArbitrumNetwork::Mainnet => write!(f, "arbitrum mainnet"),
+                ArbitrumNetwork::Goerli => write!(f, "arbitrum goerli"),
+            },
+            Network::Optimism(optimism_network) => match optimism_network {
+                OptimismNetwork::Mainnet => write!(f, "optimism mainnet"),
+                OptimismNetwork::Goerli => write!(f, "optimism goerli"),
+            },
+            Network::ZkSync(optimism_network) => match optimism_network {
+                ZkSyncEraNetwork::Mainnet => write!(f, "zkSync mainnet"),
+                ZkSyncEraNetwork::Goerli => write!(f, "zkSync goerli"),
+            },
         }
     }
 }
@@ -275,7 +265,7 @@ impl<F: Field, FnPhase1: FnSynthesize<F>> Circuit<F> for EthCircuitBuilder<F, Fn
 
 #[cfg(feature = "aggregation")]
 impl<F: Field, FnPhase1: FnSynthesize<F>> snark_verifier_sdk::CircuitExt<F>
-for EthCircuitBuilder<F, FnPhase1>
+    for EthCircuitBuilder<F, FnPhase1>
 {
     fn num_instance(&self) -> Vec<usize> {
         vec![self.instance_count()]
@@ -304,7 +294,7 @@ pub trait EthPreCircuit: Sized {
     ) -> EthCircuitBuilder<Fr, impl FnSynthesize<Fr>> {
         let prover = builder.witness_gen_only();
         #[cfg(feature = "display")]
-            let start = start_timer!(|| "EthPreCircuit: create_circuit");
+        let start = start_timer!(|| "EthPreCircuit: create_circuit");
         let circuit = self.create(builder, break_points);
         #[cfg(feature = "display")]
         end_timer!(start);
@@ -313,7 +303,7 @@ pub trait EthPreCircuit: Sized {
             let config_params: EthConfigParams = serde_json::from_str(
                 var("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
             )
-                .unwrap();
+            .unwrap();
             circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
         }
         circuit
@@ -345,7 +335,7 @@ pub trait AggregationPreCircuit: Sized {
         params: &ParamsKZG<Bn256>,
     ) -> AggregationCircuit {
         #[cfg(feature = "display")]
-            let start = start_timer!(|| "AggregationPreCircuit: create_circuit");
+        let start = start_timer!(|| "AggregationPreCircuit: create_circuit");
         let circuit = self.create(stage, break_points, lookup_bits, params);
         #[cfg(feature = "display")]
         end_timer!(start);
@@ -357,4 +347,3 @@ pub trait AggregationPreCircuit: Sized {
         circuit
     }
 }
-

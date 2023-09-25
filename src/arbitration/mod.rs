@@ -1,15 +1,25 @@
-use std::{sync::{RwLock, Arc}, collections::HashMap, path::PathBuf};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 
-use halo2_base::{halo2_proofs::{poly::kzg::commitment::ParamsKZG, halo2curves::bn256::{G1Affine, Bn256}, plonk::ProvingKey}, utils::fs::{read_params, gen_srs}};
+use halo2_base::{
+    halo2_proofs::{
+        halo2curves::bn256::{Bn256, G1Affine},
+        plonk::ProvingKey,
+        poly::kzg::commitment::ParamsKZG,
+    },
+    utils::fs::{gen_srs, read_params},
+};
 
-use crate::util::scheduler::{Task, SchedulerCommon};
-
+use crate::util::scheduler::{SchedulerCommon, Task};
 
 pub mod helper;
 pub mod test;
 
 // pub struct ArbitrationScheduler <T: Task> {
-    
+
 //     /// Specifies if universal trusted setup should only be read (production mode) or randomly generated (UNSAFE non-production mode)
 //     srs_read_only: bool,
 //     /// Specifies if new proving keys should be generated or not. If `read_only` is true, then `srs_read_only` is also force to be true.

@@ -4,6 +4,7 @@ use ethers_core::{
     types::{Address, H256, U256},
     utils::keccak256,
 };
+use halo2_base::QuantumCell::Existing;
 use halo2_base::{
     gates::{
         builder::{FlexGateConfigParams, MultiPhaseThreadBreakPoints},
@@ -23,14 +24,13 @@ use std::{
     iter,
     path::Path,
 };
-use halo2_base::QuantumCell::Existing;
 
 #[cfg(feature = "aggregation")]
 pub mod circuit;
+pub mod contract_abi;
+pub mod helpers;
 #[cfg(feature = "aggregation")]
 pub mod scheduler;
-pub mod helpers;
-pub mod contract_abi;
 pub(crate) const NUM_BYTES_IN_U128: usize = 16;
 
 pub type AssignedH256<F> = [AssignedValue<F>; 2]; // H256 as hi-lo (u128, u128)
@@ -86,7 +86,7 @@ impl Halo2ConfigPinning for EthConfigPinning {
             File::open(&path)
                 .unwrap_or_else(|e| panic!("{:?} does not exist: {e:?}", path.as_ref())),
         )
-            .unwrap();
+        .unwrap();
         pinning.set_var();
         pinning
     }
@@ -127,7 +127,7 @@ impl Halo2ConfigPinning for AggregationConfigPinning {
             File::open(&path)
                 .unwrap_or_else(|e| panic!("{:?} does not exist: {e:?}", path.as_ref())),
         )
-            .unwrap();
+        .unwrap();
         pinning.set_var();
         pinning
     }
@@ -502,4 +502,3 @@ pub fn is_zero_vec<F: ScalarField>(
     let total_len = gate.get_field_element(input.len() as u64);
     gate.is_equal(ctx, sum, Constant(total_len))
 }
-

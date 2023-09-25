@@ -22,8 +22,8 @@ use snark_verifier_sdk::{
     halo2::{aggregation::AggregationCircuit, gen_snark_shplonk},
     read_pk, CircuitExt, Snark, LIMBS, SHPLONK,
 };
-use std::{env::var, fs::File, path::Path};
 use std::io::Read;
+use std::{env::var, fs::File, path::Path};
 
 pub trait PinnableCircuit<F: ff::Field>: CircuitExt<F> {
     type Pinning: Halo2ConfigPinning;
@@ -301,7 +301,7 @@ pub fn write_calldata_generic<ConcreteCircuit: CircuitExt<Fr>>(
     let calldata = encode(encode_calldata(&instances, &proof));
     fs::write(path, &calldata).expect("write calldata should not fail");
     if let Some(deployment_code) = deployment_code {
-        println!("deployment_code:{:?}",deployment_code);
+        println!("deployment_code:{:?}", deployment_code);
         evm_verify(deployment_code, instances, proof);
     }
     calldata
@@ -310,9 +310,9 @@ pub fn write_calldata_generic<ConcreteCircuit: CircuitExt<Fr>>(
 // need to trick rust into inferring type of the circuit because `C` involves closures
 // this is not ideal...
 fn custom_read_pk<C, P>(fname: P, _: &C) -> ProvingKey<G1Affine>
-    where
-        C: Circuit<Fr>,
-        P: AsRef<Path>,
+where
+    C: Circuit<Fr>,
+    P: AsRef<Path>,
 {
     read_pk::<C>(fname.as_ref()).expect("proving key should exist")
 }
@@ -325,7 +325,7 @@ pub fn custom_gen_evm_verifier_shplonk<C: CircuitExt<Fr>>(
     circuit: &C,
     path: Option<impl AsRef<Path>>,
 ) -> Vec<u8> {
-    println!("num_instance:{:?}",&circuit.num_instance().len());
+    println!("num_instance:{:?}", &circuit.num_instance().len());
     gen_evm_verifier_shplonk::<C>(
         params,
         vk,

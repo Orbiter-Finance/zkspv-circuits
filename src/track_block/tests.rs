@@ -1,17 +1,12 @@
-use std::env::set_var;
-use crate::{EthereumNetwork, EthPreCircuit, Network};
+use crate::halo2_proofs::dev::MockProver;
 use crate::rlp::builder::RlcThreadBuilder;
 use crate::track_block::EthTrackBlockCircuit;
-use crate::util::EthConfigParams;
-use crate::halo2_proofs::{
-    dev::MockProver,
-};
 use crate::util::helpers::get_provider;
+use crate::util::EthConfigParams;
+use crate::{EthPreCircuit, EthereumNetwork, Network};
+use std::env::set_var;
 
-fn get_test_circuit(
-    block_number_interval: Vec<u64>,
-    network: Network,
-) -> EthTrackBlockCircuit {
+fn get_test_circuit(block_number_interval: Vec<u64>, network: Network) -> EthTrackBlockCircuit {
     let provider = get_provider(&network);
     EthTrackBlockCircuit::from_provider(&provider, block_number_interval, network)
 }
@@ -26,7 +21,8 @@ pub fn test_track_block() -> Result<(), Box<dyn std::error::Error>> {
         block_number_interval.push(i as u64);
     }
 
-    let input = get_test_circuit(block_number_interval, Network::Ethereum(EthereumNetwork::Mainnet));
+    let input =
+        get_test_circuit(block_number_interval, Network::Ethereum(EthereumNetwork::Mainnet));
     let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())

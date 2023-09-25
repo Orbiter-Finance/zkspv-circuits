@@ -31,7 +31,6 @@ use std::{
     iter::{self},
 };
 
-
 lazy_static! {
     pub static ref MAX_BRANCH_LENS: (Vec<usize>, usize) = max_branch_lens();
     static ref DUMMY_BRANCH: Vec<u8> = Vec::from_hex("f1808080808080808080808080808080a0000000000000000000000000000000000000000000000000000000000000000080").unwrap();

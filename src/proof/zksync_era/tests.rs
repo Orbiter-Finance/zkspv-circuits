@@ -1,24 +1,14 @@
+use ark_std::{end_timer, start_timer};
+use ethers_core::types::{TxHash, H256};
 use std::env::set_var;
 use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::str::FromStr;
-use ark_std::{end_timer, start_timer};
-use ethers_core::types::{H256, TxHash};
 
-use halo2_base::{
-    halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
-    utils::fs::gen_srs,
-};
-use halo2_base::gates::builder::CircuitBuilderStage;
-use rand_core::OsRng;
-use snark_verifier_sdk::{CircuitExt, gen_pk, SHPLONK};
-use snark_verifier_sdk::evm::{evm_verify, gen_evm_proof_shplonk, write_calldata};
-use snark_verifier_sdk::halo2::aggregation::{AggregationCircuit, AggregationConfigParams};
-use snark_verifier_sdk::halo2::gen_snark_shplonk;
-use crate::{Network, ZkSyncEraNetwork};
 use crate::transaction::zksync_era::now::ZkSyncBlockTransactionCircuit;
+use crate::util::circuit::custom_gen_evm_verifier_shplonk;
 use crate::util::helpers::get_provider;
 use crate::{
     halo2_proofs::{
@@ -37,12 +27,19 @@ use crate::{
     rlp::builder::RlcThreadBuilder,
     util::EthConfigParams,
 };
-use crate::util::circuit::custom_gen_evm_verifier_shplonk;
+use crate::{Network, ZkSyncEraNetwork};
+use halo2_base::gates::builder::CircuitBuilderStage;
+use halo2_base::{
+    halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
+    utils::fs::gen_srs,
+};
+use rand_core::OsRng;
+use snark_verifier_sdk::evm::{evm_verify, gen_evm_proof_shplonk, write_calldata};
+use snark_verifier_sdk::halo2::aggregation::{AggregationCircuit, AggregationConfigParams};
+use snark_verifier_sdk::halo2::gen_snark_shplonk;
+use snark_verifier_sdk::{gen_pk, CircuitExt, SHPLONK};
 
-fn get_test_circuit(
-    tx_hash: H256,
-    network: Network,
-) -> ZkSyncBlockTransactionCircuit {
+fn get_test_circuit(tx_hash: H256, network: Network) -> ZkSyncBlockTransactionCircuit {
     let provider = get_provider(&network);
     ZkSyncBlockTransactionCircuit::from_provider(&provider, tx_hash, network)
 }
@@ -54,7 +51,9 @@ pub fn test_zksync_proof() -> Result<(), Box<dyn std::error::Error>> {
 
     let k = params.degree;
     let network = Network::ZkSync(ZkSyncEraNetwork::Mainnet);
-    let tx_hash = TxHash::from_str("0xa040db0769aeaacd51816aedf3036e16a30b815f12d4b89bb6a943d16f34cf45").unwrap();
+    let tx_hash =
+        TxHash::from_str("0xa040db0769aeaacd51816aedf3036e16a30b815f12d4b89bb6a943d16f34cf45")
+            .unwrap();
 
     let input = get_test_circuit(tx_hash, network);
     let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::mock(), None);
@@ -70,7 +69,9 @@ pub fn test_zksync_proof_keygen() -> Result<(), Box<dyn std::error::Error>> {
 
     let k = params.degree;
     let network = Network::ZkSync(ZkSyncEraNetwork::Mainnet);
-    let tx_hash = TxHash::from_str("0xa040db0769aeaacd51816aedf3036e16a30b815f12d4b89bb6a943d16f34cf45").unwrap();
+    let tx_hash =
+        TxHash::from_str("0xa040db0769aeaacd51816aedf3036e16a30b815f12d4b89bb6a943d16f34cf45")
+            .unwrap();
 
     let input = get_test_circuit(tx_hash, network);
 
@@ -110,11 +111,10 @@ pub fn test_zksync_proof_keygen() -> Result<(), Box<dyn std::error::Error>> {
         Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
         SingleStrategy<'_, Bn256>,
     >(verifier_params, pk.get_vk(), strategy, &[&[&instance]], &mut transcript)
-        .unwrap();
+    .unwrap();
     end_timer!(verify_time);
     Ok(())
 }
-
 
 #[test]
 #[cfg(feature = "evm")]
@@ -122,23 +122,23 @@ pub fn test_zksync_proof_keygen_evm() -> Result<(), Box<dyn std::error::Error>> 
     let params = EthConfigParams::from_path("configs/tests/zksync_era_proof.json");
     let evm_params_file = File::open("configs/zksync/evm.json").unwrap();
     let evm_params_reader = BufReader::new(evm_params_file);
-    let evm_params: AggregationConfigParams =
-        serde_json::from_reader(evm_params_reader).unwrap();
+    let evm_params: AggregationConfigParams = serde_json::from_reader(evm_params_reader).unwrap();
 
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
 
     let (storage_snark, storage_proof_time) = {
         let k = params.degree;
         let network = Network::ZkSync(ZkSyncEraNetwork::Mainnet);
-        let tx_hash = TxHash::from_str("0xa040db0769aeaacd51816aedf3036e16a30b815f12d4b89bb6a943d16f34cf45").unwrap();
+        let tx_hash =
+            TxHash::from_str("0xa040db0769aeaacd51816aedf3036e16a30b815f12d4b89bb6a943d16f34cf45")
+                .unwrap();
         let input = get_test_circuit(tx_hash, network);
         let circuit = input.clone().create_circuit::<Fr>(RlcThreadBuilder::keygen(), None);
         let params = gen_srs(k);
         let pk = gen_pk(&params, &circuit, None);
         let break_points = circuit.circuit.break_points.take();
         let storage_proof_time = start_timer!(|| "Storage Proof SHPLONK");
-        let circuit =
-            input.create_circuit::<Fr>(RlcThreadBuilder::prover(), Some(break_points));
+        let circuit = input.create_circuit::<Fr>(RlcThreadBuilder::prover(), Some(break_points));
         let snark = gen_snark_shplonk(&params, &pk, circuit, None::<&str>);
         end_timer!(storage_proof_time);
         (snark, storage_proof_time)

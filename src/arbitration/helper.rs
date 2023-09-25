@@ -1,16 +1,17 @@
 use std::path::Path;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use crate::{util::{scheduler, EthConfigPinning, Halo2ConfigPinning}, transaction::ethereum::helper::TransactionTask, Network};
-
+use crate::{
+    transaction::ethereum::helper::TransactionTask,
+    util::{scheduler, EthConfigPinning, Halo2ConfigPinning},
+    Network,
+};
 
 pub type CrossChainNetwork = Network;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FinalAssemblyTask {
-
-}
+pub struct FinalAssemblyTask {}
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -18,7 +19,7 @@ pub enum ArbitrationTask {
     Transaction(),
     MDCState(),
     ETHBlockHeaderTrack(),
-    Final(FinalAssemblyTask)
+    Final(FinalAssemblyTask),
 }
 
 impl scheduler::CircuitType for (CrossChainNetwork,) {
@@ -45,7 +46,7 @@ impl scheduler::CircuitType for (CrossChainNetwork,) {
 
 //     fn dependencies(&self) -> Vec<Self> {
 //         vec![
-            
+
 //         ]
 //     }
 // }

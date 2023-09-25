@@ -13,6 +13,7 @@ use crate::{
     },
     AggregationPreCircuit, Network,
 };
+use circuit_derive::CircuitDerive;
 use core::cmp::min;
 use halo2_base::{
     gates::builder::CircuitBuilderStage,
@@ -24,7 +25,6 @@ use halo2_base::{
 };
 use snark_verifier_sdk::Snark;
 use std::{env::var, path::Path};
-use circuit_derive::CircuitDerive;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Finality {

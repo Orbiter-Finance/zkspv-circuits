@@ -5,26 +5,27 @@ use core::{
 use std::cell::RefCell;
 
 use ethers_providers::{Http, Provider};
-use halo2_base::{
-    halo2_proofs::{
-        halo2curves::bn256::{ Fr},
-        plonk::*,
-    },
-};
-use halo2_base::{AssignedValue, Context};
-use halo2_base::gates::{GateInstructions, RangeChip, RangeInstructions};
 use halo2_base::gates::builder::GateThreadBuilder;
-use halo2_base::QuantumCell::{Constant, Existing};
+use halo2_base::gates::{GateInstructions, RangeChip, RangeInstructions};
+use halo2_base::halo2_proofs::{halo2curves::bn256::Fr, plonk::*};
 use halo2_base::utils::bit_length;
+use halo2_base::QuantumCell::{Constant, Existing};
+use halo2_base::{AssignedValue, Context};
 use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 
-use crate::{ArbitrumNetwork, ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthereumNetwork, EthPreCircuit, Network, OptimismNetwork, ZkSyncEraNetwork};
-use crate::keccak::{ContainsParallelizableKeccakQueries, FixedLenRLCs, FnSynthesize, KeccakChip, parallelize_keccak_phase0, VarLenRLCs};
-use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
+use crate::keccak::{
+    parallelize_keccak_phase0, ContainsParallelizableKeccakQueries, FixedLenRLCs, FnSynthesize,
+    KeccakChip, VarLenRLCs,
+};
 use crate::rlp::builder::{parallelize_phase1, RlcThreadBreakPoints, RlcThreadBuilder};
-use crate::rlp::rlc::{FIRST_PHASE, RLC_PHASE, RlcContextPair, RlcFixedTrace, RlcTrace};
+use crate::rlp::rlc::{RlcContextPair, RlcFixedTrace, RlcTrace, FIRST_PHASE, RLC_PHASE};
+use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
 use crate::util::{bytes_be_to_u128, bytes_be_var_to_fixed};
+use crate::{
+    ArbitrumNetwork, EthChip, EthCircuitBuilder, EthPreCircuit, EthereumNetwork, Network,
+    OptimismNetwork, ZkSyncEraNetwork, ETH_LOOKUP_BITS,
+};
 
 #[cfg(feature = "aggregation")]
 pub mod aggregation;
@@ -46,7 +47,7 @@ pub struct BlockHeaderConfig {
 
     /// The maximum possible RLP byte length of a block header *at any block* (including all EIPs).
     /// Provided that the total length is < 256^2, this will be 1 + 2 + sum(max RLP byte length of each field)
-   pub  block_header_rlp_max_bytes: usize,
+    pub block_header_rlp_max_bytes: usize,
 
     /**
     | Field                        | Type            | Size (bytes)    | RLP size (bytes) | RLP size (bits) |
@@ -98,88 +99,231 @@ impl BlockHeaderConfig {
 pub fn get_block_header_config(network: &Network) -> BlockHeaderConfig {
     let block_header_rlp_min_bytes = 479;
 
-
     let block_header_config = match network {
-        Network::Ethereum(network) => {
-            match network {
-                EthereumNetwork::Mainnet => {
-                    let extra_data_max_bytes = 97;
-                    let header_fields_max_bytes = vec![32, 32, 20, 32, 32, 32, 256, 7, 4, 4, 4, 4, extra_data_max_bytes, 32, 8, 6, 32];
-                    BlockHeaderConfig::new(
-                        extra_data_max_bytes,
-                        block_header_rlp_min_bytes,
-                        header_fields_max_bytes)
-                }
-                EthereumNetwork::Goerli => {
-                    let extra_data_max_bytes = 32;
-                    let header_fields_max_bytes = vec![32, 32, 20, 32, 32, 32, 256, 7, 4, 4, 4, 4, extra_data_max_bytes, 32, 8, 6, 32];
-                    BlockHeaderConfig::new(
-                        extra_data_max_bytes,
-                        block_header_rlp_min_bytes,
-                        header_fields_max_bytes)
-                }
+        Network::Ethereum(network) => match network {
+            EthereumNetwork::Mainnet => {
+                let extra_data_max_bytes = 97;
+                let header_fields_max_bytes = vec![
+                    32,
+                    32,
+                    20,
+                    32,
+                    32,
+                    32,
+                    256,
+                    7,
+                    4,
+                    4,
+                    4,
+                    4,
+                    extra_data_max_bytes,
+                    32,
+                    8,
+                    6,
+                    32,
+                ];
+                BlockHeaderConfig::new(
+                    extra_data_max_bytes,
+                    block_header_rlp_min_bytes,
+                    header_fields_max_bytes,
+                )
             }
-        }
-        Network::Arbitrum(network) => {
-            match network {
-                ArbitrumNetwork::Mainnet => {
-                    let extra_data_max_bytes = 32;
-                    let header_fields_max_bytes = vec![32, 32, 20, 32, 32, 32, 256, 7, 4, 7, 4, 4, extra_data_max_bytes, 32, 8, 6, 32];
-                    BlockHeaderConfig::new(
-                        extra_data_max_bytes,
-                        block_header_rlp_min_bytes,
-                        header_fields_max_bytes)
-                }
-                ArbitrumNetwork::Goerli => {
-                    let extra_data_max_bytes = 32;
-                    let header_fields_max_bytes = vec![32, 32, 20, 32, 32, 32, 256, 7, 4, 7, 4, 4, extra_data_max_bytes, 32, 8, 6, 32];
-                    BlockHeaderConfig::new(
-                        extra_data_max_bytes,
-                        block_header_rlp_min_bytes,
-                        header_fields_max_bytes)
-                }
+            EthereumNetwork::Goerli => {
+                let extra_data_max_bytes = 32;
+                let header_fields_max_bytes = vec![
+                    32,
+                    32,
+                    20,
+                    32,
+                    32,
+                    32,
+                    256,
+                    7,
+                    4,
+                    4,
+                    4,
+                    4,
+                    extra_data_max_bytes,
+                    32,
+                    8,
+                    6,
+                    32,
+                ];
+                BlockHeaderConfig::new(
+                    extra_data_max_bytes,
+                    block_header_rlp_min_bytes,
+                    header_fields_max_bytes,
+                )
             }
-        }
-        Network::Optimism(network) => {
-            match network {
-                OptimismNetwork::Mainnet => {
-                    let extra_data_max_bytes = 97;
-                    let header_fields_max_bytes = vec![32, 32, 20, 32, 32, 32, 256, 7, 4, 4, 4, 4, extra_data_max_bytes, 32, 8, 6, 32];
-                    BlockHeaderConfig::new(
-                        extra_data_max_bytes,
-                        block_header_rlp_min_bytes,
-                        header_fields_max_bytes)
-                }
-                OptimismNetwork::Goerli => {
-                    let extra_data_max_bytes = 32;
-                    let header_fields_max_bytes = vec![32, 32, 20, 32, 32, 32, 256, 7, 4, 4, 4, 4, extra_data_max_bytes, 32, 8, 6, 32];
-                    BlockHeaderConfig::new(
-                        extra_data_max_bytes,
-                        block_header_rlp_min_bytes,
-                        header_fields_max_bytes)
-                }
+        },
+        Network::Arbitrum(network) => match network {
+            ArbitrumNetwork::Mainnet => {
+                let extra_data_max_bytes = 32;
+                let header_fields_max_bytes = vec![
+                    32,
+                    32,
+                    20,
+                    32,
+                    32,
+                    32,
+                    256,
+                    7,
+                    4,
+                    7,
+                    4,
+                    4,
+                    extra_data_max_bytes,
+                    32,
+                    8,
+                    6,
+                    32,
+                ];
+                BlockHeaderConfig::new(
+                    extra_data_max_bytes,
+                    block_header_rlp_min_bytes,
+                    header_fields_max_bytes,
+                )
             }
-        }
-        Network::ZkSync(network) => {
-            match network {
-                ZkSyncEraNetwork::Mainnet => {
-                    let extra_data_max_bytes = 97;
-                    let header_fields_max_bytes = vec![32, 32, 20, 32, 32, 32, 256, 7, 4, 4, 4, 4, extra_data_max_bytes, 32, 8, 6, 32];
-                    BlockHeaderConfig::new(
-                        extra_data_max_bytes,
-                        block_header_rlp_min_bytes,
-                        header_fields_max_bytes)
-                }
-                ZkSyncEraNetwork::Goerli => {
-                    let extra_data_max_bytes = 32;
-                    let header_fields_max_bytes = vec![32, 32, 20, 32, 32, 32, 256, 7, 4, 4, 4, 4, extra_data_max_bytes, 32, 8, 6, 32];
-                    BlockHeaderConfig::new(
-                        extra_data_max_bytes,
-                        block_header_rlp_min_bytes,
-                        header_fields_max_bytes)
-                }
+            ArbitrumNetwork::Goerli => {
+                let extra_data_max_bytes = 32;
+                let header_fields_max_bytes = vec![
+                    32,
+                    32,
+                    20,
+                    32,
+                    32,
+                    32,
+                    256,
+                    7,
+                    4,
+                    7,
+                    4,
+                    4,
+                    extra_data_max_bytes,
+                    32,
+                    8,
+                    6,
+                    32,
+                ];
+                BlockHeaderConfig::new(
+                    extra_data_max_bytes,
+                    block_header_rlp_min_bytes,
+                    header_fields_max_bytes,
+                )
             }
-        }
+        },
+        Network::Optimism(network) => match network {
+            OptimismNetwork::Mainnet => {
+                let extra_data_max_bytes = 97;
+                let header_fields_max_bytes = vec![
+                    32,
+                    32,
+                    20,
+                    32,
+                    32,
+                    32,
+                    256,
+                    7,
+                    4,
+                    4,
+                    4,
+                    4,
+                    extra_data_max_bytes,
+                    32,
+                    8,
+                    6,
+                    32,
+                ];
+                BlockHeaderConfig::new(
+                    extra_data_max_bytes,
+                    block_header_rlp_min_bytes,
+                    header_fields_max_bytes,
+                )
+            }
+            OptimismNetwork::Goerli => {
+                let extra_data_max_bytes = 32;
+                let header_fields_max_bytes = vec![
+                    32,
+                    32,
+                    20,
+                    32,
+                    32,
+                    32,
+                    256,
+                    7,
+                    4,
+                    4,
+                    4,
+                    4,
+                    extra_data_max_bytes,
+                    32,
+                    8,
+                    6,
+                    32,
+                ];
+                BlockHeaderConfig::new(
+                    extra_data_max_bytes,
+                    block_header_rlp_min_bytes,
+                    header_fields_max_bytes,
+                )
+            }
+        },
+        Network::ZkSync(network) => match network {
+            ZkSyncEraNetwork::Mainnet => {
+                let extra_data_max_bytes = 97;
+                let header_fields_max_bytes = vec![
+                    32,
+                    32,
+                    20,
+                    32,
+                    32,
+                    32,
+                    256,
+                    7,
+                    4,
+                    4,
+                    4,
+                    4,
+                    extra_data_max_bytes,
+                    32,
+                    8,
+                    6,
+                    32,
+                ];
+                BlockHeaderConfig::new(
+                    extra_data_max_bytes,
+                    block_header_rlp_min_bytes,
+                    header_fields_max_bytes,
+                )
+            }
+            ZkSyncEraNetwork::Goerli => {
+                let extra_data_max_bytes = 32;
+                let header_fields_max_bytes = vec![
+                    32,
+                    32,
+                    20,
+                    32,
+                    32,
+                    32,
+                    256,
+                    7,
+                    4,
+                    4,
+                    4,
+                    4,
+                    extra_data_max_bytes,
+                    32,
+                    8,
+                    6,
+                    32,
+                ];
+                BlockHeaderConfig::new(
+                    extra_data_max_bytes,
+                    block_header_rlp_min_bytes,
+                    header_fields_max_bytes,
+                )
+            }
+        },
     };
     block_header_config
 }
@@ -329,8 +473,8 @@ pub trait EthBlockHeaderChip<F: Field> {
         block_headers: Vec<Vec<u8>>,
         block_header_config: &BlockHeaderConfig,
     ) -> Vec<EthBlockHeaderTraceWitness<F>>
-        where
-            Self: Sync,
+    where
+        Self: Sync,
     {
         parallelize_keccak_phase0(
             thread_pool,
@@ -363,8 +507,8 @@ pub trait EthBlockHeaderChip<F: Field> {
         block_headers: Vec<Vec<u8>>,
         block_header_config: &BlockHeaderConfig,
     ) -> Vec<EthBlockHeaderTraceWitness<F>>
-        where
-            Self: Sync,
+    where
+        Self: Sync,
     {
         self.decompose_block_headers_phase0(thread_pool, keccak, block_headers, block_header_config)
     }
@@ -402,8 +546,12 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
         assert_eq!(block_header.len(), block_header_config.block_header_rlp_max_bytes);
         let block_header_assigned =
             ctx.assign_witnesses(block_header.iter().map(|byte| F::from(*byte as u64)));
-        let rlp_witness =
-            self.rlp().decompose_rlp_array_phase0(ctx, block_header_assigned, &block_header_config.header_fields_max_bytes, true); // `is_variable_len = true` because RLP can have between 15 to 17 fields, depending on which EIPs are active at that block
+        let rlp_witness = self.rlp().decompose_rlp_array_phase0(
+            ctx,
+            block_header_assigned,
+            &block_header_config.header_fields_max_bytes,
+            true,
+        ); // `is_variable_len = true` because RLP can have between 15 to 17 fields, depending on which EIPs are active at that block
 
         let block_hash_query_idx = keccak.keccak_var_len(
             ctx,
@@ -430,7 +578,6 @@ impl<'chip, F: Field> EthBlockHeaderChip<F> for EthChip<'chip, F> {
         // Base fee per unit gas only after London
         let [parent_hash, ommers_hash, beneficiary, state_root, transactions_root, receipts_root, logs_bloom, difficulty, number, gas_limit, gas_used, timestamp, extra_data, mix_hash, nonce, basefee, withdrawals_root]: [RlpFieldTrace<F>; NUM_BLOCK_HEADER_FIELDS]
             = trace.field_trace.try_into().unwrap();
-
 
         EthBlockHeaderTrace {
             parent_hash,
@@ -705,8 +852,13 @@ impl<F: Field> EthBlockHeaderChainCircuit<F> {
 
         let indicator =
             chip.gate().idx_to_indicator(ctx, num_blocks_minus_one, block_chain_witness.len());
-        let (prev_block_hash, end_block_hash, block_numbers) =
-            get_boundary_block_data(ctx, chip.gate(), &block_chain_witness, &indicator, &self.block_header_config);
+        let (prev_block_hash, end_block_hash, block_numbers) = get_boundary_block_data(
+            ctx,
+            chip.gate(),
+            &block_chain_witness,
+            &indicator,
+            &self.block_header_config,
+        );
         let assigned_instances = iter::empty()
             .chain(prev_block_hash)
             .chain(end_block_hash)

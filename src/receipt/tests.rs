@@ -1,18 +1,15 @@
-
 use std::env::set_var;
 
 use ethers_core::types::Bytes;
- use ethers_core::utils::hex::FromHex;
+use ethers_core::utils::hex::FromHex;
 
-use crate::halo2_proofs::{
-    dev::MockProver,
-};
-use crate::{ArbitrumNetwork, EthereumNetwork, EthPreCircuit, Network};
-use crate::Network::{Arbitrum, Ethereum};
+use crate::halo2_proofs::dev::MockProver;
 use crate::receipt::EthBlockReceiptCircuit;
 use crate::rlp::builder::RlcThreadBuilder;
-use crate::util::EthConfigParams;
 use crate::util::helpers::get_provider;
+use crate::util::EthConfigParams;
+use crate::Network::{Arbitrum, Ethereum};
+use crate::{ArbitrumNetwork, EthPreCircuit, EthereumNetwork, Network};
 
 fn get_test_circuit(
     receipt_index: u32,
@@ -29,17 +26,24 @@ fn get_test_circuit(
         Ethereum(EthereumNetwork::Goerli) => {
             block_number = 0x82e239;
         }
-        Arbitrum(ArbitrumNetwork::Mainnet)=>{
-            block_number  = 0x82e239;
+        Arbitrum(ArbitrumNetwork::Mainnet) => {
+            block_number = 0x82e239;
         }
-        Arbitrum(ArbitrumNetwork::Goerli)=>{
-            block_number  = 0x82e239;
+        Arbitrum(ArbitrumNetwork::Goerli) => {
+            block_number = 0x82e239;
         }
         _ => {}
     }
-    EthBlockReceiptCircuit::from_provider(&provider, block_number, receipt_index, receipt_rlp, merkle_proof, 4, network)
+    EthBlockReceiptCircuit::from_provider(
+        &provider,
+        block_number,
+        receipt_index,
+        receipt_rlp,
+        merkle_proof,
+        4,
+        network,
+    )
 }
-
 
 #[test]
 pub fn test_receipt_mpt() -> Result<(), Box<dyn std::error::Error>> {
@@ -62,7 +66,12 @@ pub fn test_receipt_mpt() -> Result<(), Box<dyn std::error::Error>> {
     let proof_four = Bytes::from(proof_four_bytes);
 
     let merkle_proof = vec![proof_one, proof_two, proof_three, proof_four];
-    let input = get_test_circuit(receipt_index, receipt_rlp, merkle_proof, Ethereum(EthereumNetwork::Goerli));
+    let input = get_test_circuit(
+        receipt_index,
+        receipt_rlp,
+        merkle_proof,
+        Ethereum(EthereumNetwork::Goerli),
+    );
     let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
 

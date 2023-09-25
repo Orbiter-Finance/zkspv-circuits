@@ -427,7 +427,7 @@ impl<F: Field> KeccakChip<F> {
         // the above are external `AssignedCell`s, we need to convert them to internal `AssignedValue`s
         let mut upload_cells = |acells: Vec<KeccakAssignedValue<F>>,
                                 offset|
-                                -> Vec<AssignedValue<F>> {
+         -> Vec<AssignedValue<F>> {
             acells
                 .into_iter()
                 .enumerate()
@@ -489,7 +489,7 @@ impl<F: Field> KeccakChip<F> {
 
         let mut keccak_f_index = 0;
         let ctx = thread_pool.gate_builder.main(0); // this ctx only used for equality constraints, so doesn't matter which phase. If we used phase 1 and it was the only empty ctx, currently it causes a panic in `assign_all`
-        // we know exactly where the fixed length squeezed RLCs are in the table, so it's straightforward to fetch
+                                                    // we know exactly where the fixed length squeezed RLCs are in the table, so it's straightforward to fetch
         for (input_rlc, output_rlc) in &fixed_len_rlcs {
             keccak_f_index += get_num_keccak_f(input_rlc.len);
 
