@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use test_log::test;
 
 use crate::config::contract::get_mdc_config;
+use crate::storage::util::EbcRuleParams;
 use crate::util::helpers::{calculate_mk_address_struct, get_provider};
 use crate::{
     halo2_proofs::{
@@ -90,16 +91,16 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> EthBlockStorageC
     let root_slot = calculate_mk_address_struct(addr, mapping_position, root_slot_position);
     let version_slot = calculate_mk_address_struct(addr, mapping_position, version_slot_position);
     let slots = vec![root_slot, version_slot];
-    EthBlockStorageCircuit::from_provider(
-        &provider,
+    let constructor = StorageConstructor {
         block_number,
-        addr,
+        address: addr,
         slots,
-        8,
-        8,
+        acct_pf_max_depth: 8,
+        storage_pf_max_depth: 8,
         ebc_rule_params,
         network,
-    )
+    };
+    EthBlockStorageCircuit::from_provider(&provider, constructor)
 }
 
 #[test]

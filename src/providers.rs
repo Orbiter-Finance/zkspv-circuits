@@ -36,6 +36,7 @@ use crate::proof::arbitrum::{
     ArbitrumProofBlockTrack, ArbitrumProofInput, ArbitrumProofTransactionOrReceipt,
 };
 use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
+use crate::storage::util::EbcRuleParams;
 use crate::storage::EbcRuleVersion;
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
@@ -229,14 +230,6 @@ pub fn get_transaction_input(
         block_header,
         transaction: EthTransactionInput { transaction_index, transaction_proofs },
     }
-}
-#[derive(Clone, Debug)]
-pub struct EbcRuleParams {
-    pub ebc_rule_key: H256,
-    pub ebc_rule_root: H256,
-    pub ebc_rule_value: Vec<u8>,
-    pub ebc_rule_merkle_proof: Vec<Bytes>,
-    pub ebc_rule_pf_max_depth: usize,
 }
 
 pub fn get_storage_input(

@@ -1,4 +1,5 @@
 use super::EthBlockTransactionCircuit;
+use crate::transaction::ethereum::util::TransactionConstructor;
 use crate::util::helpers::get_provider;
 use crate::util::scheduler::evm_wrapper::{EvmWrapper, SimpleTask};
 use crate::util::scheduler::{CircuitType, Task};
@@ -80,14 +81,14 @@ impl SimpleTask for TransactionTask {
 
     fn get_circuit(&self, network: Network) -> Self::PreCircuit {
         let provider = get_provider(&network);
-        EthBlockTransactionCircuit::from_provider(
-            &provider,
-            self.block_number,
-            self.transaction_index,
-            self.transaction_rlp.clone(),
-            self.merkle_proof.clone(),
-            self.transaction_pf_max_depth,
-            self.network,
-        )
+        let constructor = TransactionConstructor {
+            block_number: self.block_number,
+            transaction_index: self.transaction_index,
+            transaction_rlp: self.transaction_rlp.clone(),
+            merkle_proof: self.merkle_proof.clone(),
+            transaction_pf_max_depth: self.transaction_pf_max_depth,
+            network: self.network,
+        };
+        EthBlockTransactionCircuit::from_provider(&provider, constructor)
     }
 }

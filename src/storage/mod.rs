@@ -19,9 +19,10 @@ use crate::block_header::{
 };
 use crate::keccak::{parallelize_keccak_phase0, ContainsParallelizableKeccakQueries};
 use crate::mpt::{MPTInput, MPTProof, MPTProofWitness};
-use crate::providers::{get_storage_input, EbcRuleParams};
+use crate::providers::get_storage_input;
 use crate::rlp::builder::parallelize_phase1;
 use crate::rlp::RlpFieldTrace;
+use crate::storage::util::StorageConstructor;
 use crate::{
     keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs},
     mpt::AssignedBytes,
@@ -683,26 +684,17 @@ pub struct EthBlockStorageCircuit {
 
 impl EthBlockStorageCircuit {
     #[cfg(feature = "providers")]
-    pub fn from_provider(
-        provider: &Provider<Http>,
-        block_number: u32,
-        address: Address,
-        slots: Vec<H256>,
-        acct_pf_max_depth: usize,
-        storage_pf_max_depth: usize,
-        ebc_rule_params: EbcRuleParams,
-        network: Network,
-    ) -> Self {
+    pub fn from_provider(provider: &Provider<Http>, constructor: StorageConstructor) -> Self {
         let inputs = get_storage_input(
             provider,
-            block_number,
-            address,
-            slots,
-            acct_pf_max_depth,
-            storage_pf_max_depth,
-            ebc_rule_params,
+            constructor.block_number,
+            constructor.address,
+            constructor.slots,
+            constructor.acct_pf_max_depth,
+            constructor.storage_pf_max_depth,
+            constructor.ebc_rule_params,
         );
-        let block_header_config = get_block_header_config(&network);
+        let block_header_config = get_block_header_config(&constructor.network);
         Self { inputs, block_header_config }
     }
 

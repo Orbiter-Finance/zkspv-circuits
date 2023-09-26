@@ -15,9 +15,9 @@ use halo2_base::{
 
 use crate::util::scheduler::{SchedulerCommon, Task};
 
+pub mod circuit_types;
 pub mod helper;
 pub mod test;
-pub mod circuit_types;
 
 // pub struct ArbitrationScheduler <T: Task> {
 

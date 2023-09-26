@@ -23,6 +23,7 @@ use crate::providers::get_transaction_input;
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{RlcContextPair, FIRST_PHASE};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
+use crate::transaction::ethereum::util::TransactionConstructor;
 use crate::transaction::{
     load_transaction_type, EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_2718_TX_TYPE,
     EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_TX_TYPE_CRITICAL_VALUE,
@@ -32,6 +33,7 @@ use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS}
 
 pub mod helper;
 pub mod tests;
+pub mod util;
 
 // lazy_static! {
 //     static ref KECCAK_RLP_EMPTY_STRING: Vec<u8> =
@@ -99,24 +101,16 @@ pub struct EthBlockTransactionCircuit {
 }
 
 impl EthBlockTransactionCircuit {
-    pub fn from_provider(
-        provider: &Provider<Http>,
-        block_number: u32,
-        transaction_index: u32,
-        transaction_rlp: Vec<u8>,
-        merkle_proof: Vec<Bytes>,
-        transaction_pf_max_depth: usize,
-        network: Network,
-    ) -> Self {
+    pub fn from_provider(provider: &Provider<Http>, constructor: TransactionConstructor) -> Self {
         let inputs = get_transaction_input(
             provider,
-            block_number,
-            transaction_index,
-            transaction_rlp,
-            merkle_proof,
-            transaction_pf_max_depth,
+            constructor.block_number,
+            constructor.transaction_index,
+            constructor.transaction_rlp,
+            constructor.merkle_proof,
+            constructor.transaction_pf_max_depth,
         );
-        let block_header_config = get_block_header_config(&network);
+        let block_header_config = get_block_header_config(&constructor.network);
         Self { inputs, block_header_config }
     }
 }

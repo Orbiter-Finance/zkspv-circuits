@@ -7,6 +7,8 @@ use crate::{
 };
 
 use super::EthScheduler;
+use crate::storage::util::StorageConstructor;
+use crate::transaction::ethereum::EthBlockTransactionCircuit;
 use crate::util::scheduler::{self, AnyCircuit};
 use circuit_derive::AnyCircuit;
 use halo2_base::halo2_proofs::{
@@ -20,8 +22,14 @@ use std::path::Path;
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, AnyCircuit)]
 pub enum CircuitRouter {
+    Transaction(EthBlockTransactionCircuit),
+    AggreateTransactions(PublicAggregationCircuit),
+
     BlockTrackInterval(EthTrackBlockCircuit),
     AggreateBlockTracks(PublicAggregationCircuit),
+
+    MdcStorage(EthBlockStorageCircuit),
+    AggreateMdcStorages(PublicAggregationCircuit),
 }
 
 pub type ArbitrationScheduler = EthScheduler<ArbitrationTask>;
@@ -33,8 +41,40 @@ impl scheduler::Scheduler for ArbitrationScheduler {
 
     fn get_circuit(&self, task: Self::Task, prev_snarks: Vec<Snark>) -> Self::CircuitRouter {
         match task {
-            ArbitrationTask::Transaction() => todo!(),
-            ArbitrationTask::MDCState(_) => todo!(),
+            ArbitrationTask::Transaction(task) => {
+                if task.tasks_len == 1 {
+                    println!("TASK_LEN1======");
+                    CircuitRouter::Transaction(task.input)
+                } else {
+                    println!("AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
+                    return CircuitRouter::AggreateTransactions(PublicAggregationCircuit::new(
+                        prev_snarks
+                            .into_iter()
+                            .map(|snark| {
+                                println!("instances num {}", snark.instances.len());
+                                (snark, false)
+                            })
+                            .collect(),
+                    ));
+                }
+            }
+            ArbitrationTask::MDCState(task) => {
+                if task.tasks_len == 1 {
+                    println!("TASK_LEN1======");
+                    CircuitRouter::MdcStorage(task.input)
+                } else {
+                    println!("AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
+                    return CircuitRouter::AggreateMdcStorages(PublicAggregationCircuit::new(
+                        prev_snarks
+                            .into_iter()
+                            .map(|snark| {
+                                println!("instances num {}", snark.instances.len());
+                                (snark, false)
+                            })
+                            .collect(),
+                    ));
+                }
+            }
             ArbitrationTask::ETHBlockTrack(task) => {
                 if task.tasks_len == 1 {
                     println!("TASK_LEN1======");
@@ -64,8 +104,8 @@ pub trait ArbitrationBus {
     fn get_cross_tx_circuit();
 
     // for MDC config on L1(Ethereum)
-    fn get_storage_circuit(network: Network, block_number: u32) -> EthBlockStorageCircuit {
-        get_mdc_storage_circuit(network, block_number)
+    fn get_storage_circuit(constructor: StorageConstructor) -> EthBlockStorageCircuit {
+        get_mdc_storage_circuit(constructor)
     }
 
     // Track Block from L1(Ethereum)

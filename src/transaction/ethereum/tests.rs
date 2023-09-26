@@ -9,6 +9,7 @@ use halo2_base::utils::fs::gen_srs;
 
 use crate::halo2_proofs::dev::MockProver;
 use crate::rlp::builder::RlcThreadBuilder;
+use crate::transaction::ethereum::util::TransactionConstructor;
 use crate::transaction::ethereum::EthBlockTransactionCircuit;
 use crate::util::helpers::get_provider;
 use crate::util::EthConfigParams;
@@ -37,15 +38,18 @@ pub fn get_test_circuit(
         }
         _ => {}
     }
-    EthBlockTransactionCircuit::from_provider(
-        &provider,
+
+    let transaction_pf_max_depth = merkle_proof.len().clone();
+
+    let constructor = TransactionConstructor {
         block_number,
         transaction_index,
         transaction_rlp,
         merkle_proof,
-        3,
+        transaction_pf_max_depth,
         network,
-    )
+    };
+    EthBlockTransactionCircuit::from_provider(&provider, constructor)
 }
 
 #[test]

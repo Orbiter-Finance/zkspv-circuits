@@ -1,10 +1,9 @@
 use std::str::FromStr;
 
-use ethers_core::types::Bytes;
 use ethers_core::types::H256;
+use ethers_core::types::{Address, Bytes};
 use hex::FromHex;
 
-use crate::providers::EbcRuleParams;
 use crate::util::helpers::calculate_mk_address_struct;
 use crate::{
     config::contract::get_mdc_config, util::helpers::get_provider, EthereumNetwork, Network,
@@ -12,12 +11,32 @@ use crate::{
 
 use super::EthBlockStorageCircuit;
 
-pub fn get_mdc_storage_circuit(network: Network, block_number: u32) -> EthBlockStorageCircuit {
+#[derive(Clone, Debug)]
+pub struct EbcRuleParams {
+    pub ebc_rule_key: H256,
+    pub ebc_rule_root: H256,
+    pub ebc_rule_value: Vec<u8>,
+    pub ebc_rule_merkle_proof: Vec<Bytes>,
+    pub ebc_rule_pf_max_depth: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct StorageConstructor {
+    pub block_number: u32,
+    pub address: Address,
+    pub slots: Vec<H256>,
+    pub acct_pf_max_depth: usize,
+    pub storage_pf_max_depth: usize,
+    pub ebc_rule_params: EbcRuleParams,
+    pub network: Network,
+}
+
+pub fn get_mdc_storage_circuit(constructor: StorageConstructor) -> EthBlockStorageCircuit {
     let mut addr = Default::default();
     let mdc_config = get_mdc_config();
-    let provider = get_provider(&network);
+    let provider = get_provider(&constructor.network);
 
-    match network {
+    match &constructor.network {
         Network::Ethereum(EthereumNetwork::Mainnet) => {
             addr = mdc_config.mainnet;
         }
@@ -25,7 +44,7 @@ pub fn get_mdc_storage_circuit(network: Network, block_number: u32) -> EthBlockS
             addr = mdc_config.goerli;
         }
         _ => {
-            panic!("no match network Type! {:?}", network)
+            panic!("no match network Type! {:?}", &constructor.network)
         }
     }
 
@@ -65,14 +84,5 @@ pub fn get_mdc_storage_circuit(network: Network, block_number: u32) -> EthBlockS
     let root_slot = calculate_mk_address_struct(addr, mapping_position, root_slot_position);
     let version_slot = calculate_mk_address_struct(addr, mapping_position, version_slot_position);
     let slots = vec![root_slot, version_slot];
-    EthBlockStorageCircuit::from_provider(
-        &provider,
-        block_number,
-        addr,
-        slots,
-        8,
-        8,
-        ebc_rule_params,
-        network,
-    )
+    EthBlockStorageCircuit::from_provider(&provider, constructor)
 }
