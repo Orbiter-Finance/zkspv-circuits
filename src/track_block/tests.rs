@@ -1,14 +1,17 @@
 use crate::halo2_proofs::dev::MockProver;
 use crate::rlp::builder::RlcThreadBuilder;
+use crate::track_block::util::TrackBlockConstructor;
 use crate::track_block::EthTrackBlockCircuit;
 use crate::util::helpers::get_provider;
 use crate::util::EthConfigParams;
 use crate::{EthPreCircuit, EthereumNetwork, Network};
 use std::env::set_var;
+use std::ops::Range;
 
 fn get_test_circuit(block_number_interval: Vec<u64>, network: Network) -> EthTrackBlockCircuit {
     let provider = get_provider(&network);
-    EthTrackBlockCircuit::from_provider(&provider, block_number_interval, network)
+    let constructor = TrackBlockConstructor { block_number_interval, network };
+    EthTrackBlockCircuit::from_provider(&provider, constructor)
 }
 
 #[test]

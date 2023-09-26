@@ -21,6 +21,7 @@ use crate::providers::get_block_track_input;
 use crate::rlp::builder::{parallelize_phase1, RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::FIRST_PHASE;
 use crate::rlp::RlpChip;
+use crate::track_block::util::TrackBlockConstructor;
 use crate::util::{bytes_be_to_u128, AssignedH256};
 use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS};
 
@@ -55,13 +56,9 @@ pub struct EthTrackBlockCircuit {
 }
 
 impl EthTrackBlockCircuit {
-    pub fn from_provider(
-        provider: &Provider<Http>,
-        block_number_interval: Vec<u64>,
-        network: Network,
-    ) -> Self {
-        let inputs = get_block_track_input(provider, block_number_interval);
-        let block_header_config = get_block_header_config(&network);
+    pub fn from_provider(provider: &Provider<Http>, constructor: TrackBlockConstructor) -> Self {
+        let inputs = get_block_track_input(provider, constructor.block_number_interval);
+        let block_header_config = get_block_header_config(&constructor.network);
         Self { inputs, block_header_config }
     }
 }

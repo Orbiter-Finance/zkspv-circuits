@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 
-use std::ops::{Mul, Not, Sub};
+use std::ops::{Mul, Not, Range, Sub};
 use std::path::PathBuf;
 use std::{
     convert::TryFrom,

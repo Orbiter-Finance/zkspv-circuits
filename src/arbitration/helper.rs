@@ -4,16 +4,16 @@ use std::{fmt::format, ops::Range, path::Path};
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use snark_verifier_sdk::Snark;
 
 use crate::arbitration::circuit_types::{EthStorageCircuitType, EthTransactionCircuitType};
 use crate::storage::util::{get_mdc_storage_circuit, StorageConstructor};
 use crate::storage::EthBlockStorageCircuit;
+use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
 use crate::{
     track_block::{util::get_eth_track_block_circuit, EthTrackBlockCircuit},
-    transaction::ethereum::{
-        helper::TransactionTask as ETHTransactionTask, EthBlockTransactionCircuit,
-    },
+    transaction::ethereum::EthBlockTransactionCircuit,
     util::{scheduler, EthConfigPinning, Halo2ConfigPinning},
     EthereumNetwork, Network,
 };
@@ -23,7 +23,9 @@ use super::circuit_types::{ArbitrationCircuitType, EthTrackBlockCircuitType};
 pub type CrossChainNetwork = Network;
 
 #[derive(Clone, Debug)]
-pub struct FinalAssemblyTask {}
+pub struct FinalAssemblyTask {
+    pub snarks: Vec<Snark>,
+}
 
 #[derive(Clone, Debug)]
 pub struct ETHBlockTrackTask {
@@ -31,7 +33,7 @@ pub struct ETHBlockTrackTask {
     pub network: Network,
     pub tasks_len: u64,
     pub task_width: u64,
-    pub track_task_interval: Vec<Range<u64>>,
+    pub constructor: Vec<TrackBlockConstructor>,
 }
 
 impl scheduler::Task for ETHBlockTrackTask {
@@ -48,7 +50,9 @@ impl scheduler::Task for ETHBlockTrackTask {
     fn name(&self) -> String {
         format!(
             "blockTrack_width_{}_start_{}_end_{}",
-            self.task_width, self.track_task_interval[0].start, self.track_task_interval[0].end
+            self.task_width,
+            self.constructor[0].block_number_interval.first().unwrap(),
+            self.constructor[0].block_number_interval.last().unwrap()
         )
     }
 
@@ -56,18 +60,15 @@ impl scheduler::Task for ETHBlockTrackTask {
         if self.tasks_len == 1 {
             return vec![];
         }
-        let track_task_interval = self.track_task_interval.clone();
-        let result = track_task_interval
+        let constructor = self.constructor.clone();
+        let result = constructor
             .into_iter()
-            .map(|interval| {
-                let d = interval.clone();
-                Self {
-                    input: get_eth_track_block_circuit(interval.collect_vec(), self.network),
-                    network: self.network,
-                    tasks_len: 1u64,
-                    task_width: self.task_width,
-                    track_task_interval: [d].to_vec(),
-                }
+            .map(|constructor| Self {
+                input: get_eth_track_block_circuit(constructor.clone()),
+                network: self.network,
+                tasks_len: 1u64,
+                task_width: self.task_width,
+                constructor: [constructor].to_vec(),
             })
             .collect_vec();
         result

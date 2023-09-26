@@ -8,6 +8,7 @@ use crate::{
 
 use super::EthScheduler;
 use crate::storage::util::StorageConstructor;
+use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::EthBlockTransactionCircuit;
 use crate::util::scheduler::{self, AnyCircuit};
 use circuit_derive::AnyCircuit;
@@ -109,11 +110,8 @@ pub trait ArbitrationBus {
     }
 
     // Track Block from L1(Ethereum)
-    fn get_track_block_circuit(
-        network: Network,
-        block_number_interval: Vec<u64>,
-    ) -> EthTrackBlockCircuit {
-        get_eth_track_block_circuit(block_number_interval, network)
+    fn get_track_block_circuit(constructor: TrackBlockConstructor) -> EthTrackBlockCircuit {
+        get_eth_track_block_circuit(constructor)
     }
 
     // need to proof three mdc config, tx_time as tx happened in cross chain network, block_n as the tx_time in L1 block number
