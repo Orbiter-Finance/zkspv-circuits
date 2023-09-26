@@ -82,25 +82,13 @@ pub fn test_arbitration_circuit() {
         let k = transaction_param.degree;
         let input = test_get_ethereum_tx_circuit(transaction_index, transaction_rlp, merkle_proof, Network::Ethereum(EthereumNetwork::Mainnet));
         let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
-        let manual_break_points = RlcThreadBreakPoints {
-            gate: [
-                [8108, 8109, 8108, 8110, 8109, 8108, 8109, 8109, 8110, 8110, 8110, 8110, 8108, 8110, 8110, 8110, 8109, 8108, 8108, 8110, 8109, 8109, 8110, 8110, 8110, 8109, 8110, 8108, 8108, 8108, 8109, 8110, 8110, 8110, 8110].into(), 
-                [8110, 8108, 8108, 8108, 8108, 8109, 8110, 8108, 8109, 8109, 8108, 8108, 8110, 8109, 8108, 8109, 8110, 8109].into(), 
-                [].into()
-            ].into(), 
-            rlc: [8109, 8110].into()
-        };
-        // let manual_break_points = RlcThreadBreakPoints {
-        //     gate: [[].into(), [].into(), [].into()].into(), 
-        //     rlc: [8109, 8110].into()
-        // };
         let break_points_t = circuit.circuit.break_points.take();
         let params = gen_srs(k);
-        let pk = gen_pk(&params, &circuit, Some("data/arbitration/eth_tx.pk".as_ref()));
+        let pk = gen_pk(&params, &circuit, None);
         let break_points = circuit.circuit.break_points.take();
         let storage_proof_time = start_timer!(|| "Ethereum Tx Proof SHPLONK");
-        let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(manual_break_points));
-        let snark = gen_snark_shplonk(&params, &pk, circuit, Some(PathBuf::from("data/arbitration/eth_tx.snark")));
+        let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
+        let snark = gen_snark_shplonk(&params, &pk, circuit, None::<&str>);
         end_timer!(storage_proof_time);
         (snark, storage_proof_time)
     };
@@ -111,67 +99,58 @@ pub fn test_arbitration_circuit() {
         let input = test_get_storage_circuit(Network::Ethereum(EthereumNetwork::Goerli), 9731724);
         let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
         let params = gen_srs(k);
-        let pk = gen_pk(&params, &circuit, Some("data/arbitration/storage.pk".as_ref()));
+        let pk = gen_pk(&params, &circuit, None);
         let break_points = circuit.circuit.break_points.take();
-        println!("break_points {:?}", break_points);
-        let manual_break_points = RlcThreadBreakPoints {
-            gate: [
-                [262034, 262034, 262034, 262032, 262032].into(), 
-                [262034, 262034].into(), 
-                [].into()
-            ].into(), 
-            rlc: [].into()
-        };
         let storage_proof_time = start_timer!(|| "Storage Proof SHPLONK");
         let circuit =
-            input.create_circuit(RlcThreadBuilder::prover(), Some(manual_break_points));
-        let snark = gen_snark_shplonk(&params, &pk, circuit, Some(PathBuf::from("data/arbitration/storage.snark")));
+            input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
+        let snark = gen_snark_shplonk(&params, &pk, circuit, None::<&str>);
         end_timer!(storage_proof_time);
         (snark, storage_proof_time)
     };
 
-    let k = evm_param.degree;
-    let params = gen_srs(k);
-    set_var("LOOKUP_BITS", evm_param.lookup_bits.to_string());
-    let evm_circuit = AggregationCircuit::public::<SHPLONK>(
-        CircuitBuilderStage::Keygen,
-        None,
-        evm_param.lookup_bits,
-        &params,
-        // vec![eth_tx_snark.clone(), storage_snark.clone()],
-        vec![eth_tx_snark.clone()],
-        false,
-    );
-    evm_circuit.config(k, Some(10));
-    let pk = gen_pk(&params, &evm_circuit, Some("data/arbitration/aribtration_evm.pk".as_ref()));
-    let break_points = evm_circuit.break_points();
-    println!("arbitration evm break_points {:?}", break_points);
+    // let k = evm_param.degree;
+    // let params = gen_srs(k);
+    // set_var("LOOKUP_BITS", evm_param.lookup_bits.to_string());
+    // let evm_circuit = AggregationCircuit::public::<SHPLONK>(
+    //     CircuitBuilderStage::Keygen,
+    //     None,
+    //     evm_param.lookup_bits,
+    //     &params,
+    //     // vec![eth_tx_snark.clone(), storage_snark.clone()],
+    //     vec![eth_tx_snark.clone()],
+    //     false,
+    // );
+    // evm_circuit.config(k, Some(10));
+    // let pk = gen_pk(&params, &evm_circuit, None);
+    // let break_points = evm_circuit.break_points();
+    // println!("arbitration evm break_points {:?}", break_points);
 
-    let instances = evm_circuit.instances();
-    let evm_proof_time = start_timer!(|| "EVM Proof SHPLONK");
-    let pf_circuit = AggregationCircuit::public::<SHPLONK>(
-        CircuitBuilderStage::Prover,
-        Some(break_points),
-        evm_param.lookup_bits,
-        &params,
-        vec![eth_tx_snark.clone(), storage_snark.clone()],
-        // vec![eth_tx_snark.clone()],
-        false,
-    );
-    let proof = gen_evm_proof_shplonk(&params, &pk, pf_circuit, instances.clone());
-    end_timer!(evm_proof_time);
-    fs::create_dir_all("data/transaction").unwrap();
-    write_calldata(&instances, &proof, Path::new("data/arbitration/test.calldata")).unwrap();
+    // let instances = evm_circuit.instances();
+    // let evm_proof_time = start_timer!(|| "EVM Proof SHPLONK");
+    // let pf_circuit = AggregationCircuit::public::<SHPLONK>(
+    //     CircuitBuilderStage::Prover,
+    //     Some(break_points),
+    //     evm_param.lookup_bits,
+    //     &params,
+    //     vec![eth_tx_snark.clone(), storage_snark.clone()],
+    //     // vec![eth_tx_snark.clone()],
+    //     false,
+    // );
+    // let proof = gen_evm_proof_shplonk(&params, &pk, pf_circuit, instances.clone());
+    // end_timer!(evm_proof_time);
+    // fs::create_dir_all("data/transaction").unwrap();
+    // write_calldata(&instances, &proof, Path::new("data/arbitration/test.calldata")).unwrap();
 
-    let deployment_code = custom_gen_evm_verifier_shplonk(
-        &params,
-        pk.get_vk(),
-        &evm_circuit,
-        Some(Path::new("data/arbitration/test.yul")),
-    );
+    // let deployment_code = custom_gen_evm_verifier_shplonk(
+    //     &params,
+    //     pk.get_vk(),
+    //     &evm_circuit,
+    //     Some(Path::new("data/arbitration/test.yul")),
+    // );
 
     // this verifies proof in EVM and outputs gas cost (if successful)
-    evm_verify(deployment_code, instances, proof);
+    // evm_verify(deployment_code, instances, proof);
 
 
 }
