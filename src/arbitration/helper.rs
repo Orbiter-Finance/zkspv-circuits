@@ -6,7 +6,9 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use snark_verifier_sdk::Snark;
 
-use crate::arbitration::circuit_types::{EthStorageCircuitType, EthTransactionCircuitType};
+use crate::arbitration::circuit_types::{
+    EthStorageCircuitType, EthTransactionCircuitType, FinalAssemblyCircuitType,
+};
 use crate::storage::util::{get_mdc_storage_circuit, StorageConstructor};
 use crate::storage::EthBlockStorageCircuit;
 use crate::track_block::util::TrackBlockConstructor;
@@ -24,7 +26,35 @@ pub type CrossChainNetwork = Network;
 
 #[derive(Clone, Debug)]
 pub struct FinalAssemblyTask {
+    pub round: usize,
+    pub network: Network,
     pub snarks: Vec<Snark>,
+}
+
+impl scheduler::Task for FinalAssemblyTask {
+    type CircuitType = FinalAssemblyCircuitType;
+
+    fn circuit_type(&self) -> Self::CircuitType {
+        FinalAssemblyCircuitType { network: self.network, round: self.round }
+    }
+
+    fn name(&self) -> String {
+        format!("finalAssembly_round_{}", self.round)
+    }
+
+    fn dependencies(&self) -> Vec<Self> {
+        if self.round != 0 {
+            let mut circuit_type = self.circuit_type().clone();
+            circuit_type.round -= 1;
+            return vec![];
+        }
+        let snarks = self.snarks.clone();
+        let result = snarks
+            .into_iter()
+            .map(|snark| Self { round: 0, network: self.network, snarks: vec![snark] })
+            .collect_vec();
+        result
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -60,8 +90,8 @@ impl scheduler::Task for ETHBlockTrackTask {
         if self.tasks_len == 1 {
             return vec![];
         }
-        let constructor = self.constructor.clone();
-        let result = constructor
+        let constructors = self.constructor.clone();
+        let result = constructors
             .into_iter()
             .map(|constructor| Self {
                 input: get_eth_track_block_circuit(constructor.clone()),
@@ -196,7 +226,9 @@ impl scheduler::Task for ArbitrationTask {
             ArbitrationTask::MDCState(task) => {
                 ArbitrationCircuitType::MdcStorage(task.circuit_type())
             }
-            ArbitrationTask::Final(task) => todo!(),
+            ArbitrationTask::Final(task) => {
+                ArbitrationCircuitType::FinalAssembly(task.circuit_type())
+            }
         }
     }
 
@@ -205,7 +237,7 @@ impl scheduler::Task for ArbitrationTask {
             ArbitrationTask::ETHBlockTrack(task) => task.name(),
             ArbitrationTask::Transaction(task) => task.name(),
             ArbitrationTask::MDCState(task) => task.name(),
-            ArbitrationTask::Final(_) => todo!(),
+            ArbitrationTask::Final(task) => task.name(),
         }
     }
 
@@ -220,7 +252,9 @@ impl scheduler::Task for ArbitrationTask {
             ArbitrationTask::ETHBlockTrack(task) => {
                 task.dependencies().into_iter().map(ArbitrationTask::ETHBlockTrack).collect()
             }
-            ArbitrationTask::Final(_) => todo!(),
+            ArbitrationTask::Final(task) => {
+                task.dependencies().into_iter().map(ArbitrationTask::Final).collect()
+            }
         }
     }
 }

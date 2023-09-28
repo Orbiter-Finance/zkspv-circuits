@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::util::AggregationConfigPinning;
 use crate::{
     util::{scheduler, EthConfigPinning, Halo2ConfigPinning},
     Network,
@@ -21,6 +22,7 @@ impl scheduler::CircuitType for EthTrackBlockCircuitType {
     }
 }
 
+//Todo Replace the task_width with the appropriate parameters
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct EthTransactionCircuitType {
     pub network: Network,
@@ -37,6 +39,7 @@ impl scheduler::CircuitType for EthTransactionCircuitType {
     }
 }
 
+//Todo Replace the task_width with the appropriate parameters
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct EthStorageCircuitType {
     pub network: Network,
@@ -54,10 +57,32 @@ impl scheduler::CircuitType for EthStorageCircuitType {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct FinalAssemblyCircuitType {
+    /// Performs `round` rounds of SNARK verification using `PublicAggregationCircuit` on the final circuit.
+    /// This is used to reduce circuit size and final EVM verification gas costs.
+    pub network: Network,
+    pub round: usize,
+}
+
+impl scheduler::CircuitType for FinalAssemblyCircuitType {
+    fn name(&self) -> String {
+        format!("final_round_{}", self.round)
+    }
+    fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
+        if self.round == 0 {
+            EthConfigPinning::from_path(pinning_path.as_ref()).degree()
+        } else {
+            AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()
+        }
+    }
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum ArbitrationCircuitType {
     TrackBlock(EthTrackBlockCircuitType),
     Transaction(EthTransactionCircuitType),
     MdcStorage(EthStorageCircuitType),
+    FinalAssembly(FinalAssemblyCircuitType),
 }
 
 impl scheduler::CircuitType for ArbitrationCircuitType {
@@ -66,6 +91,7 @@ impl scheduler::CircuitType for ArbitrationCircuitType {
             ArbitrationCircuitType::TrackBlock(circuit_type) => circuit_type.name(),
             ArbitrationCircuitType::Transaction(circuit_type) => circuit_type.name(),
             ArbitrationCircuitType::MdcStorage(circuit_type) => circuit_type.name(),
+            ArbitrationCircuitType::FinalAssembly(circuit_type) => circuit_type.name(),
         }
     }
 
@@ -74,10 +100,16 @@ impl scheduler::CircuitType for ArbitrationCircuitType {
             ArbitrationCircuitType::TrackBlock(circuit_type) => {
                 circuit_type.get_degree_from_pinning(pinning_path)
             }
+
             ArbitrationCircuitType::Transaction(circuit_type) => {
                 circuit_type.get_degree_from_pinning(pinning_path)
             }
+
             ArbitrationCircuitType::MdcStorage(circuit_type) => {
+                circuit_type.get_degree_from_pinning(pinning_path)
+            }
+
+            ArbitrationCircuitType::FinalAssembly(circuit_type) => {
                 circuit_type.get_degree_from_pinning(pinning_path)
             }
         }

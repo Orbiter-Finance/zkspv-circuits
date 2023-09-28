@@ -9,6 +9,7 @@ use ark_std::{end_timer, start_timer};
 use ethers_core::types::Bytes;
 use halo2_base::{gates::builder::CircuitBuilderStage, utils::fs::gen_srs};
 use hex::FromHex;
+use itertools::Itertools;
 use snark_verifier_sdk::{
     evm::{evm_verify, gen_evm_proof_shplonk, write_calldata},
     gen_pk,
@@ -73,15 +74,19 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
 pub fn test_arbitration_scheduler_block_track_task() {
     let network = Network::Ethereum(EthereumNetwork::Mainnet);
     let block_number_interval =
-        vec![(17113952..17113953).collect(), (17113955..17113956).collect()];
-    let constructor = TrackBlockConstructor { block_number_interval, network };
+        vec![(17113952..17113954).collect_vec(), (17113955..17113957).collect_vec()];
+    let constructor_one =
+        TrackBlockConstructor { block_number_interval: block_number_interval[0].clone(), network };
+    let constructor_two =
+        TrackBlockConstructor { block_number_interval: block_number_interval[1].clone(), network };
+
     let scheduler = test_scheduler(network);
     let _task = ETHBlockTrackTask {
-        input: test_get_block_track_circuit(constructor.clone()),
+        input: test_get_block_track_circuit(constructor_one.clone()),
         network: Network::Ethereum(EthereumNetwork::Mainnet),
         tasks_len: 2,
         task_width: 1,
-        constructor: vec![constructor],
+        constructor: vec![constructor_one, constructor_two],
     };
 
     scheduler.get_snark(ArbitrationTask::ETHBlockTrack(_task));

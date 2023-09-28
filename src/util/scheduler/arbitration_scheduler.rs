@@ -93,7 +93,10 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                     ));
                 }
             }
-            ArbitrationTask::Final(_) => todo!(),
+            ArbitrationTask::Final(task) => {
+                println!("this is final task");
+                unimplemented!()
+            }
         }
     }
 }
