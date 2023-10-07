@@ -79,7 +79,6 @@ pub fn test_arbitration_scheduler_block_track_task() {
         TrackBlockConstructor { block_number_interval: block_number_interval[0].clone(), network };
     let constructor_two =
         TrackBlockConstructor { block_number_interval: block_number_interval[1].clone(), network };
-
     let scheduler = test_scheduler(network);
     let _task = ETHBlockTrackTask {
         input: test_get_block_track_circuit(constructor_one.clone()),

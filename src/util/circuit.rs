@@ -22,7 +22,7 @@ use snark_verifier_sdk::{
     halo2::{aggregation::AggregationCircuit, gen_snark_shplonk},
     read_pk, CircuitExt, Snark, LIMBS, SHPLONK,
 };
-use std::io::Read;
+use std::io::{Read, Seek};
 use std::{env::var, fs::File, path::Path};
 
 pub trait PinnableCircuit<F: ff::Field>: CircuitExt<F> {
@@ -168,6 +168,7 @@ impl<C: PreCircuit> AnyCircuit for C {
         pinning_path: impl AsRef<Path>,
         read_only: bool,
     ) -> ProvingKey<G1Affine> {
+        println!("read pk");
         if read_only {
             self.read_pk(params, pk_path)
         } else {

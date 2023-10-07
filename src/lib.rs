@@ -47,7 +47,6 @@ pub mod track_block;
 pub mod transaction;
 
 pub mod config;
-pub mod final_assembly;
 #[cfg(feature = "providers")]
 pub mod providers;
 pub mod util;
