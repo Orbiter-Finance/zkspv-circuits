@@ -74,7 +74,7 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
 pub fn test_arbitration_scheduler_block_track_task() {
     let network = Network::Ethereum(EthereumNetwork::Mainnet);
     let block_number_interval =
-        vec![(17113952..17113954).collect_vec(), (17113955..17113957).collect_vec()];
+        vec![(17113952..17113953).collect_vec(), (17113955..17113956).collect_vec()];
     let constructor_one =
         TrackBlockConstructor { block_number_interval: block_number_interval[0].clone(), network };
     let constructor_two =
@@ -132,6 +132,7 @@ pub fn test_arbitration_scheduler_transaction_task() {
     scheduler.get_snark(ArbitrationTask::Transaction(_task));
 }
 
+
 #[test]
 pub fn test_arbitration_circuit() {
     let transaction_param = EthConfigParams::from_path("configs/arbitration/ethereum_tx.json");
@@ -186,15 +187,15 @@ pub fn test_arbitration_circuit() {
         // };
         let break_points_t = circuit.circuit.break_points.take();
         let params = gen_srs(k);
-        let pk = gen_pk(&params, &circuit, Some("data/arbitration/eth_tx.pk".as_ref()));
+        let pk = gen_pk(&params, &circuit, None);
         let break_points = circuit.circuit.break_points.take();
         let storage_proof_time = start_timer!(|| "Ethereum Tx Proof SHPLONK");
-        let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(manual_break_points));
+        let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
         let snark = gen_snark_shplonk(
             &params,
             &pk,
             circuit,
-            Some(PathBuf::from("data/arbitration/eth_tx.snark")),
+            None::<&str>,
         );
         end_timer!(storage_proof_time);
         (snark, storage_proof_time)
@@ -206,7 +207,7 @@ pub fn test_arbitration_circuit() {
         let input = test_get_storage_circuit(Network::Ethereum(EthereumNetwork::Goerli), 9731724);
         let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
         let params = gen_srs(k);
-        let pk = gen_pk(&params, &circuit, Some("data/arbitration/storage.pk".as_ref()));
+        let pk = gen_pk(&params, &circuit, None);
         let break_points = circuit.circuit.break_points.take();
         println!("break_points {:?}", break_points);
         let manual_break_points = RlcThreadBreakPoints {
@@ -219,12 +220,12 @@ pub fn test_arbitration_circuit() {
             rlc: [].into(),
         };
         let storage_proof_time = start_timer!(|| "Storage Proof SHPLONK");
-        let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(manual_break_points));
+        let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
         let snark = gen_snark_shplonk(
             &params,
             &pk,
             circuit,
-            Some(PathBuf::from("data/arbitration/storage.snark")),
+            None::<&str>,
         );
         end_timer!(storage_proof_time);
         (snark, storage_proof_time)
@@ -243,7 +244,7 @@ pub fn test_arbitration_circuit() {
         false,
     );
     evm_circuit.config(k, Some(10));
-    let pk = gen_pk(&params, &evm_circuit, Some("data/arbitration/aribtration_evm.pk".as_ref()));
+    let pk = gen_pk(&params, &evm_circuit, None);
     let break_points = evm_circuit.break_points();
     println!("arbitration evm break_points {:?}", break_points);
 
