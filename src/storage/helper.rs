@@ -1,18 +1,18 @@
 use std::path::Path;
 
-use crate::Network;
-use crate::util::{EthConfigPinning, Halo2ConfigPinning};
 use crate::util::scheduler::{CircuitType, Task};
+use crate::util::{EthConfigPinning, Halo2ConfigPinning};
+use crate::Network;
 
-pub type StorageBlockRange = [u32;3];
+pub type StorageBlockRange = [u32; 3];
 
 pub enum StorageTask {
     SingleStorage(SingleStorageTask),
-    BatchStorage(BatchStorageTask)
+    BatchStorage(BatchStorageTask),
 }
 
 pub struct SingleStorageTask {
-    pub network:Network,
+    pub network: Network,
     pub block_num: u32,
 }
 
@@ -44,7 +44,7 @@ pub struct SingleStorageTask {
 
 #[derive(Clone, Debug)]
 pub struct BatchStorageTask {
-    pub network:Network,
+    pub network: Network,
     pub block_range: StorageBlockRange,
 }
 
@@ -54,7 +54,7 @@ impl BatchStorageTask {
     }
 }
 
-impl CircuitType for (Network, u32,u32,u32) {
+impl CircuitType for (Network, u32, u32, u32) {
     fn name(&self) -> String {
         format!("{}_{}_{}_{}", self.0, self.1, self.2, self.3)
     }
@@ -66,7 +66,7 @@ impl CircuitType for (Network, u32,u32,u32) {
 }
 
 impl Task for BatchStorageTask {
-    type CircuitType = (Network, u32, u32,u32);
+    type CircuitType = (Network, u32, u32, u32);
 
     fn circuit_type(&self) -> Self::CircuitType {
         (self.network, self.block_range[0], self.block_range[1], self.block_range[2])

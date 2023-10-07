@@ -70,7 +70,7 @@ impl EthBlockHeaderChainFinalAggregationCircuit {
         let max_depth = self.0.max_depth;
         let initial_depth = self.0.initial_depth;
         #[cfg(feature = "display")]
-            let timer = start_timer!(|| {
+        let timer = start_timer!(|| {
             format!("New EthBlockHeaderChainFinalAggregationCircuit | num_blocks: {num_blocks} | max_depth: {max_depth} | initial_depth: {initial_depth}")
         });
         let aggregation = AggregationCircuit::new::<SHPLONK>(
@@ -152,7 +152,7 @@ impl EthBlockHeaderChainFinalAggregationCircuit {
             let config_params: EthConfigParams = serde_json::from_str(
                 var("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
             )
-                .unwrap();
+            .unwrap();
             circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
         }
         circuit

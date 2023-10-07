@@ -90,9 +90,9 @@ mod rlc {
             1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5,
             6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0,
         ]
-            .into_iter()
-            .map(|x| Fr::from(x as u64))
-            .collect_vec();
+        .into_iter()
+        .map(|x| Fr::from(x as u64))
+        .collect_vec();
         let len = 32;
 
         let circuit = rlc_test_circuit(RlcThreadBuilder::mock(), input_bytes, len);
@@ -108,9 +108,9 @@ mod rlc {
             1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5,
             6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0,
         ]
-            .into_iter()
-            .map(|x| Fr::from(x as u64))
-            .collect_vec();
+        .into_iter()
+        .map(|x| Fr::from(x as u64))
+        .collect_vec();
         let len = 32;
 
         let mut rng = StdRng::from_seed([0u8; 32]);
@@ -151,7 +151,7 @@ mod rlc {
             Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
             SingleStrategy<'_, Bn256>,
         >(verifier_params, pk.get_vk(), strategy, &[&[]], &mut transcript)
-            .unwrap();
+        .unwrap();
         println!("verify done");
         Ok(())
     }
@@ -163,8 +163,8 @@ mod rlp {
         builder::{FnSynthesize, RlcThreadBuilder},
         *,
     };
+    use ethers_core::utils::hex::FromHex;
     use halo2_base::halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-     use ethers_core::utils::hex::FromHex;
     use std::env::set_var;
     use test_log::test;
 
@@ -308,18 +308,18 @@ mod rlp {
 /// * The user also specifies a closure `synthesize_phase1(builder, challenge)` that specifies all calculations that should be done in phase 1.
 /// The builder will then handle the process of assigning all advice cells in phase 1, squeezing a challenge value `challenge` from the backend API, and then using that value to do all phase 1 witness generation.
 pub struct RlcCircuitBuilder<F: ScalarField, FnPhase1>
-    where
-        FnPhase1: FnSynthesize<F>,
+where
+    FnPhase1: FnSynthesize<F>,
 {
     pub builder: RefCell<RlcThreadBuilder<F>>,
     pub break_points: RefCell<RlcThreadBreakPoints>, // `RefCell` allows the circuit to record break points in a keygen call of `synthesize` for use in later witness gen
-// we guarantee that `synthesize_phase1` is called *exactly once* during the proving stage, but since `Circuit::synthesize` takes `&self`, and `assign_region` takes a `Fn` instead of `FnOnce`, we need some extra engineering:
-pub synthesize_phase1: RefCell<Option<FnPhase1>>,
+    // we guarantee that `synthesize_phase1` is called *exactly once* during the proving stage, but since `Circuit::synthesize` takes `&self`, and `assign_region` takes a `Fn` instead of `FnOnce`, we need some extra engineering:
+    pub synthesize_phase1: RefCell<Option<FnPhase1>>,
 }
 
 impl<F: ScalarField, FnPhase1> RlcCircuitBuilder<F, FnPhase1>
-    where
-        FnPhase1: FnSynthesize<F>,
+where
+    FnPhase1: FnSynthesize<F>,
 {
     pub fn new(
         builder: RlcThreadBuilder<F>,
@@ -352,11 +352,11 @@ impl<F: ScalarField, FnPhase1> RlcCircuitBuilder<F, FnPhase1>
     ) {
         let mut first_pass = SKIP_FIRST_PASS;
         #[cfg(feature = "halo2-axiom")]
-            let witness_gen_only = self.builder.borrow().witness_gen_only();
+        let witness_gen_only = self.builder.borrow().witness_gen_only();
         // in non halo2-axiom, the prover calls `synthesize` twice: first just to get FirstPhase advice columns, commit, and then generate challenge value; then the second time to actually compute SecondPhase advice
         // our "Prover" implementation is heavily optimized for the Axiom version, which only calls `synthesize` once
         #[cfg(not(feature = "halo2-axiom"))]
-            let witness_gen_only = false;
+        let witness_gen_only = false;
 
         let mut gamma = None;
         if !witness_gen_only {
@@ -438,8 +438,8 @@ impl<F: ScalarField, FnPhase1> RlcCircuitBuilder<F, FnPhase1>
 }
 
 impl<F: ScalarField, FnPhase1> Circuit<F> for RlcCircuitBuilder<F, FnPhase1>
-    where
-        FnPhase1: FnSynthesize<F>,
+where
+    FnPhase1: FnSynthesize<F>,
 {
     type Config = RlcGateConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
@@ -484,12 +484,12 @@ impl<F: ScalarField, FnPhase1> Circuit<F> for RlcCircuitBuilder<F, FnPhase1>
 
 /// A wrapper around RlcCircuitBuilder where Gate is replaced by Range in the circuit
 pub struct RlpCircuitBuilder<F: ScalarField, FnPhase1>(RlcCircuitBuilder<F, FnPhase1>)
-    where
-        FnPhase1: FnSynthesize<F>;
+where
+    FnPhase1: FnSynthesize<F>;
 
 impl<F: ScalarField, FnPhase1> RlpCircuitBuilder<F, FnPhase1>
-    where
-        FnPhase1: FnSynthesize<F>,
+where
+    FnPhase1: FnSynthesize<F>,
 {
     pub fn new(
         builder: RlcThreadBuilder<F>,
@@ -505,8 +505,8 @@ impl<F: ScalarField, FnPhase1> RlpCircuitBuilder<F, FnPhase1>
 }
 
 impl<F: ScalarField, FnPhase1> Circuit<F> for RlpCircuitBuilder<F, FnPhase1>
-    where
-        FnPhase1: FnSynthesize<F>,
+where
+    FnPhase1: FnSynthesize<F>,
 {
     type Config = RlpConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;

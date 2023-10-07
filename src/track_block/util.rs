@@ -1,13 +1,16 @@
-use crate::{ Network };
 use crate::track_block::EthTrackBlockCircuit;
-
 use crate::util::helpers::get_provider;
+use crate::Network;
 
-pub fn get_eth_track_block_circuit(
-    block_number_interval: Vec<u64>,
-    network: Network,
-) -> EthTrackBlockCircuit {
-    let provider = get_provider(&network);
+#[derive(Clone, Debug)]
+pub struct TrackBlockConstructor {
+    pub block_number_interval: Vec<u64>,
+    pub network: Network,
+}
 
-    EthTrackBlockCircuit::from_provider(&provider, block_number_interval, network)
+pub fn get_eth_track_block_circuit(constructor: TrackBlockConstructor) -> EthTrackBlockCircuit {
+    let provider = get_provider(&constructor.network);
+
+
+    EthTrackBlockCircuit::from_provider(&provider, constructor)
 }

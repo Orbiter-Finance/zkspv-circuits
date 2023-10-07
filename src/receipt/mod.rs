@@ -1,36 +1,40 @@
 mod tests;
 
-use std::{cell::RefCell};
+use std::cell::RefCell;
 
 use ethers_core::types::{Block, Bytes, H256};
 use ethers_providers::{Http, Provider};
-use halo2_base::{AssignedValue, Context};
-use halo2_base::gates::{GateInstructions, RangeChip, RangeInstructions};
 use halo2_base::gates::builder::GateThreadBuilder;
-use halo2_base::utils::bit_length;
+use halo2_base::gates::{GateInstructions, RangeChip, RangeInstructions};
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
+use halo2_base::utils::bit_length;
+use halo2_base::{AssignedValue, Context};
 use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 
-use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Network};
-use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace, EthBlockHeaderTraceWitness, get_block_header_config};
+use crate::block_header::{
+    get_block_header_config, BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace,
+    EthBlockHeaderTraceWitness,
+};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::mpt::{MPTInput, MPTProof, MPTProofWitness};
-use crate::providers::{ get_receipt_input};
-use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
+use crate::providers::get_receipt_input;
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
-use crate::rlp::rlc::{FIRST_PHASE, RlcContextPair};
-use crate::transaction::{EIP_2718_TX_TYPE, EIP_TX_TYPE_CRITICAL_VALUE, load_transaction_type};
-use crate::util::{AssignedH256, bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed};
+use crate::rlp::rlc::{RlcContextPair, FIRST_PHASE};
+use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
+use crate::transaction::{load_transaction_type, EIP_2718_TX_TYPE, EIP_TX_TYPE_CRITICAL_VALUE};
+use crate::util::{bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, AssignedH256};
+use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS};
 
-const RECEIPT_FIELDS_NUM:usize = 4;
-const RECEIPT_LOGS_BLOOM_MAX_LEN:usize = 256;
-const RECEIPT_LOGS_MAX_LEN:usize = 128;
-const RECEIPT_FIELDS_MAX_FIELDS_LEN:[usize;RECEIPT_FIELDS_NUM]= [8,8,RECEIPT_LOGS_BLOOM_MAX_LEN,RECEIPT_LOGS_MAX_LEN];
+const RECEIPT_FIELDS_NUM: usize = 4;
+const RECEIPT_LOGS_BLOOM_MAX_LEN: usize = 256;
+const RECEIPT_LOGS_MAX_LEN: usize = 128;
+const RECEIPT_FIELDS_MAX_FIELDS_LEN: [usize; RECEIPT_FIELDS_NUM] =
+    [8, 8, RECEIPT_LOGS_BLOOM_MAX_LEN, RECEIPT_LOGS_MAX_LEN];
 
 // Status of the transaction
 pub const TX_STATUS_SUCCESS: u8 = 1;
-const NUM_BITS :usize = 8;
+const NUM_BITS: usize = 8;
 
 #[derive(Clone, Debug)]
 pub struct EthReceiptInput {
@@ -123,14 +127,15 @@ impl EthPreCircuit for EthBlockReceiptCircuit {
             &mut builder.gate_builder,
             &mut keccak,
             input,
-            &self.block_header_config);
+            &self.block_header_config,
+        );
 
         let EIP1186ResponseDigest {
             block_hash,
             block_number,
             index,
             // slots_values,
-            receipt_is_empty
+            receipt_is_empty,
         } = digest;
 
         let assigned_instances = block_hash
@@ -174,7 +179,7 @@ pub struct EIP1186ResponseDigest<F: Field> {
 
 #[derive(Clone, Debug)]
 pub struct EthReceiptTrace<F: Field> {
-    pub value_trace:Vec<RlpFieldTrace<F>>,
+    pub value_trace: Vec<RlpFieldTrace<F>>,
 }
 
 #[derive(Clone, Debug)]
@@ -211,7 +216,6 @@ pub struct EthBlockReceiptTraceWitness<F: Field> {
 }
 
 pub trait EthBlockReceiptChip<F: Field> {
-
     // ================= FIRST PHASE ================
 
     fn parse_receipt_proof_from_block_phase0(
@@ -221,8 +225,8 @@ pub trait EthBlockReceiptChip<F: Field> {
         input: EthBlockReceiptInputAssigned<F>,
         block_header_config: &BlockHeaderConfig,
     ) -> (EthBlockReceiptTraceWitness<F>, EIP1186ResponseDigest<F>)
-        where
-            Self: EthBlockHeaderChip<F>;
+    where
+        Self: EthBlockHeaderChip<F>;
 
     fn parse_eip1186_proof_phase0(
         &self,
@@ -240,7 +244,6 @@ pub trait EthBlockReceiptChip<F: Field> {
         receipt_proofs: MPTProof<F>,
     ) -> EthReceiptTraceWitness<F>;
 
-
     // ================= SECOND PHASE ================
 
     fn parse_receipt_proof_from_block_phase1(
@@ -248,8 +251,8 @@ pub trait EthBlockReceiptChip<F: Field> {
         thread_pool: &mut RlcThreadBuilder<F>,
         witness: EthBlockReceiptTraceWitness<F>,
     ) -> EthBlockReceiptTrace<F>
-        where
-            Self: EthBlockHeaderChip<F>;
+    where
+        Self: EthBlockHeaderChip<F>;
 
     fn parse_eip1186_proof_phase1(
         &self,
@@ -265,7 +268,6 @@ pub trait EthBlockReceiptChip<F: Field> {
 }
 
 impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
-
     // ================= FIRST PHASE ================
 
     fn parse_receipt_proof_from_block_phase0(
@@ -275,23 +277,35 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         input: EthBlockReceiptInputAssigned<F>,
         block_header_config: &BlockHeaderConfig,
     ) -> (EthBlockReceiptTraceWitness<F>, EIP1186ResponseDigest<F>)
-        where
-            Self: EthBlockHeaderChip<F>, {
+    where
+        Self: EthBlockHeaderChip<F>,
+    {
         let ctx = thread_pool.main(FIRST_PHASE);
         let receipt_index = input.receipt.receipt_index;
         let mut block_header = input.block_header;
         block_header.resize(block_header_config.block_header_rlp_max_bytes, 0);
 
-        let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config);
+        let block_witness =
+            self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config);
         let receipts_root = &block_witness.get_receipts_root().field_cells;
         let block_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
 
         // compute block number from big-endian bytes
         let block_num_bytes = &block_witness.get_number().field_cells;
         let block_num_len = block_witness.get_number().field_len;
-        let block_number =
-            bytes_be_var_to_fixed(ctx, self.gate(), block_num_bytes, block_num_len, block_header_config.block_number_max_bytes);
-        let block_number = bytes_be_to_uint(ctx, self.gate(), &block_number, block_header_config.block_number_max_bytes);
+        let block_number = bytes_be_var_to_fixed(
+            ctx,
+            self.gate(),
+            block_num_bytes,
+            block_num_len,
+            block_header_config.block_number_max_bytes,
+        );
+        let block_number = bytes_be_to_uint(
+            ctx,
+            self.gate(),
+            &block_number,
+            block_header_config.block_number_max_bytes,
+        );
 
         // drop ctx
         let receipt_witness = self.parse_eip1186_proof_phase0(
@@ -319,12 +333,8 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         receipt_proofs: MPTProof<F>,
     ) -> EthReceiptTraceWitness<F> {
         let ctx = thread_pool.main(FIRST_PHASE);
-        let receipt_trace = self.parse_receipt_proof_phase0(
-            ctx,
-            keccak,
-            receipts_root,
-            receipt_proofs,
-        );
+        let receipt_trace =
+            self.parse_receipt_proof_phase0(ctx, keccak, receipts_root, receipt_proofs);
         receipt_trace
     }
 
@@ -335,7 +345,6 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         receipts_root: &[AssignedValue<F>],
         receipt_proofs: MPTProof<F>,
     ) -> EthReceiptTraceWitness<F> {
-
         // check MPT root is receipts_root
         for (mpt_root, re_root) in receipt_proofs.root_hash_bytes.iter().zip(receipts_root.iter()) {
             ctx.constrain_equal(mpt_root, re_root);
@@ -343,7 +352,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
 
         let transaction_type = receipt_proofs.value_bytes.first().unwrap();
 
-        let tx_type_critical_value = load_transaction_type(ctx,EIP_TX_TYPE_CRITICAL_VALUE);
+        let tx_type_critical_value = load_transaction_type(ctx, EIP_TX_TYPE_CRITICAL_VALUE);
 
         let zero = ctx.load_constant(F::from(0));
         let is_not_legacy_transaction =
@@ -351,17 +360,17 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
 
         let mut receipt_rlp_bytes = receipt_proofs.value_bytes.to_vec();
 
-        if is_not_legacy_transaction.value == zero.value{
-            let legacy_transaction_type = load_transaction_type(ctx,EIP_2718_TX_TYPE);
-            ctx.constrain_equal(transaction_type,&legacy_transaction_type);
-        }else{
+        if is_not_legacy_transaction.value == zero.value {
+            let legacy_transaction_type = load_transaction_type(ctx, EIP_2718_TX_TYPE);
+            ctx.constrain_equal(transaction_type, &legacy_transaction_type);
+        } else {
             receipt_rlp_bytes = receipt_rlp_bytes[1..].to_vec();
         }
 
         let receipt_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
             receipt_rlp_bytes,
-            &RECEIPT_FIELDS_MAX_FIELDS_LEN,//Maximum number of bytes per field. For example, the uint64 is 8 bytes.
+            &RECEIPT_FIELDS_MAX_FIELDS_LEN, //Maximum number of bytes per field. For example, the uint64 is 8 bytes.
             true,
         );
 
@@ -369,19 +378,17 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         let tx_status_success = ctx.load_witness(tx_status_success);
 
         // check tx_status is TX_STATUS_SUCCESS
-        for (tx_status, success_status) in receipt_witness.field_witness[0].field_cells.iter().zip(vec![tx_status_success].iter()) {
+        for (tx_status, success_status) in
+            receipt_witness.field_witness[0].field_cells.iter().zip(vec![tx_status_success].iter())
+        {
             ctx.constrain_equal(tx_status, success_status);
         }
 
         // check MPT inclusion
         let mpt_witness = self.parse_mpt_inclusion_phase0(ctx, keccak, receipt_proofs);
 
-        EthReceiptTraceWitness {
-            receipt_witness,
-            mpt_witness,
-        }
+        EthReceiptTraceWitness { receipt_witness, mpt_witness }
     }
-
 
     // ================= SECOND PHASE ================
 
@@ -390,9 +397,11 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         thread_pool: &mut RlcThreadBuilder<F>,
         witness: EthBlockReceiptTraceWitness<F>,
     ) -> EthBlockReceiptTrace<F>
-        where
-            Self: EthBlockHeaderChip<F> {
-        let block_trace = self.decompose_block_header_phase1(thread_pool.rlc_ctx_pair(), witness.block_witness);
+    where
+        Self: EthBlockHeaderChip<F>,
+    {
+        let block_trace =
+            self.decompose_block_header_phase1(thread_pool.rlc_ctx_pair(), witness.block_witness);
         let receipt_trace = self.parse_eip1186_proof_phase1(thread_pool, witness.receipt_witness);
         EthBlockReceiptTrace { block_trace, receipt_trace }
     }
@@ -417,15 +426,13 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
     ) -> EthReceiptTrace<F> {
         self.parse_mpt_inclusion_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
 
-        let value_trace= self
+        let value_trace = self
             .rlp()
             .decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.receipt_witness, true)
             .field_trace
             .try_into()
             .unwrap();
 
-        EthReceiptTrace {
-            value_trace,
-        }
+        EthReceiptTrace { value_trace }
     }
 }

@@ -1,45 +1,44 @@
-use std::{fs::File, io::Read};
 use lazy_static::lazy_static;
 use serde::Deserialize;
-
+use std::{fs::File, io::Read};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct InternalApi {
-    pub host:String,
-    pub port:isize,
+    pub host: String,
+    pub port: isize,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct Rpcs{
-    pub mainnet:String,
-    pub goerli:String,
+pub struct Rpcs {
+    pub mainnet: String,
+    pub goerli: String,
 
-    pub arbitrum_mainnet:String,
-    pub arbitrum_goerli:String,
+    pub arbitrum_mainnet: String,
+    pub arbitrum_goerli: String,
 
-    pub optimism_mainnet:String,
-    pub optimism_goerli:String,
+    pub optimism_mainnet: String,
+    pub optimism_goerli: String,
 
-    pub zksync_mainnet:String,
-    pub zksync_goerli:String,
+    pub zksync_mainnet: String,
+    pub zksync_goerli: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct Contracts{
-    pub zksync_nonce_holder:String,
+pub struct Contracts {
+    pub zksync_nonce_holder: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct Token{
-    pub zksync_eth:String,
-    pub zksync_usdc:String,
-    pub zksync_weth:String,
+pub struct Token {
+    pub zksync_eth: String,
+    pub zksync_usdc: String,
+    pub zksync_weth: String,
 }
 #[derive(Clone, Debug, Deserialize)]
-pub struct Layout{
-    pub zksync_nonce_holder:u64,
-    pub zksync_eth:u64,
-    pub zksync_usdc:u64,
+pub struct Layout {
+    pub zksync_nonce_holder: u64,
+    pub zksync_eth: u64,
+    pub zksync_usdc: u64,
 }
 #[derive(Clone, Debug, Deserialize)]
 pub struct MDCConfig {
@@ -49,12 +48,12 @@ pub struct MDCConfig {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Settings {
-    pub internal_api:InternalApi,
+    pub internal_api: InternalApi,
     pub mdc_config: MDCConfig,
-    pub rpcs:Rpcs,
-    pub contracts:Contracts,
-    pub token:Token,
-    pub layout:Layout,
+    pub rpcs: Rpcs,
+    pub contracts: Contracts,
+    pub token: Token,
+    pub layout: Layout,
 }
 
 impl Default for Settings {
@@ -62,12 +61,12 @@ impl Default for Settings {
         let file_path = "spv.toml";
         let mut file = match File::open(file_path) {
             Ok(f) => f,
-            Err(e) => panic!("no such file {} exception:{}", file_path, e)
+            Err(e) => panic!("no such file {} exception:{}", file_path, e),
         };
         let mut str_val = String::new();
         match file.read_to_string(&mut str_val) {
             Ok(s) => s,
-            Err(e) => panic!("Error Reading file: {}", e)
+            Err(e) => panic!("Error Reading file: {}", e),
         };
         toml::from_str(&str_val).expect("Parsing the configuration file failed")
     }
@@ -81,4 +80,3 @@ impl Settings {
         &CACHE
     }
 }
-

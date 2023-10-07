@@ -429,8 +429,8 @@ pub fn rlc_select_from_idx<F: ScalarField, R>(
     a: impl IntoIterator<Item = R>,
     idx: AssignedValue<F>,
 ) -> RlcVar<F>
-    where
-        R: Into<RlcVar<F>>,
+where
+    R: Into<RlcVar<F>>,
 {
     let a = a.into_iter();
     let (len, hi) = a.size_hint();
@@ -445,8 +445,8 @@ pub fn rlc_select_by_indicator<F: ScalarField, R>(
     a: impl IntoIterator<Item = R>,
     indicator: Vec<AssignedValue<F>>,
 ) -> RlcVar<F>
-    where
-        R: Into<RlcVar<F>>,
+where
+    R: Into<RlcVar<F>>,
 {
     let (a_len, a_rlc): (Vec<_>, Vec<_>) = a
         .into_iter()

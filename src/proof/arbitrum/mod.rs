@@ -2,24 +2,33 @@ use std::cell::RefCell;
 
 use ethers_core::types::{BlockId, Bytes};
 use ethers_providers::{Http, Provider};
-use halo2_base::{AssignedValue, Context};
 use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::gates::RangeChip;
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
+use halo2_base::{AssignedValue, Context};
 use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 
-use crate::{ETH_LOOKUP_BITS, EthChip, EthCircuitBuilder, EthPreCircuit, Network};
-use crate::block_header::{BlockHeaderConfig, EthBlockHeaderChip, get_block_header_config};
+use crate::block_header::{get_block_header_config, BlockHeaderConfig, EthBlockHeaderChip};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::providers::get_arbitrum_proof;
-use crate::receipt::{EthBlockReceiptChip, EthBlockReceiptInput, EthBlockReceiptInputAssigned, EthBlockReceiptTrace, EthBlockReceiptTraceWitness};
+use crate::receipt::{
+    EthBlockReceiptChip, EthBlockReceiptInput, EthBlockReceiptInputAssigned, EthBlockReceiptTrace,
+    EthBlockReceiptTraceWitness,
+};
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::FIRST_PHASE;
 use crate::rlp::RlpChip;
-use crate::track_block::{EthTrackBlockChip, EthTrackBlockInput, EthTrackBlockInputAssigned, EthTrackBlockTrace, EthTrackBlockTraceWitness};
-use crate::transaction::ethereum::{EthBlockTransactionChip, EthBlockTransactionInput, EthBlockTransactionInputAssigned, EthBlockTransactionTrace, EthBlockTransactionTraceWitness};
+use crate::track_block::{
+    EthTrackBlockChip, EthTrackBlockInput, EthTrackBlockInputAssigned, EthTrackBlockTrace,
+    EthTrackBlockTraceWitness,
+};
+use crate::transaction::ethereum::{
+    EthBlockTransactionChip, EthBlockTransactionInput, EthBlockTransactionInputAssigned,
+    EthBlockTransactionTrace, EthBlockTransactionTraceWitness,
+};
 use crate::util::AssignedH256;
+use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS};
 
 mod tests;
 
@@ -132,21 +141,22 @@ impl EthPreCircuit for ArbitrumProofCircuit {
         let (witness, digest) = chip.parse_arbitrum_proof_phase0(
             &mut builder.gate_builder,
             &mut keccak,
-            input, &self.block_header_config);
+            input,
+            &self.block_header_config,
+        );
 
         let EIP1186ResponseDigest {
             arbitrum_tx,
             seq_number,
             arbitrum_block_end_hash,
-            ethereum_block_end_hash
+            ethereum_block_end_hash,
         } = digest;
 
         let assigned_instances = arbitrum_tx
             .into_iter()
             .chain([seq_number])
-            .chain(
-                arbitrum_block_end_hash
-            ).chain(ethereum_block_end_hash)
+            .chain(arbitrum_block_end_hash)
+            .chain(ethereum_block_end_hash)
             .collect_vec();
         // {
         //     let ctx = builder.gate_builder.main(FIRST_PHASE);
@@ -187,7 +197,6 @@ pub struct ArbitrumProofTrace<F: Field> {
     pub ethereum_block_trace: EthTrackBlockTrace<F>,
 }
 
-
 #[derive(Clone, Debug)]
 pub struct ArbitrumProofTraceWitness<F: Field> {
     pub arbitrum_transaction_witness: EthBlockTransactionTraceWitness<F>,
@@ -198,7 +207,6 @@ pub struct ArbitrumProofTraceWitness<F: Field> {
 }
 
 pub trait ArbitrumProofChip<F: Field> {
-
     // ================= FIRST PHASE ================
 
     fn parse_arbitrum_proof_phase0(
@@ -206,11 +214,10 @@ pub trait ArbitrumProofChip<F: Field> {
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
         input: ArbitrumProofInputAssigned<F>,
-        block_header_config:&ArbitrumBlockHeaderConfig,
+        block_header_config: &ArbitrumBlockHeaderConfig,
     ) -> (ArbitrumProofTraceWitness<F>, EIP1186ResponseDigest<F>)
-        where
-            Self: EthBlockHeaderChip<F>;
-
+    where
+        Self: EthBlockHeaderChip<F>;
 
     // ================= SECOND PHASE ================
 
@@ -219,8 +226,8 @@ pub trait ArbitrumProofChip<F: Field> {
         thread_pool: &mut RlcThreadBuilder<F>,
         witness: ArbitrumProofTraceWitness<F>,
     ) -> ArbitrumProofTrace<F>
-        where
-            Self: EthBlockHeaderChip<F>;
+    where
+        Self: EthBlockHeaderChip<F>;
 }
 
 impl<'chip, F: Field> ArbitrumProofChip<F> for EthChip<'chip, F> {
@@ -229,37 +236,51 @@ impl<'chip, F: Field> ArbitrumProofChip<F> for EthChip<'chip, F> {
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
         input: ArbitrumProofInputAssigned<F>,
-        block_header_config:&ArbitrumBlockHeaderConfig,
+        block_header_config: &ArbitrumBlockHeaderConfig,
     ) -> (ArbitrumProofTraceWitness<F>, EIP1186ResponseDigest<F>)
-        where
-            Self: EthBlockHeaderChip<F> {
+    where
+        Self: EthBlockHeaderChip<F>,
+    {
         let arbitrum_block_header_config = &block_header_config.arbitrum_block_header_config;
         let ethereum_block_header_config = &block_header_config.ethereum_block_header_config;
 
-        let (arbitrum_transaction_witness, arbitrum_transaction_digest) = self.parse_transaction_proof_from_block_phase0(
-            thread_pool,
-            keccak,
-            input.arbitrum_transaction_status, arbitrum_block_header_config);
+        let (arbitrum_transaction_witness, arbitrum_transaction_digest) = self
+            .parse_transaction_proof_from_block_phase0(
+                thread_pool,
+                keccak,
+                input.arbitrum_transaction_status,
+                arbitrum_block_header_config,
+            );
 
         let (arbitrum_receipt_witness, _) = self.parse_receipt_proof_from_block_phase0(
             thread_pool,
             keccak,
-            input.arbitrum_receipt_status, arbitrum_block_header_config);
+            input.arbitrum_receipt_status,
+            arbitrum_block_header_config,
+        );
 
-        let (arbitrum_block_witness, arbitrum_block_digest) = self.parse_track_block_proof_from_block_phase0(
-            thread_pool,
-            keccak,
-            input.arbitrum_block_status, arbitrum_block_header_config);
+        let (arbitrum_block_witness, arbitrum_block_digest) = self
+            .parse_track_block_proof_from_block_phase0(
+                thread_pool,
+                keccak,
+                input.arbitrum_block_status,
+                arbitrum_block_header_config,
+            );
 
         let (ethereum_transaction_witness, _) = self.parse_transaction_proof_from_block_phase0(
             thread_pool,
             keccak,
-            input.ethereum_transaction_status, ethereum_block_header_config);
+            input.ethereum_transaction_status,
+            ethereum_block_header_config,
+        );
 
-        let (ethereum_block_witness, ethereum_block_digest) = self.parse_track_block_proof_from_block_phase0(
-            thread_pool,
-            keccak,
-            input.ethereum_block_status, ethereum_block_header_config);
+        let (ethereum_block_witness, ethereum_block_digest) = self
+            .parse_track_block_proof_from_block_phase0(
+                thread_pool,
+                keccak,
+                input.ethereum_block_status,
+                ethereum_block_header_config,
+            );
 
         let digest = EIP1186ResponseDigest {
             arbitrum_tx: vec![arbitrum_transaction_digest.transaction_is_empty],
@@ -268,15 +289,17 @@ impl<'chip, F: Field> ArbitrumProofChip<F> for EthChip<'chip, F> {
             ethereum_block_end_hash: ethereum_block_digest.end_block_hash,
         };
 
-        (ArbitrumProofTraceWitness {
-            arbitrum_transaction_witness,
-            arbitrum_receipt_witness,
-            arbitrum_block_witness,
-            ethereum_transaction_witness,
-            ethereum_block_witness,
-        }, digest)
+        (
+            ArbitrumProofTraceWitness {
+                arbitrum_transaction_witness,
+                arbitrum_receipt_witness,
+                arbitrum_block_witness,
+                ethereum_transaction_witness,
+                ethereum_block_witness,
+            },
+            digest,
+        )
     }
-
 
     // ================= SECOND PHASE ================
 
@@ -285,13 +308,23 @@ impl<'chip, F: Field> ArbitrumProofChip<F> for EthChip<'chip, F> {
         thread_pool: &mut RlcThreadBuilder<F>,
         witness: ArbitrumProofTraceWitness<F>,
     ) -> ArbitrumProofTrace<F>
-        where
-            Self: EthBlockHeaderChip<F> {
-        let arbitrum_transaction_trace = self.parse_transaction_proof_from_block_phase1(thread_pool, witness.arbitrum_transaction_witness);
-        let arbitrum_receipt_trace = self.parse_receipt_proof_from_block_phase1(thread_pool, witness.arbitrum_receipt_witness);
-        let arbitrum_block_trace = self.parse_track_block_proof_from_block_phase1(thread_pool, witness.arbitrum_block_witness);
-        let ethereum_transaction_trace = self.parse_transaction_proof_from_block_phase1(thread_pool, witness.ethereum_transaction_witness);
-        let ethereum_block_trace = self.parse_track_block_proof_from_block_phase1(thread_pool, witness.ethereum_block_witness);
+    where
+        Self: EthBlockHeaderChip<F>,
+    {
+        let arbitrum_transaction_trace = self.parse_transaction_proof_from_block_phase1(
+            thread_pool,
+            witness.arbitrum_transaction_witness,
+        );
+        let arbitrum_receipt_trace = self
+            .parse_receipt_proof_from_block_phase1(thread_pool, witness.arbitrum_receipt_witness);
+        let arbitrum_block_trace = self
+            .parse_track_block_proof_from_block_phase1(thread_pool, witness.arbitrum_block_witness);
+        let ethereum_transaction_trace = self.parse_transaction_proof_from_block_phase1(
+            thread_pool,
+            witness.ethereum_transaction_witness,
+        );
+        let ethereum_block_trace = self
+            .parse_track_block_proof_from_block_phase1(thread_pool, witness.ethereum_block_witness);
 
         ArbitrumProofTrace {
             arbitrum_transaction_trace,

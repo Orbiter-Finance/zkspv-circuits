@@ -68,10 +68,7 @@ impl<T: Task> Task for Wrapper<T> {
 pub trait SimpleTask: Task {
     type PreCircuit: PreCircuit + Clone;
 
-    fn get_circuit(
-        &self,
-        network: Network,
-    ) -> Self::PreCircuit;
+    fn get_circuit(&self, network: Network) -> Self::PreCircuit;
 }
 
 #[derive(Clone, Debug)]
@@ -89,7 +86,7 @@ impl<T: SimpleTask> Scheduler for EvmWrapper<T> {
     fn get_circuit(&self, task: Self::Task, prev_snarks: Vec<Snark>) -> Self::CircuitRouter {
         match task {
             Wrapper::Initial(t) => {
-                let circuit = t.get_circuit( self.network);
+                let circuit = t.get_circuit(self.network);
                 WrapperRouter::Initial(circuit)
             }
             ForEvm(_) => {

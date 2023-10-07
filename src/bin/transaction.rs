@@ -1,13 +1,13 @@
-use std::fmt::Display;
-use std::path::PathBuf;
 use ark_std::{end_timer, start_timer};
 use clap::{Parser, ValueEnum};
 use ethers_core::types::Bytes;
 use hex::FromHex;
-use zkspv_circuits::{EthereumNetwork, Network};
-use zkspv_circuits::transaction::ethereum::helper::{ TransactionScheduler, TransactionTask};
+use std::fmt::Display;
+use std::path::PathBuf;
+use zkspv_circuits::transaction::ethereum::helper::{TransactionScheduler, TransactionTask};
 use zkspv_circuits::util::scheduler::evm_wrapper::ForEvm;
 use zkspv_circuits::util::scheduler::Scheduler;
+use zkspv_circuits::{EthereumNetwork, Network};
 //
 // #[derive(Parser, Debug)]
 // #[command(author, version, about, long_about = None)] // Read from `Cargo.toml`
@@ -51,7 +51,6 @@ enum CliFinality {
 
 impl Display for CliFinality {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
         match self {
             CliFinality::None => write!(f, "none"),
             CliFinality::Merkle => write!(f, "merkle"),
@@ -60,15 +59,14 @@ impl Display for CliFinality {
     }
 }
 
-
-fn main(){
+fn main() {
     // let args = Cli::parse();
     #[cfg(feature = "production")]
-        let srs_readonly = false;
+    let srs_readonly = false;
     // #[cfg(not(feature = "production"))]
     //     let srs_readonly = args.srs_readonly;
 
-    let network =  Network::Ethereum(EthereumNetwork::Goerli);
+    let network = Network::Ethereum(EthereumNetwork::Goerli);
 
     let scheduler = TransactionScheduler::new(
         network,
@@ -77,7 +75,6 @@ fn main(){
         PathBuf::from("configs/transactions"),
         PathBuf::from("data/transactions"),
     );
-
 
     let transaction_index = 1;
     let transaction_rlp = Vec::from_hex("f86f83031bb085724c0d16e782f618945a873a4aa853302449a92d57b54378d4a50014588802c68af0bb140000802da01ca7ab64ae5515cd5902e3824a79cd497a0d92b9bf970400c118366f67b0a3cea06f66440c20b5d84be2aaab657222bcee7d27923942c5c58e8e2210c657b52f9b").unwrap();
@@ -95,6 +92,13 @@ fn main(){
 
     let block_number = 0x82e239;
 
-    let task = TransactionTask::new(block_number, transaction_index, transaction_rlp,merkle_proof.clone(),merkle_proof.len(),network);
+    let task = TransactionTask::new(
+        block_number,
+        transaction_index,
+        transaction_rlp,
+        merkle_proof.clone(),
+        merkle_proof.len(),
+        network,
+    );
     scheduler.get_calldata(ForEvm(task), true);
 }

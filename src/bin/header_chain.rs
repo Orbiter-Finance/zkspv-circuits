@@ -1,9 +1,13 @@
 #[cfg(feature = "display")]
 use ark_std::{end_timer, start_timer};
-use zkspv_circuits::{util::scheduler::Scheduler, Network,EthereumNetwork, block_header::helper::{BlockHeaderScheduler, CircuitType, Finality, Task}};
 use clap::{Parser, ValueEnum};
 use clap_num::maybe_hex;
 use std::{cmp::min, fmt::Display, path::PathBuf};
+use zkspv_circuits::{
+    block_header::helper::{BlockHeaderScheduler, CircuitType, Finality, Task},
+    util::scheduler::Scheduler,
+    EthereumNetwork, Network,
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)] // Read from `Cargo.toml`
@@ -47,7 +51,6 @@ enum CliFinality {
 
 impl Display for CliFinality {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
         match self {
             CliFinality::None => write!(f, "none"),
             CliFinality::Merkle => write!(f, "merkle"),
@@ -64,7 +67,7 @@ fn main() {
     #[cfg(not(feature = "production"))]
     let srs_readonly = args.srs_readonly;
 
-    let network =  Network::Ethereum(EthereumNetwork::Mainnet);
+    let network = Network::Ethereum(EthereumNetwork::Mainnet);
 
     let scheduler = BlockHeaderScheduler::new(
         network,

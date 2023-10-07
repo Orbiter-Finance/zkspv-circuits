@@ -1,5 +1,7 @@
 #![allow(unused_imports)]
 
+use std::ops::{Mul, Not, Range, Sub};
+use std::path::PathBuf;
 use std::{
     convert::TryFrom,
     fs::{self, File},
@@ -7,10 +9,11 @@ use std::{
     iter, num,
     path::Path,
 };
-use std::ops::{Mul, Not, Sub};
-use std::path::PathBuf;
 
-use ethers_core::types::{Address, Block, BlockId, BlockId::Number, BlockNumber, Bloom, Bytes, EIP1186ProofResponse, Eip1559TransactionRequest, H256, NameOrAddress, StorageProof, Transaction, U256, U64};
+use ethers_core::types::{
+    Address, Block, BlockId, BlockId::Number, BlockNumber, Bloom, Bytes, EIP1186ProofResponse,
+    Eip1559TransactionRequest, NameOrAddress, StorageProof, Transaction, H256, U256, U64,
+};
 use ethers_core::utils::hex::FromHex;
 use ethers_core::utils::keccak256;
 use ethers_providers::{Http, Middleware, Provider, ProviderError, StreamExt};
@@ -22,29 +25,35 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use tokio::runtime::Runtime;
 
-use crate::{
-    Network,
-    storage::{EthBlockStorageInput, EthStorageInput},
-    util::{get_merkle_mountain_range, u256_to_bytes32_be},
+use crate::config::contract::zksync_era_contract::{
+    get_zksync_era_nonce_holder_contract_address, get_zksync_era_nonce_holder_contract_layout,
 };
-use crate::config::contract::zksync_era_contract::{get_zksync_era_nonce_holder_contract_address, get_zksync_era_nonce_holder_contract_layout};
-use crate::config::token::zksync_era_token::{get_zksync_era_eth_address, get_zksync_era_token_layout_by_address};
+use crate::config::token::zksync_era_token::{
+    get_zksync_era_eth_address, get_zksync_era_token_layout_by_address,
+};
 use crate::mpt::MPTInput;
+use crate::proof::arbitrum::{
+    ArbitrumProofBlockTrack, ArbitrumProofInput, ArbitrumProofTransactionOrReceipt,
+};
 use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
-use crate::proof::arbitrum::{ArbitrumProofBlockTrack, ArbitrumProofInput, ArbitrumProofTransactionOrReceipt};
+use crate::storage::util::EbcRuleParams;
 use crate::storage::EbcRuleVersion;
 use crate::track_block::EthTrackBlockInput;
-use crate::transaction::{EIP_1559_TX_TYPE,EIP_2718_TX_TYPE};
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
 use crate::transaction::zksync_era::now::{ZkSyncBlockTransactionInput, ZkSyncTransactionsInput};
+use crate::transaction::{EIP_1559_TX_TYPE, EIP_2718_TX_TYPE};
 use crate::util::contract_abi::erc20::{decode_input, is_erc20_transaction};
 use crate::util::helpers::calculate_storage_mapping_key;
+use crate::{
+    storage::{EthBlockStorageInput, EthStorageInput},
+    util::{get_merkle_mountain_range, u256_to_bytes32_be},
+    Network,
+};
 
 const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 114;
 const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
-const TRANSACTION_INDEX_MAX_KEY_BYTES_LEN:usize = 3;
-const K256_MAX_KEY_BYTES_LEN:usize = 32;
-
+const TRANSACTION_INDEX_MAX_KEY_BYTES_LEN: usize = 3;
+const K256_MAX_KEY_BYTES_LEN: usize = 32;
 
 fn get_buffer_rlp(value: u32) -> Vec<u8> {
     let mut rlp: RlpStream = RlpStream::new();
@@ -85,15 +94,16 @@ pub fn get_arbitrum_proof(
         arbitrum_receipt.pf_max_depth,
     );
 
-    let arbitrum_block_end_hash = rt.block_on(arbitrum_provider.get_block(arbitrum_trace_block.end_block)).unwrap().unwrap();
+    let arbitrum_block_end_hash =
+        rt.block_on(arbitrum_provider.get_block(arbitrum_trace_block.end_block)).unwrap().unwrap();
     let mut arbitrum_block_number_interval = vec![];
-    for i in arbitrum_trace_block.start_block as u64..arbitrum_block_end_hash.number.unwrap().as_u64() {
+    for i in
+        arbitrum_trace_block.start_block as u64..arbitrum_block_end_hash.number.unwrap().as_u64()
+    {
         arbitrum_block_number_interval.push(i);
     }
-    let arbitrum_block_status = get_block_track_input(
-        arbitrum_provider,
-        arbitrum_block_number_interval,
-    );
+    let arbitrum_block_status =
+        get_block_track_input(arbitrum_provider, arbitrum_block_number_interval);
 
     let ethereum_transaction_status = get_transaction_input(
         ethereum_provider,
@@ -104,16 +114,17 @@ pub fn get_arbitrum_proof(
         ethereum_transaction.pf_max_depth,
     );
 
-    let ethereum_block_end_hash = rt.block_on(ethereum_provider.get_block(ethereum_trace_block.end_block)).unwrap().unwrap();
+    let ethereum_block_end_hash =
+        rt.block_on(ethereum_provider.get_block(ethereum_trace_block.end_block)).unwrap().unwrap();
     let mut ethereum_block_number_interval = vec![];
-    for i in ethereum_trace_block.start_block as u64..ethereum_block_end_hash.number.unwrap().as_u64() {
+    for i in
+        ethereum_trace_block.start_block as u64..ethereum_block_end_hash.number.unwrap().as_u64()
+    {
         ethereum_block_number_interval.push(i);
     }
 
-    let ethereum_block_status = get_block_track_input(
-        ethereum_provider,
-        ethereum_block_number_interval,
-    );
+    let ethereum_block_status =
+        get_block_track_input(ethereum_provider, ethereum_block_number_interval);
 
     ArbitrumProofInput {
         l2_seq_num,
@@ -129,6 +140,7 @@ pub fn get_block_track_input(
     provider: &Provider<Http>,
     block_number_interval: Vec<u64>,
 ) -> EthTrackBlockInput {
+    // assert_eq!(block_number_interval,256,"block_number_interval is a fixed-length array with a length of 256");
     let rt = Runtime::new().unwrap();
     let mut block = Vec::with_capacity(block_number_interval.len());
     let mut block_number = Vec::with_capacity(block_number_interval.len());
@@ -144,12 +156,7 @@ pub fn get_block_track_input(
         block_header.push(block_element_header);
     }
 
-    EthTrackBlockInput {
-        block,
-        block_number,
-        block_hash,
-        block_header,
-    }
+    EthTrackBlockInput { block, block_number, block_hash, block_header }
 }
 
 pub fn get_receipt_input(
@@ -224,14 +231,6 @@ pub fn get_transaction_input(
         transaction: EthTransactionInput { transaction_index, transaction_proofs },
     }
 }
-#[derive(Clone, Debug)]
-pub struct EbcRuleParams{
-    pub ebc_rule_key:H256,
-    pub ebc_rule_root:H256,
-    pub ebc_rule_value:Vec<u8>,
-    pub ebc_rule_merkle_proof:Vec<Bytes>,
-    pub ebc_rule_pf_max_depth:usize,
-}
 
 pub fn get_storage_input(
     provider: &Provider<Http>,
@@ -240,7 +239,7 @@ pub fn get_storage_input(
     slots: Vec<H256>,
     acct_pf_max_depth: usize,
     storage_pf_max_depth: usize,
-    ebc_rule_params:EbcRuleParams,
+    ebc_rule_params: EbcRuleParams,
 ) -> EthBlockStorageInput {
     let rt = Runtime::new().unwrap();
     let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
@@ -277,7 +276,7 @@ pub fn get_storage_input(
                 storage_pf.key,
                 storage_pf.value,
                 MPTInput {
-                    path:path.into(),
+                    path: path.into(),
                     value,
                     root_hash: pf.storage_hash,
                     proof: storage_pf.proof.into_iter().map(|x| x.to_vec()).collect(),
@@ -294,13 +293,13 @@ pub fn get_storage_input(
     // ebc mpt
     let mut ebc_rule_pfs;
     {
-        let path =ebc_rule_params.ebc_rule_key;
+        let path = ebc_rule_params.ebc_rule_key;
         let value = ebc_rule_params.ebc_rule_value.to_vec();
-        ebc_rule_pfs =  MPTInput{
-            path:path.into(),
+        ebc_rule_pfs = MPTInput {
+            path: path.into(),
             value,
             root_hash: ebc_rule_params.ebc_rule_root,
-            proof: ebc_rule_params.ebc_rule_merkle_proof.into_iter().map(|x|x.to_vec()).collect(),
+            proof: ebc_rule_params.ebc_rule_merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
             slot_is_empty,
             value_max_byte_len: ebc_rule_params.ebc_rule_value.len(),
             max_depth: ebc_rule_params.ebc_rule_pf_max_depth,
@@ -308,8 +307,6 @@ pub fn get_storage_input(
             key_byte_len: None,
         }
     }
-
-
 
     EthBlockStorageInput {
         block,
@@ -327,11 +324,13 @@ pub fn get_zksync_transaction_and_storage_input(
     let rt = Runtime::new().unwrap();
     let valid_tx = rt.block_on(provider.get_transaction(tx_hash)).unwrap().unwrap();
     let valid_tx_block_number = valid_tx.block_number.unwrap();
-    let block_with_txs = rt.block_on(provider.get_block_with_txs(valid_tx.block_number.unwrap())).unwrap().unwrap();
+    let block_with_txs =
+        rt.block_on(provider.get_block_with_txs(valid_tx.block_number.unwrap())).unwrap().unwrap();
     let mut valid_tx_from = Address::default();
     let mut valid_tx_to = Address::default();
     // from:valid_tx.from to:valid_tx.to
-    if !valid_tx.value.is_zero() { // ETH
+    if !valid_tx.value.is_zero() {
+        // ETH
         valid_tx_from = valid_tx.from;
         valid_tx_to = valid_tx.to.unwrap();
     } else if is_erc20_transaction(valid_tx.input.clone()) {
@@ -368,10 +367,12 @@ pub fn get_zksync_transaction_and_storage_input(
                     to_tokens.push(get_zksync_era_eth_address());
                 }
             }
-        } else if is_erc20_transaction(transaction.input.clone()) {//
+        } else if is_erc20_transaction(transaction.input.clone()) {
+            //
             let erc20_address = transaction.to.unwrap();
             let transaction_erc20 = decode_input(transaction.input.clone()).unwrap();
-            let transaction_erc20_to = transaction_erc20.get(0).unwrap().clone().into_address().unwrap();
+            let transaction_erc20_to =
+                transaction_erc20.get(0).unwrap().clone().into_address().unwrap();
             // out \ in
             if transaction_from == valid_tx_from || transaction_erc20_to == valid_tx_from {
                 from_txs.push(transaction.rlp());
@@ -388,39 +389,69 @@ pub fn get_zksync_transaction_and_storage_input(
         }
     }
 
-    let from_validate_index = from_txs.iter().position(|tx_rlp|tx_rlp.clone()==valid_tx.rlp()).unwrap();
-    let to_validate_index = to_txs.iter().position(|tx_rlp|tx_rlp.clone()==valid_tx.rlp()).unwrap();
+    let from_validate_index =
+        from_txs.iter().position(|tx_rlp| tx_rlp.clone() == valid_tx.rlp()).unwrap();
+    let to_validate_index =
+        to_txs.iter().position(|tx_rlp| tx_rlp.clone() == valid_tx.rlp()).unwrap();
 
     let pre_block_id = Option::from(BlockId::from(valid_tx_block_number.sub(1)));
     let now_block_id = Option::from(BlockId::from(valid_tx_block_number));
 
-    let from_nonce_location = calculate_storage_mapping_key(get_zksync_era_nonce_holder_contract_layout(), valid_tx_from);
-    let to_nonce_location = calculate_storage_mapping_key(get_zksync_era_nonce_holder_contract_layout(), valid_tx_to);
+    let from_nonce_location =
+        calculate_storage_mapping_key(get_zksync_era_nonce_holder_contract_layout(), valid_tx_from);
+    let to_nonce_location =
+        calculate_storage_mapping_key(get_zksync_era_nonce_holder_contract_layout(), valid_tx_to);
 
     let from_nonce_slots = (
-        rt.block_on(provider.get_storage_at(get_zksync_era_nonce_holder_contract_address(), from_nonce_location, pre_block_id)).unwrap(),
-        rt.block_on(provider.get_storage_at(get_zksync_era_nonce_holder_contract_address(), from_nonce_location, now_block_id)).unwrap()
+        rt.block_on(provider.get_storage_at(
+            get_zksync_era_nonce_holder_contract_address(),
+            from_nonce_location,
+            pre_block_id,
+        ))
+        .unwrap(),
+        rt.block_on(provider.get_storage_at(
+            get_zksync_era_nonce_holder_contract_address(),
+            from_nonce_location,
+            now_block_id,
+        ))
+        .unwrap(),
     );
 
-    let to_nonce_slots=(
-        rt.block_on(provider.get_storage_at(get_zksync_era_nonce_holder_contract_address(), to_nonce_location, pre_block_id)).unwrap(),
-        rt.block_on(provider.get_storage_at(get_zksync_era_nonce_holder_contract_address(), to_nonce_location, now_block_id)).unwrap()
+    let to_nonce_slots = (
+        rt.block_on(provider.get_storage_at(
+            get_zksync_era_nonce_holder_contract_address(),
+            to_nonce_location,
+            pre_block_id,
+        ))
+        .unwrap(),
+        rt.block_on(provider.get_storage_at(
+            get_zksync_era_nonce_holder_contract_address(),
+            to_nonce_location,
+            now_block_id,
+        ))
+        .unwrap(),
     );
 
-    let mut get_amount_slots = |tokens:Vec<Address>,storage_key:Address|{
-        let amount_slots:Vec<(Address,H256,H256)> = tokens.into_iter().map(|token_address|{
-            let token_layout = get_zksync_era_token_layout_by_address(token_address).unwrap();
-            let token_location = calculate_storage_mapping_key(token_layout, storage_key);
-            let to_amount_pre_block_slot = rt.block_on(provider.get_storage_at(token_address, token_location, pre_block_id)).unwrap();
-            let to_amount_now_block_slot = rt.block_on(provider.get_storage_at(token_address, token_location, now_block_id)).unwrap();
-            (token_address,to_amount_pre_block_slot, to_amount_now_block_slot)
-        })
+    let mut get_amount_slots = |tokens: Vec<Address>, storage_key: Address| {
+        let amount_slots: Vec<(Address, H256, H256)> = tokens
+            .into_iter()
+            .map(|token_address| {
+                let token_layout = get_zksync_era_token_layout_by_address(token_address).unwrap();
+                let token_location = calculate_storage_mapping_key(token_layout, storage_key);
+                let to_amount_pre_block_slot = rt
+                    .block_on(provider.get_storage_at(token_address, token_location, pre_block_id))
+                    .unwrap();
+                let to_amount_now_block_slot = rt
+                    .block_on(provider.get_storage_at(token_address, token_location, now_block_id))
+                    .unwrap();
+                (token_address, to_amount_pre_block_slot, to_amount_now_block_slot)
+            })
             .collect();
         amount_slots
     };
 
-    let from_amount_slots =get_amount_slots(from_tokens,valid_tx_from);
-    let to_amount_slots =get_amount_slots(to_tokens,valid_tx_to);
+    let from_amount_slots = get_amount_slots(from_tokens, valid_tx_from);
+    let to_amount_slots = get_amount_slots(to_tokens, valid_tx_to);
 
     ZkSyncBlockTransactionInput {
         from_input: ZkSyncTransactionsInput {
@@ -437,7 +468,6 @@ pub fn get_zksync_transaction_and_storage_input(
         },
     }
 }
-
 
 pub fn is_assigned_slot(key: &H256, proof: &[Bytes]) -> bool {
     let mut key_nibbles = Vec::new();
@@ -483,7 +513,12 @@ pub fn is_assigned_slot(key: &H256, proof: &[Bytes]) -> bool {
 // EIP_2718 [nonce,gasPrice,gasLimit,to,value,data,v,r,s]
 // 1: EIP_2930 [chainId,nonce,gasPrice,gasLimit,to,value,data,accessList,v,r,s]
 // 2: EIP_1559 [chainId,nonce,maxPriorityFeePerGas,maxFeePerGas,gasLimit,to,value,data,accessList,v,r,s]
-pub fn get_transaction_field_rlp(tx_type: u8, source: &Vec<u8>, item_count: usize, new_item: [u8; 9]) -> (Vec<u8>,Vec<u8>) {
+pub fn get_transaction_field_rlp(
+    tx_type: u8,
+    source: &Vec<u8>,
+    item_count: usize,
+    new_item: [u8; 9],
+) -> (Vec<u8>, Vec<u8>) {
     let mut source_rlp = RlpStream::new();
     source_rlp.append_raw(source, item_count);
     let source_bytes = source_rlp.as_raw().to_vec();
@@ -494,107 +529,101 @@ pub fn get_transaction_field_rlp(tx_type: u8, source: &Vec<u8>, item_count: usiz
         let field_rlp = rlp.at_with_offset(field_item as usize).unwrap();
         let field = field_rlp.0.data().unwrap();
         match tx_type {
-            EIP_2718_TX_TYPE=>{
-                match field_item {
-                    0 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    1 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    2 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    3 => {
-                        let dest_field = NameOrAddress::Address(Address::from_slice(field));
-                        dest_rlp.append(&dest_field);
-                    }
-                    4 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    5 => {
-                        let dest_field = Bytes::from(field.to_vec()).clone();
-                        let a = dest_field.0.to_vec();
-                        dest_rlp.append(&a);
-                        data = a.to_vec();
-                    }
-                    6 => {
-                        let dest_field = U64::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    7 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    8 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    _ => println!("error")
+            EIP_2718_TX_TYPE => match field_item {
+                0 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
                 }
-            }
-            EIP_1559_TX_TYPE =>{
-                match field_item {
-                    0 => {
-                        let dest_field = U64::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    1 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    2 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    3 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    4 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    5 => {
-                        let dest_field = NameOrAddress::Address(Address::from_slice(field));
-                        dest_rlp.append(&dest_field);
-                    }
-                    6 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    7 => {
-                        let dest_field = Bytes::from(field.to_vec()).clone();
-                        let a = dest_field.0.to_vec();
-                        dest_rlp.append(&a);
-                        data = a.to_vec();
-                    }
-                    9 => {
-                        let dest_field = U64::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    10 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    11 => {
-                        let dest_field = U256::from_big_endian(field);
-                        dest_rlp.append(&dest_field);
-                    }
-                    _ => println!("error")
+                1 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
                 }
-            }
-            _ => println!("error")
+                2 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                3 => {
+                    let dest_field = NameOrAddress::Address(Address::from_slice(field));
+                    dest_rlp.append(&dest_field);
+                }
+                4 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                5 => {
+                    let dest_field = Bytes::from(field.to_vec()).clone();
+                    let a = dest_field.0.to_vec();
+                    dest_rlp.append(&a);
+                    data = a.to_vec();
+                }
+                6 => {
+                    let dest_field = U64::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                7 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                8 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                _ => println!("error"),
+            },
+            EIP_1559_TX_TYPE => match field_item {
+                0 => {
+                    let dest_field = U64::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                1 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                2 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                3 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                4 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                5 => {
+                    let dest_field = NameOrAddress::Address(Address::from_slice(field));
+                    dest_rlp.append(&dest_field);
+                }
+                6 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                7 => {
+                    let dest_field = Bytes::from(field.to_vec()).clone();
+                    let a = dest_field.0.to_vec();
+                    dest_rlp.append(&a);
+                    data = a.to_vec();
+                }
+                9 => {
+                    let dest_field = U64::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                10 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                11 => {
+                    let dest_field = U256::from_big_endian(field);
+                    dest_rlp.append(&dest_field);
+                }
+                _ => println!("error"),
+            },
+            _ => println!("error"),
         }
     }
 
-
-
-    (dest_rlp.out().into(),data)
+    (dest_rlp.out().into(), data)
 }
 
 pub fn get_acct_rlp(pf: &EIP1186ProofResponse) -> Vec<u8> {
@@ -689,7 +718,7 @@ pub fn get_blocks_input(
                 provider,
                 start_block_number as u64..(start_block_number + num_blocks) as u64,
             )
-                .unwrap_or_else(|e| panic!("get_blocks JSON-RPC call failed: {e}"));
+            .unwrap_or_else(|e| panic!("get_blocks JSON-RPC call failed: {e}"));
             let prev_hash = blocks[0].as_ref().expect("block not found").parent_hash;
             let (block_rlps, block_hashes): (Vec<_>, Vec<_>) = blocks
                 .into_iter()
@@ -729,8 +758,8 @@ pub fn get_blocks(
     rt.block_on(join_all(
         block_numbers.into_iter().map(|block_number| provider.get_block(block_number)),
     ))
-        .into_iter()
-        .collect()
+    .into_iter()
+    .collect()
 }
 
 #[cfg(test)]
@@ -745,7 +774,7 @@ mod tests {
         let provider = Provider::<Http>::try_from(
             format!("https://mainnet.infura.io/v3/{infura_id}").as_str(),
         )
-            .expect("could not instantiate HTTP Provider");
+        .expect("could not instantiate HTTP Provider");
 
         let rt = Runtime::new().unwrap();
         let block = rt.block_on(provider.get_block(17034973)).unwrap().unwrap();
