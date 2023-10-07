@@ -11,7 +11,6 @@ use hex::FromHex;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use serde::{Serialize, Deserialize};
 use zkevm_keccak::util::eth_types::Field;
 
 use crate::block_header::{

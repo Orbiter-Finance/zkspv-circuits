@@ -42,34 +42,6 @@ impl scheduler::Scheduler for ArbitrationScheduler {
 
     fn get_circuit(&self, task: Self::Task, prev_snarks: Vec<Snark>) -> Self::CircuitRouter {
         match task {
-            ArbitrationTask::Transaction() => todo!(),
-            ArbitrationTask::MDCState(_) => todo!(),
-            ArbitrationTask::ETHBlockTrack(task) => {
-                if task.tasks_len == 1 {
-                    println!("TASK_LEN1======");
-                    CircuitRouter::BlockTrackInterval(task.input)
-                } else {
-                    println!("AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
-                    return CircuitRouter::AggreateBlockTracks(PublicAggregationCircuit::new(
-                        prev_snarks.into_iter().map(|snark| {
-                            println!("instances num {}", snark.instances.len());
-                            (snark, false)
-                        }).collect()
-                    ))
-                }
-            },
-            ArbitrationTask::Final(_) => todo!(),
-        }
-    }
-}
-
-impl scheduler::Scheduler for ArbitrationScheduler {
-    type Task = ArbitrationTask;
-
-    type CircuitRouter = CircuitRouter;
-
-    fn get_circuit(&self, task: Self::Task, prev_snarks: Vec<Snark>) -> Self::CircuitRouter {
-        match task {
             ArbitrationTask::Transaction(task) => {
                 if task.tasks_len == 1 {
                     println!("TASK_LEN1======");

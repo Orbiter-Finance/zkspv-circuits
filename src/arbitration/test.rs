@@ -3,7 +3,7 @@ use std::{
     fs,
     ops::Range,
     path::{Path, PathBuf},
-, ops::Range};
+};
 
 use ark_std::{end_timer, start_timer};
 use ethers_core::types::Bytes;
@@ -133,37 +133,6 @@ pub fn test_arbitration_scheduler_transaction_task() {
     scheduler.get_snark(ArbitrationTask::Transaction(_task));
 }
 
-fn test_get_block_track_circuit(
-    block_number_interval: Vec<u64>,
-    network: Network,
-) -> EthTrackBlockCircuit {
-    get_eth_track_block_circuit(block_number_interval, network)
-}
-
-fn test_scheduler(network: Network) -> ArbitrationScheduler {
-    ArbitrationScheduler::new(
-        network,
-        false,
-        false,
-        PathBuf::from("configs/arbitration/"),
-        PathBuf::from("data/arbitration/"),
-    )
-}
-
-#[test]
-pub fn test_arbitration_scheduler_block_track_task() {
-
-    let scheduler = test_scheduler(Network::Ethereum(EthereumNetwork::Mainnet));
-    let _task = ETHBlockTrackTask {
-        input: test_get_block_track_circuit([1,2,3].to_vec(), Network::Ethereum(EthereumNetwork::Mainnet)),
-        network: Network::Ethereum(EthereumNetwork::Mainnet),
-        tasks_len: 2,
-        task_width: 1,
-        track_task_interval: [(17113952..17113953),((17113955..17113956))].to_vec(),
-    };
-
-    scheduler.get_snark(ArbitrationTask::ETHBlockTrack(_task));
-}
 
 #[test]
 pub fn test_arbitration_circuit() {

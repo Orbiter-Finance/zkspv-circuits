@@ -203,61 +203,11 @@ impl scheduler::Task for TransactionTask {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct ETHBlockTrackTask {
-    pub input: EthTrackBlockCircuit,
-    pub network: Network,
-    pub tasks_len: u64,
-    pub task_width: u64,
-    pub track_task_interval: Vec<Range<u64>>,
-}
-
-impl scheduler::Task for ETHBlockTrackTask {
-    type CircuitType = EthTrackBlockCircuitType;
-
-    fn circuit_type(&self) -> Self::CircuitType {
-        EthTrackBlockCircuitType { network: self.network, tasks_len: self.tasks_len, task_width: self.task_width }
-    }
-
-    fn name(&self) -> String {
-        format!("blockTrack_width_{}_start_{}_end_{}", self.task_width, self.track_task_interval[0].start, self.track_task_interval[0].end)
-    }
-
-    fn dependencies(&self) -> Vec<Self> {
-        if self.tasks_len == 1 {
-            return vec![]
-        }
-        let track_task_interval = self.track_task_interval.clone();
-        let result = track_task_interval
-        .into_iter()
-        .map(|interval| {
-            let d = interval.clone();
-            Self {
-                input: get_eth_track_block_circuit(interval.collect_vec(), self.network),
-                network: self.network,
-                tasks_len: 1u64,
-                task_width: self.task_width,
-                track_task_interval: [d].to_vec(),
-            }
-        }).collect_vec();
-        result
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct MDCStateTask {
-
-}
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum TransactionInput {
     EthereumTx()
-}
-
-#[derive(Clone, Debug)]
-pub struct TransactionTask {
-    pub intput: TransactionInput
 }
 
 #[allow(clippy::large_enum_variant)]
