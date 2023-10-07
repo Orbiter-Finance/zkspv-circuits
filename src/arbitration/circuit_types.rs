@@ -15,7 +15,7 @@ pub struct EthTrackBlockCircuitType {
 
 impl EthTrackBlockCircuitType {
     pub fn is_aggregated(&self) -> bool {
-        return self.tasks_len != 1
+        return self.tasks_len != 1;
     }
 }
 
@@ -26,7 +26,6 @@ impl scheduler::CircuitType for EthTrackBlockCircuitType {
         } else {
             format!("blockTrack_width_{}", self.task_width)
         }
-        
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
         if self.is_aggregated() {

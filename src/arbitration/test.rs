@@ -132,7 +132,6 @@ pub fn test_arbitration_scheduler_transaction_task() {
     scheduler.get_snark(ArbitrationTask::Transaction(_task));
 }
 
-
 #[test]
 pub fn test_arbitration_circuit() {
     let transaction_param = EthConfigParams::from_path("configs/arbitration/ethereum_tx.json");
@@ -191,12 +190,7 @@ pub fn test_arbitration_circuit() {
         let break_points = circuit.circuit.break_points.take();
         let storage_proof_time = start_timer!(|| "Ethereum Tx Proof SHPLONK");
         let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
-        let snark = gen_snark_shplonk(
-            &params,
-            &pk,
-            circuit,
-            None::<&str>,
-        );
+        let snark = gen_snark_shplonk(&params, &pk, circuit, None::<&str>);
         end_timer!(storage_proof_time);
         (snark, storage_proof_time)
     };
@@ -221,12 +215,7 @@ pub fn test_arbitration_circuit() {
         };
         let storage_proof_time = start_timer!(|| "Storage Proof SHPLONK");
         let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
-        let snark = gen_snark_shplonk(
-            &params,
-            &pk,
-            circuit,
-            None::<&str>,
-        );
+        let snark = gen_snark_shplonk(&params, &pk, circuit, None::<&str>);
         end_timer!(storage_proof_time);
         (snark, storage_proof_time)
     };

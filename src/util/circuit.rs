@@ -168,7 +168,6 @@ impl<C: PreCircuit> AnyCircuit for C {
         pinning_path: impl AsRef<Path>,
         read_only: bool,
     ) -> ProvingKey<G1Affine> {
-        println!("read pk");
         if read_only {
             self.read_pk(params, pk_path)
         } else {

@@ -68,7 +68,7 @@ pub struct ETHBlockTrackTask {
 
 impl ETHBlockTrackTask {
     pub fn is_aggregated(&self) -> bool {
-        return self.tasks_len != 1
+        return self.tasks_len != 1;
     }
 }
 
@@ -85,9 +85,7 @@ impl scheduler::Task for ETHBlockTrackTask {
 
     fn name(&self) -> String {
         if self.is_aggregated() {
-            format!(
-                "blockTrack_aggregated_task_len_{}", self.constructor.len()
-            )
+            format!("blockTrack_aggregated_task_len_{}", self.constructor.len())
         } else {
             format!(
                 "blockTrack_width_{}_start_{}_end_{}",
@@ -115,7 +113,6 @@ impl scheduler::Task for ETHBlockTrackTask {
         } else {
             return vec![];
         }
-        
     }
 }
 
@@ -217,11 +214,10 @@ impl scheduler::Task for TransactionTask {
     }
 }
 
-
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum TransactionInput {
-    EthereumTx()
+    EthereumTx(),
 }
 
 #[allow(clippy::large_enum_variant)]
