@@ -74,7 +74,7 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
 pub fn test_arbitration_scheduler_block_track_task() {
     let network = Network::Ethereum(EthereumNetwork::Mainnet);
     let block_number_interval =
-        vec![(17113952..17113954).collect_vec(), (17113955..17113957).collect_vec()];
+        vec![(17113952..17113953).collect_vec(), (17113955..17113956).collect_vec()];
     let constructor_one =
         TrackBlockConstructor { block_number_interval: block_number_interval[0].clone(), network };
     let constructor_two =

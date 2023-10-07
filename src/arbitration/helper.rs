@@ -66,6 +66,12 @@ pub struct ETHBlockTrackTask {
     pub constructor: Vec<TrackBlockConstructor>,
 }
 
+impl ETHBlockTrackTask {
+    pub fn is_aggregated(&self) -> bool {
+        return self.tasks_len != 1
+    }
+}
+
 impl scheduler::Task for ETHBlockTrackTask {
     type CircuitType = EthTrackBlockCircuitType;
 
@@ -78,30 +84,38 @@ impl scheduler::Task for ETHBlockTrackTask {
     }
 
     fn name(&self) -> String {
-        format!(
-            "blockTrack_width_{}_start_{}_end_{}",
-            self.task_width,
-            self.constructor[0].block_number_interval.first().unwrap(),
-            self.constructor[0].block_number_interval.last().unwrap()
-        )
+        if self.is_aggregated() {
+            format!(
+                "blockTrack_aggregated_task_len_{}", self.constructor.len()
+            )
+        } else {
+            format!(
+                "blockTrack_width_{}_start_{}_end_{}",
+                self.task_width,
+                self.constructor[0].block_number_interval.first().unwrap(),
+                self.constructor[0].block_number_interval.last().unwrap()
+            )
+        }
     }
 
     fn dependencies(&self) -> Vec<Self> {
-        if self.tasks_len == 1 {
+        if self.is_aggregated() {
+            let constructors = self.constructor.clone();
+            let result = constructors
+                .into_iter()
+                .map(|constructor| Self {
+                    input: get_eth_track_block_circuit(constructor.clone()),
+                    network: self.network,
+                    tasks_len: 1u64,
+                    task_width: self.task_width,
+                    constructor: [constructor].to_vec(),
+                })
+                .collect_vec();
+            return result;
+        } else {
             return vec![];
         }
-        let constructors = self.constructor.clone();
-        let result = constructors
-            .into_iter()
-            .map(|constructor| Self {
-                input: get_eth_track_block_circuit(constructor.clone()),
-                network: self.network,
-                tasks_len: 1u64,
-                task_width: self.task_width,
-                constructor: [constructor].to_vec(),
-            })
-            .collect_vec();
-        result
+        
     }
 }
 

@@ -13,12 +13,27 @@ pub struct EthTrackBlockCircuitType {
     pub task_width: u64,
 }
 
+impl EthTrackBlockCircuitType {
+    pub fn is_aggregated(&self) -> bool {
+        return self.tasks_len != 1
+    }
+}
+
 impl scheduler::CircuitType for EthTrackBlockCircuitType {
     fn name(&self) -> String {
-        format!("blockTrack_width_{}", self.task_width)
+        if self.is_aggregated() {
+            format!("blockTrack_aggregate_width_{}", self.task_width)
+        } else {
+            format!("blockTrack_width_{}", self.task_width)
+        }
+        
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
-        EthConfigPinning::from_path(pinning_path.as_ref()).degree()
+        if self.is_aggregated() {
+            AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()
+        } else {
+            EthConfigPinning::from_path(pinning_path.as_ref()).degree()
+        }
     }
 }
 
