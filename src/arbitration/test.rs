@@ -74,7 +74,7 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
 pub fn test_arbitration_scheduler_block_track_task() {
     let network = Network::Ethereum(EthereumNetwork::Mainnet);
     let block_number_interval =
-        vec![(17113952..17113953).collect_vec(), (17113955..17113956).collect_vec()];
+        vec![(17113952..17113954).collect_vec(), (17113955..17113957).collect_vec()];
     let constructor_one =
         TrackBlockConstructor { block_number_interval: block_number_interval[0].clone(), network };
     let constructor_two =
@@ -85,11 +85,12 @@ pub fn test_arbitration_scheduler_block_track_task() {
         input: test_get_block_track_circuit(constructor_one.clone()),
         network: Network::Ethereum(EthereumNetwork::Mainnet),
         tasks_len: 2,
-        task_width: 1,
+        task_width: 2,
         constructor: vec![constructor_one, constructor_two],
     };
 
-    scheduler.get_snark(ArbitrationTask::ETHBlockTrack(_task));
+    let snark = scheduler.get_snark(ArbitrationTask::ETHBlockTrack(_task));
+    println!("snark instances_num {:?}  instances {:?}", snark.instances[0].len(), snark.instances);
 }
 
 #[test]
