@@ -79,7 +79,6 @@ pub fn test_arbitration_scheduler_block_track_task() {
         TrackBlockConstructor { block_number_interval: block_number_interval[0].clone(), network };
     let constructor_two =
         TrackBlockConstructor { block_number_interval: block_number_interval[1].clone(), network };
-
     let scheduler = test_scheduler(network);
     let _task = ETHBlockTrackTask {
         input: test_get_block_track_circuit(constructor_one.clone()),
@@ -133,7 +132,6 @@ pub fn test_arbitration_scheduler_transaction_task() {
 
     scheduler.get_snark(ArbitrationTask::Transaction(_task));
 }
-
 
 #[test]
 pub fn test_arbitration_circuit() {
@@ -193,12 +191,7 @@ pub fn test_arbitration_circuit() {
         let break_points = circuit.circuit.break_points.take();
         let storage_proof_time = start_timer!(|| "Ethereum Tx Proof SHPLONK");
         let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
-        let snark = gen_snark_shplonk(
-            &params,
-            &pk,
-            circuit,
-            None::<&str>,
-        );
+        let snark = gen_snark_shplonk(&params, &pk, circuit, None::<&str>);
         end_timer!(storage_proof_time);
         (snark, storage_proof_time)
     };
@@ -223,12 +216,7 @@ pub fn test_arbitration_circuit() {
         };
         let storage_proof_time = start_timer!(|| "Storage Proof SHPLONK");
         let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
-        let snark = gen_snark_shplonk(
-            &params,
-            &pk,
-            circuit,
-            None::<&str>,
-        );
+        let snark = gen_snark_shplonk(&params, &pk, circuit, None::<&str>);
         end_timer!(storage_proof_time);
         (snark, storage_proof_time)
     };

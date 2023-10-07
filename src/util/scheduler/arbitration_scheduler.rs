@@ -7,16 +7,18 @@ use crate::{
 };
 
 use super::EthScheduler;
+use crate::arbitration::final_assembly::assembly_circuit::FinalAssemblyCircuit;
 use crate::storage::util::StorageConstructor;
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::EthBlockTransactionCircuit;
-use crate::util::scheduler::{self, AnyCircuit};
+use crate::util::scheduler::{self, AnyCircuit, Task};
 use circuit_derive::AnyCircuit;
 use halo2_base::halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
     plonk::ProvingKey,
     poly::kzg::commitment::ParamsKZG,
 };
+use itertools::Itertools;
 use snark_verifier_sdk::Snark;
 use std::path::Path;
 
@@ -31,6 +33,8 @@ pub enum CircuitRouter {
 
     MdcStorage(EthBlockStorageCircuit),
     AggreateMdcStorages(PublicAggregationCircuit),
+
+    FinalAssembly(FinalAssemblyCircuit),
 }
 
 pub type ArbitrationScheduler = EthScheduler<ArbitrationTask>;
@@ -48,14 +52,15 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                     CircuitRouter::Transaction(task.input)
                 } else {
                     println!("AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
+                    let prev_snarks = prev_snarks
+                        .into_iter()
+                        .map(|snark| {
+                            println!("instances num {}", snark.instances.len());
+                            (snark, false)
+                        })
+                        .collect_vec();
                     return CircuitRouter::AggreateTransactions(PublicAggregationCircuit::new(
-                        prev_snarks
-                            .into_iter()
-                            .map(|snark| {
-                                println!("instances num {}", snark.instances.len());
-                                (snark, false)
-                            })
-                            .collect(),
+                        prev_snarks,
                     ));
                 }
             }
@@ -82,20 +87,26 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                     CircuitRouter::BlockTrackInterval(task.input)
                 } else {
                     println!("AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
+                    let prev_snarks = prev_snarks
+                        .into_iter()
+                        .map(|snark| {
+                            println!("instances num {}", snark.instances.len());
+                            (snark, false)
+                        })
+                        .collect_vec();
                     return CircuitRouter::AggreateBlockTracks(PublicAggregationCircuit::new(
-                        prev_snarks
-                            .into_iter()
-                            .map(|snark| {
-                                println!("instances num {}", snark.instances.len());
-                                (snark, false)
-                            })
-                            .collect(),
+                        prev_snarks,
                     ));
                 }
             }
             ArbitrationTask::Final(task) => {
                 println!("this is final task");
-                unimplemented!()
+                // let circuit_type = &task.circuit_type();
+                let [block_snark_1, block_snark_2]: [_; 2] = prev_snarks.try_into().unwrap();
+                CircuitRouter::FinalAssembly(FinalAssemblyCircuit::new(
+                    (block_snark_1, false),
+                    (block_snark_2, false),
+                ))
             }
         }
     }

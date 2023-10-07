@@ -11,6 +11,5 @@ pub struct TrackBlockConstructor {
 pub fn get_eth_track_block_circuit(constructor: TrackBlockConstructor) -> EthTrackBlockCircuit {
     let provider = get_provider(&constructor.network);
 
-
     EthTrackBlockCircuit::from_provider(&provider, constructor)
 }

@@ -22,7 +22,7 @@ use snark_verifier_sdk::{
     halo2::{aggregation::AggregationCircuit, gen_snark_shplonk},
     read_pk, CircuitExt, Snark, LIMBS, SHPLONK,
 };
-use std::io::Read;
+use std::io::{Read, Seek};
 use std::{env::var, fs::File, path::Path};
 
 pub trait PinnableCircuit<F: ff::Field>: CircuitExt<F> {
