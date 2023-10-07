@@ -85,7 +85,9 @@ impl scheduler::Task for ETHBlockTrackTask {
 
     fn name(&self) -> String {
         if self.is_aggregated() {
-            format!("blockTrack_aggregated_task_len_{}", self.constructor.len())
+            format!(
+                "blockTrack_aggregated_task_width_{}_task_len_{}", self.task_width, self.constructor.len()
+            )
         } else {
             format!(
                 "blockTrack_width_{}_start_{}_end_{}",

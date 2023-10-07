@@ -86,7 +86,7 @@ fn test_block_track_task() -> Snark {
         input: test_get_block_track_circuit(constructor_one.clone()),
         network: Network::Ethereum(EthereumNetwork::Mainnet),
         tasks_len: 2,
-        task_width: 1,
+        task_width: 2,
         constructor: vec![constructor_one, constructor_two],
     };
 
