@@ -47,10 +47,7 @@ impl scheduler::Scheduler for ArbitrationScheduler {
     fn get_circuit(&self, task: Self::Task, prev_snarks: Vec<Snark>) -> Self::CircuitRouter {
         match task {
             ArbitrationTask::Transaction(task) => {
-                if task.tasks_len == 1 {
-                    println!("TASK_LEN1======");
-                    CircuitRouter::Transaction(task.input)
-                } else {
+                if task.circuit_type().is_aggregated() {
                     println!("AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
                     let prev_snarks = prev_snarks
                         .into_iter()
@@ -59,9 +56,10 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                             (snark, false)
                         })
                         .collect_vec();
-                    return CircuitRouter::AggreateTransactions(PublicAggregationCircuit::new(
-                        prev_snarks,
-                    ));
+                    CircuitRouter::AggreateTransactions(PublicAggregationCircuit::new(prev_snarks))
+                } else {
+                    println!("TASK_LEN1======");
+                    CircuitRouter::Transaction(task.input)
                 }
             }
             ArbitrationTask::MDCState(task) => {
@@ -102,10 +100,12 @@ impl scheduler::Scheduler for ArbitrationScheduler {
             ArbitrationTask::Final(task) => {
                 println!("this is final task");
                 // let circuit_type = &task.circuit_type();
-                let [block_snark_1, block_snark_2]: [_; 2] = prev_snarks.try_into().unwrap();
+                let [transaction_snark, block_snark, mdc_state_snark]: [_; 3] =
+                    prev_snarks.try_into().unwrap();
                 CircuitRouter::FinalAssembly(FinalAssemblyCircuit::new(
-                    (block_snark_1, false),
-                    (block_snark_2, false),
+                    (transaction_snark, false),
+                    (block_snark, false),
+                    (mdc_state_snark, false),
                 ))
             }
         }

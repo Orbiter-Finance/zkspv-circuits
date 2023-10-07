@@ -23,34 +23,27 @@ use snark_verifier_sdk::{Snark, LIMBS, SHPLONK};
 use std::cell::RefCell;
 use std::env::var;
 
-// #[derive(Clone, Debug)]
-// pub struct FinalAssemblyCircuit {
-//     pub transaction_snark: Snark,
-//     pub block_snark: Snark,
-//     pub mdc_state_snark: Snark,
-//
-//     pub block_has_accumulator: bool,
-//     pub transaction_has_accumulator: bool,
-//     pub mdc_state_has_accumulator: bool,
-// }
-
 #[derive(Clone, Debug)]
 pub struct FinalAssemblyCircuit {
-    pub block_snark_1: Snark,
-    pub block_snark_2: Snark,
+    pub transaction_snark: Snark,
+    pub block_snark: Snark,
+    pub mdc_state_snark: Snark,
 
-    pub block_has_accumulator_1: bool,
-    pub block_has_accumulator_2: bool,
+    pub block_has_accumulator: bool,
+    pub transaction_has_accumulator: bool,
+    pub mdc_state_has_accumulator: bool,
 }
 
 impl FinalAssemblyCircuit {
-    pub fn new(block_1: (Snark, bool), block_2: (Snark, bool)) -> Self {
+    pub fn new(transaction: (Snark, bool), block: (Snark, bool), mdc_state: (Snark, bool)) -> Self {
         Self {
-            block_snark_1: block_1.0,
-            block_snark_2: block_2.0,
+            transaction_snark: transaction.0,
+            block_snark: block.0,
+            mdc_state_snark: mdc_state.0,
 
-            block_has_accumulator_1: block_1.1,
-            block_has_accumulator_2: block_2.1,
+            transaction_has_accumulator: transaction.1,
+            block_has_accumulator: block.1,
+            mdc_state_has_accumulator: mdc_state.1,
         }
     }
 }
@@ -63,41 +56,24 @@ impl FinalAssemblyCircuit {
         lookup_bits: usize,
         params: &ParamsKZG<Bn256>,
     ) -> EthCircuitBuilder<Fr, impl FnSynthesize<Fr>> {
-        log::info!("New FinalResponseAggregationCircuit",);
+        log::info!("New FinalAggregationCircuit",);
         // aggregate the snarks
-        // let aggregation = AggregationCircuit::new::<SHPLONK>(
-        //     stage,
-        //     Some(Vec::new()), // break points aren't actually used, since we will just take the builder from this circuit
-        //     lookup_bits,
-        //     params,
-        //     [self.transaction_snark, self.block_snark, self.mdc_state_snark],
-        // );
         let aggregation = AggregationCircuit::new::<SHPLONK>(
             stage,
             Some(Vec::new()), // break points aren't actually used, since we will just take the builder from this circuit
             lookup_bits,
             params,
-            [self.block_snark_1, self.block_snark_2],
+            [self.transaction_snark, self.block_snark, self.mdc_state_snark],
         );
-        // let (transaction_instance, block_instance, mdc_state_instance) = aggregation
-        //     .previous_instances
-        //     .iter()
-        //     .zip_eq([
-        //         self.transaction_has_accumulator,
-        //         self.block_has_accumulator,
-        //         self.mdc_state_has_accumulator,
-        //     ])
-        //     .map(|(instance, has_accumulator)| {
-        //         let start = (has_accumulator as usize) * 4 * LIMBS;
-        //         &instance[start..]
-        //     })
-        //     .collect_tuple()
-        //     .unwrap();
 
-        let (block_instance_1, block_instance_2) = aggregation
+        let (transaction_instance, block_instance, mdc_state_instance) = aggregation
             .previous_instances
             .iter()
-            .zip_eq([self.block_has_accumulator_1, self.block_has_accumulator_2])
+            .zip_eq([
+                self.transaction_has_accumulator,
+                self.block_has_accumulator,
+                self.mdc_state_has_accumulator,
+            ])
             .map(|(instance, has_accumulator)| {
                 let start = (has_accumulator as usize) * 4 * LIMBS;
                 &instance[start..]
