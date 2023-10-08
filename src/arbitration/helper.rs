@@ -111,9 +111,9 @@ impl scheduler::Task for ETHBlockTrackTask {
                     constructor: [constructor].to_vec(),
                 })
                 .collect_vec();
-            return result;
+            result
         } else {
-            return vec![];
+            vec![]
         }
     }
 }
@@ -138,30 +138,35 @@ impl scheduler::Task for MDCStateTask {
     }
 
     fn name(&self) -> String {
-        format!(
-            "storage_width_{}_address_{}_slots_{}_block_number_{}",
-            self.task_width,
-            self.constructor[0].address,
-            self.constructor[0].slots[0],
-            self.constructor[0].block_number,
-        )
+        if self.circuit_type().is_aggregated() {
+            format!("storage_aggregated_task_len_{}", self.constructor.len())
+        } else {
+            format!(
+                "storage_width_{}_address_{}_slots_{}_block_number_{}",
+                self.task_width,
+                self.constructor[0].address,
+                self.constructor[0].slots[0],
+                self.constructor[0].block_number,
+            )
+        }
     }
 
     fn dependencies(&self) -> Vec<Self> {
-        if self.tasks_len == 1 {
-            return vec![];
+        if self.circuit_type().is_aggregated() {
+            let constructor = self.constructor.clone();
+            let result = constructor
+                .into_iter()
+                .map(|constructor| Self {
+                    input: get_mdc_storage_circuit(constructor.clone()),
+                    tasks_len: 1u64,
+                    task_width: self.task_width,
+                    constructor: [constructor].to_vec(),
+                })
+                .collect_vec();
+            result
+        } else {
+            vec![]
         }
-        let constructor = self.constructor.clone();
-        let result = constructor
-            .into_iter()
-            .map(|constructor| Self {
-                input: get_mdc_storage_circuit(constructor.clone()),
-                tasks_len: 1u64,
-                task_width: self.task_width,
-                constructor: [constructor].to_vec(),
-            })
-            .collect_vec();
-        result
     }
 }
 
@@ -179,6 +184,12 @@ pub struct TransactionTask {
     pub constructor: Vec<TransactionConstructor>,
 }
 
+impl TransactionTask {
+    fn hash(&self) -> H256 {
+        H256(keccak256(bincode::serialize(&self.constructor[0].transaction_rlp).unwrap()))
+    }
+}
+
 impl scheduler::Task for TransactionTask {
     type CircuitType = EthTransactionCircuitType;
 
@@ -191,28 +202,29 @@ impl scheduler::Task for TransactionTask {
     }
 
     fn name(&self) -> String {
-        format!(
-            "transaction_width_{}_tx_{}",
-            self.task_width,
-            H256(keccak256(bincode::serialize(&self.constructor[0].transaction_rlp).unwrap()))
-        )
+        if self.circuit_type().is_aggregated() {
+            format!("transaction_aggregated_task_len_{}", self.constructor.len())
+        } else {
+            format!("transaction_width_{}_tx_{}", self.task_width, self.hash())
+        }
     }
 
     fn dependencies(&self) -> Vec<Self> {
-        if self.tasks_len == 1 {
-            return vec![];
-        }
-        let constructor = self.constructor.clone();
-        let result = constructor
-            .into_iter()
-            .map(|constructor| Self {
-                input: get_eth_transaction_circuit(constructor.clone()),
-                tasks_len: 1u64,
-                task_width: self.task_width,
-                constructor: [constructor].to_vec(),
-            })
-            .collect_vec();
-        result
+        return if self.circuit_type().is_aggregated() {
+            let constructor = self.constructor.clone();
+            let result = constructor
+                .into_iter()
+                .map(|constructor| Self {
+                    input: get_eth_transaction_circuit(constructor.clone()),
+                    tasks_len: 1u64,
+                    task_width: self.task_width,
+                    constructor: [constructor].to_vec(),
+                })
+                .collect_vec();
+            result
+        } else {
+            vec![]
+        };
     }
 }
 

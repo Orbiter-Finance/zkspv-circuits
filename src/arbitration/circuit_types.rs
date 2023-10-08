@@ -44,12 +44,26 @@ pub struct EthTransactionCircuitType {
     pub task_width: u64,
 }
 
+impl EthTransactionCircuitType {
+    pub fn is_aggregated(&self) -> bool {
+        self.tasks_len != 1
+    }
+}
+
 impl scheduler::CircuitType for EthTransactionCircuitType {
     fn name(&self) -> String {
-        format!("transaction_width_{}", self.task_width)
+        if self.is_aggregated() {
+            format!("transaction_aggregate_width_{}", self.task_width)
+        } else {
+            format!("transaction_width_{}", self.task_width)
+        }
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
-        EthConfigPinning::from_path(pinning_path.as_ref()).degree()
+        if self.is_aggregated() {
+            AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()
+        } else {
+            EthConfigPinning::from_path(pinning_path.as_ref()).degree()
+        }
     }
 }
 
@@ -61,12 +75,26 @@ pub struct EthStorageCircuitType {
     pub task_width: u64,
 }
 
+impl EthStorageCircuitType {
+    pub fn is_aggregated(&self) -> bool {
+        self.tasks_len != 1
+    }
+}
+
 impl scheduler::CircuitType for EthStorageCircuitType {
     fn name(&self) -> String {
-        format!("storage_width_{}", self.task_width)
+        if self.is_aggregated() {
+            format!("storage_aggregate_width_{}", self.task_width)
+        } else {
+            format!("storage_width_{}", self.task_width)
+        }
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
-        EthConfigPinning::from_path(pinning_path.as_ref()).degree()
+        if self.is_aggregated() {
+            AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()
+        } else {
+            EthConfigPinning::from_path(pinning_path.as_ref()).degree()
+        }
     }
 }
 
