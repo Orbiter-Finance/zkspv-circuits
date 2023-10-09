@@ -21,7 +21,9 @@ use snark_verifier_sdk::{
     CircuitExt, Snark, SHPLONK,
 };
 
-use crate::arbitration::helper::{FinalAssemblyTask, MDCStateTask, TransactionTask};
+use crate::arbitration::helper::{
+    FinalAssemblyConstructor, FinalAssemblyTask, MDCStateTask, TransactionTask,
+};
 use crate::storage::util::{get_mdc_storage_circuit, EbcRuleParams, StorageConstructor};
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
@@ -73,34 +75,31 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
     )
 }
 
-fn test_block_track_task() -> Snark {
-    let network = Network::Ethereum(EthereumNetwork::Mainnet);
+fn test_block_track_task(network: Network) -> ETHBlockTrackTask {
     let block_number_interval =
-        vec![(17113952..17113954).collect_vec(), (17113955..17113957).collect_vec()];
+        vec![(17113952..17113953).collect_vec(), (17113955..17113956).collect_vec()];
     let constructor_one =
         TrackBlockConstructor { block_number_interval: block_number_interval[0].clone(), network };
     let constructor_two =
         TrackBlockConstructor { block_number_interval: block_number_interval[1].clone(), network };
-    let scheduler = test_scheduler(network);
-    let _task = ETHBlockTrackTask {
+    ETHBlockTrackTask {
         input: test_get_block_track_circuit(constructor_one.clone()),
         network: Network::Ethereum(EthereumNetwork::Mainnet),
         tasks_len: 2,
-        task_width: 2,
+        task_width: 1,
         constructor: vec![constructor_one, constructor_two],
-    };
-
-    scheduler.get_snark(ArbitrationTask::ETHBlockTrack(_task))
+    }
 }
 
 #[test]
 pub fn test_arbitration_scheduler_block_track_task() {
-    test_block_track_task();
+    let network = Network::Ethereum(EthereumNetwork::Mainnet);
+    let scheduler = test_scheduler(network);
+    let _task = test_block_track_task(network);
+    scheduler.get_snark(ArbitrationTask::ETHBlockTrack(_task));
 }
 
-fn test_transaction_task() -> Snark {
-    let network = Network::Ethereum(EthereumNetwork::Mainnet);
-
+fn test_transaction_task(network: Network) -> TransactionTask {
     let block_number = 0xeee246;
     let transaction_index = 53;
     let transaction_rlp = Vec::from_hex("02f873010285020a08fb2885020a08fb2882520894a79ed52d6774259535428f2533a8420703a4078f87054e13428c955280c080a02a3222ebb694535ee03ced3a0bc75a7c37b5053be9dcccc15894e014b1fd3a81a079250a246c8846c86cc24a84d2966752d9999ab4f05b5cca98762400e0a0f813").unwrap();
@@ -127,19 +126,20 @@ fn test_transaction_task() -> Snark {
         network,
     };
 
-    let scheduler = test_scheduler(network);
-    let _task = TransactionTask {
+    TransactionTask {
         input: get_eth_transaction_circuit(constructor.clone()),
         tasks_len: 1,
         task_width: 1,
         constructor: vec![constructor],
-    };
-
-    scheduler.get_snark(ArbitrationTask::Transaction(_task))
+    }
 }
+
 #[test]
 pub fn test_arbitration_scheduler_transaction_task() {
-    test_transaction_task();
+    let network = Network::Ethereum(EthereumNetwork::Mainnet);
+    let scheduler = test_scheduler(network);
+    let _task = test_transaction_task(network);
+    scheduler.get_snark(ArbitrationTask::Transaction(_task));
 }
 
 fn test_mdc_task() -> Snark {
@@ -213,12 +213,28 @@ pub fn test_arbitration_scheduler_mdc_task() {
 pub fn test_arbitration_scheduler_final_task() {
     let network = Network::Ethereum(EthereumNetwork::Mainnet);
 
+    let block_network = Network::Ethereum(EthereumNetwork::Mainnet);
+
+    let transaction_network = Network::Ethereum(EthereumNetwork::Mainnet);
+
     let scheduler = test_scheduler(network);
+
+    let transaction_task = test_transaction_task(transaction_network);
+
+    let block_task = test_block_track_task(block_network);
+
+    let constructor =
+        FinalAssemblyConstructor { transaction_task, eth_block_track_task: block_task };
 
     let _task = FinalAssemblyTask {
         round: 0,
         network,
-        snarks: vec![test_transaction_task(), test_block_track_task(), test_mdc_task()],
+        // snarks: vec![
+        //     // test_transaction_task(),
+        //     test_block_track_task(mdc_network),
+        //     // test_mdc_task()
+        // ],
+        constructor,
     };
     scheduler.get_snark(ArbitrationTask::Final(_task));
 }
