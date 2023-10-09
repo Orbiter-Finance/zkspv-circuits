@@ -145,14 +145,14 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
             erc20_to_address,
             erc20_amount,
             time_stamp,
+            tx_to,
         } = digest;
 
         let assigned_instances = block_hash
             .into_iter()
-            .chain([erc20_to_address, erc20_amount, time_stamp])
+            .chain([erc20_to_address, erc20_amount, time_stamp, tx_to])
             .collect_vec();
 
-        // vec![index].into_iter().chain(slots_values).collect_vec();
         {
             let ctx = builder.gate_builder.main(FIRST_PHASE);
             range.gate.assert_is_const(ctx, &transaction_is_empty, &Fr::zero());
@@ -185,7 +185,7 @@ pub struct EIP1186ResponseDigest<F: Field> {
     pub erc20_to_address: AssignedValue<F>,
     pub erc20_amount: AssignedValue<F>,
     pub time_stamp: AssignedValue<F>,
-    // pub tx_to:AssignedValue<F>,
+    pub tx_to: AssignedValue<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -200,7 +200,8 @@ pub struct EthBlockTransactionTrace<F: Field> {
 }
 
 #[derive(Clone, Debug)]
-pub struct EthTransactionErc20Witness<F: Field> {
+pub struct EthTransactionExtraWitness<F: Field> {
+    pub tx_to: AssignedValue<F>,
     pub erc20_to_address: AssignedValue<F>,
     pub erc20_amount: AssignedValue<F>,
 }
@@ -209,7 +210,7 @@ pub struct EthTransactionErc20Witness<F: Field> {
 pub struct EthTransactionTraceWitness<F: Field> {
     transaction_witness: RlpArrayTraceWitness<F>,
     mpt_witness: MPTProofWitness<F>,
-    erc20_witness: EthTransactionErc20Witness<F>,
+    extra_witness: EthTransactionExtraWitness<F>,
 }
 
 impl<F: Field> EthTransactionTraceWitness<F> {
@@ -349,9 +350,10 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             block_hash: block_hash.try_into().unwrap(),
             slots_values: transaction_rlp,
             transaction_is_empty: transaction_witness.mpt_witness.slot_is_empty,
-            erc20_to_address: transaction_witness.erc20_witness.erc20_to_address,
-            erc20_amount: transaction_witness.erc20_witness.erc20_amount,
+            erc20_to_address: transaction_witness.extra_witness.erc20_to_address,
+            erc20_amount: transaction_witness.extra_witness.erc20_amount,
             time_stamp,
+            tx_to: transaction_witness.extra_witness.tx_to,
         };
         (EthBlockTransactionTraceWitness { block_witness, transaction_witness }, digest)
     }
@@ -422,12 +424,15 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let mut calldata = &vec![zero];
         let mut erc20_to_address = zero;
         let mut erc20_amount = zero;
+        let mut tx_to_witness;
         // let mock_calldata = Vec::from_hex("a9059cbb0000000000000000000000003620401ebbc40533218d2d0f2c01398dc9148b6f0000000000000000000000000000000000000000000000000000000000116520").unwrap();
         // let calldata = load_bytes(ctx, mock_calldata.as_slice());
         if is_not_legacy_transaction.value == zero.value {
             calldata = &transaction_witness.field_witness[5].field_cells;
+            tx_to_witness = &transaction_witness.field_witness[3];
         } else {
             calldata = &transaction_witness.field_witness[7].field_cells;
+            tx_to_witness = &transaction_witness.field_witness[5];
         }
         let function_selector = load_bytes(ctx, &FUNCTION_SELECTOR_ERC20_TRANSFER);
 
@@ -481,12 +486,18 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             }
         }
 
+        // tx to
+        let tx_to_bytes = &tx_to_witness.field_cells;
+        let tx_to_len = tx_to_witness.field_len;
+        let _tx_to = bytes_be_var_to_fixed(ctx, self.gate(), &tx_to_bytes, tx_to_len, 32);
+        let tx_to = bytes_be_to_uint(ctx, self.gate(), &_tx_to, 32);
+
         // check MPT inclusion
         let mpt_witness = self.parse_mpt_inclusion_phase0(ctx, keccak, transaction_proofs);
         EthTransactionTraceWitness {
             transaction_witness,
             mpt_witness,
-            erc20_witness: EthTransactionErc20Witness { erc20_to_address, erc20_amount },
+            extra_witness: EthTransactionExtraWitness { tx_to, erc20_to_address, erc20_amount },
         }
     }
 
