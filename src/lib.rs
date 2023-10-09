@@ -49,8 +49,8 @@ pub mod transaction;
 pub mod config;
 #[cfg(feature = "providers")]
 pub mod providers;
+pub mod server;
 pub mod util;
-// pub mod server;
 
 pub(crate) const ETH_LOOKUP_BITS: usize = 8; // always want 8 to range check bytes
 
@@ -251,6 +251,7 @@ impl<F: Field, FnPhase1: FnSynthesize<F>> Circuit<F> for EthCircuitBuilder<F, Fn
         if !witness_gen_only {
             // expose public instances
             let mut layouter = layouter.namespace(|| "expose");
+            println!("public assigned_instances:{:?}", &self.assigned_instances);
             for (i, instance) in self.assigned_instances.iter().enumerate() {
                 let cell = instance.cell.unwrap();
                 let (cell, _) = assigned_advices

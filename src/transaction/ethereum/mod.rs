@@ -1,5 +1,6 @@
 use ethers_core::abi::AbiEncode;
 use std::cell::RefCell;
+use std::f32::consts::E;
 
 use ethers_core::types::{Block, Bytes, H256};
 use ethers_providers::{Http, Provider};
@@ -18,7 +19,7 @@ use crate::block_header::{
     EthBlockHeaderTraceWitness,
 };
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
-use crate::mpt::{MPTInput, MPTProof, MPTProofWitness};
+use crate::mpt::{AssignedBytes, MPTInput, MPTProof, MPTProofWitness};
 use crate::providers::get_transaction_input;
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{RlcContextPair, FIRST_PHASE};
@@ -29,6 +30,7 @@ use crate::transaction::{
     EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_TX_TYPE_CRITICAL_VALUE,
 };
 use crate::util::helpers::load_bytes;
+use crate::util::{bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, AssignedH256};
 use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS};
 
 pub mod helper;
@@ -135,9 +137,22 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
             &self.block_header_config,
         );
 
-        let EIP1186ResponseDigest { index, slots_values, transaction_is_empty } = digest;
+        let EIP1186ResponseDigest {
+            index,
+            block_hash,
+            slots_values,
+            transaction_is_empty,
+            erc20_to_address,
+            erc20_amount,
+            time_stamp,
+        } = digest;
 
-        let assigned_instances = vec![index].into_iter().chain(slots_values).collect_vec();
+        let assigned_instances = block_hash
+            .into_iter()
+            .chain([erc20_to_address, erc20_amount, time_stamp])
+            .collect_vec();
+
+        // vec![index].into_iter().chain(slots_values).collect_vec();
         {
             let ctx = builder.gate_builder.main(FIRST_PHASE);
             range.gate.assert_is_const(ctx, &transaction_is_empty, &Fr::zero());
@@ -163,9 +178,14 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
 #[derive(Clone, Debug)]
 pub struct EIP1186ResponseDigest<F: Field> {
     pub index: AssignedValue<F>,
+    pub block_hash: AssignedH256<F>,
     // the value U256 is interpreted as H256 (padded with 0s on left)
     pub slots_values: Vec<AssignedValue<F>>,
     pub transaction_is_empty: AssignedValue<F>,
+    pub erc20_to_address: AssignedValue<F>,
+    pub erc20_amount: AssignedValue<F>,
+    pub time_stamp: AssignedValue<F>,
+    // pub tx_to:AssignedValue<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -180,9 +200,16 @@ pub struct EthBlockTransactionTrace<F: Field> {
 }
 
 #[derive(Clone, Debug)]
+pub struct EthTransactionErc20Witness<F: Field> {
+    pub erc20_to_address: AssignedValue<F>,
+    pub erc20_amount: AssignedValue<F>,
+}
+
+#[derive(Clone, Debug)]
 pub struct EthTransactionTraceWitness<F: Field> {
     transaction_witness: RlpArrayTraceWitness<F>,
     mpt_witness: MPTProofWitness<F>,
+    erc20_witness: EthTransactionErc20Witness<F>,
 }
 
 impl<F: Field> EthTransactionTraceWitness<F> {
@@ -296,7 +323,16 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             block_header.resize(block_header_config.block_header_rlp_max_bytes, 0);
             self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config)
         };
+        let ctx = thread_pool.main(FIRST_PHASE);
+        let block_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
         let transactions_root = &block_witness.get_transactions_root().field_cells;
+
+        // timestamp
+        let time_stamp_bytes = &block_witness.get_timestamp().field_cells;
+        let time_stamp_len = block_witness.get_timestamp().field_len;
+        let time_stamp =
+            bytes_be_var_to_fixed(ctx, self.gate(), time_stamp_bytes, time_stamp_len, 8);
+        let time_stamp = bytes_be_to_uint(ctx, self.gate(), &time_stamp, 8);
 
         // drop ctx
         let transaction_witness = self.parse_eip1186_proof_phase0(
@@ -310,8 +346,12 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
 
         let digest = EIP1186ResponseDigest {
             index: transaction_index,
+            block_hash: block_hash.try_into().unwrap(),
             slots_values: transaction_rlp,
             transaction_is_empty: transaction_witness.mpt_witness.slot_is_empty,
+            erc20_to_address: transaction_witness.erc20_witness.erc20_to_address,
+            erc20_amount: transaction_witness.erc20_witness.erc20_amount,
+            time_stamp,
         };
         (EthBlockTransactionTraceWitness { block_witness, transaction_witness }, digest)
     }
@@ -379,10 +419,17 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         );
 
         // parse calldata Todo:Need to separate 2718 from 1559
-        let calldata = &transaction_witness.field_witness[7].field_cells;
-        let function_selector = load_bytes(ctx, &FUNCTION_SELECTOR_ERC20_TRANSFER);
+        let mut calldata = &vec![zero];
+        let mut erc20_to_address = zero;
+        let mut erc20_amount = zero;
         // let mock_calldata = Vec::from_hex("a9059cbb0000000000000000000000003620401ebbc40533218d2d0f2c01398dc9148b6f0000000000000000000000000000000000000000000000000000000000116520").unwrap();
-        // let calldata = load_bytes(ctx, calldata.as_slice());
+        // let calldata = load_bytes(ctx, mock_calldata.as_slice());
+        if is_not_legacy_transaction.value == zero.value {
+            calldata = &transaction_witness.field_witness[5].field_cells;
+        } else {
+            calldata = &transaction_witness.field_witness[7].field_cells;
+        }
+        let function_selector = load_bytes(ctx, &FUNCTION_SELECTOR_ERC20_TRANSFER);
 
         let mut new_calldata = Vec::with_capacity(CALLDATA_BYTES_LEN);
 
@@ -405,16 +452,42 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             new_calldata.push(val_byte);
 
             if is_function_selector.value != zero.value {
-                let erc20_to_address = &new_calldata[FUNCTION_SELECTOR_BYTES_LEN
+                let erc20_to_address_bytes = &new_calldata[FUNCTION_SELECTOR_BYTES_LEN
                     ..FUNCTION_SELECTOR_BYTES_LEN + ERC20_TO_ADDRESS_BYTES_LEN];
-                let erc20_amount = &new_calldata
+                let erc20_to_address_len = ctx.load_constant(
+                    (F::from(erc20_to_address_bytes.len() as u64)).try_into().unwrap(),
+                );
+                let _erc20_to_address = bytes_be_var_to_fixed(
+                    ctx,
+                    self.gate(),
+                    &erc20_to_address_bytes,
+                    erc20_to_address_len,
+                    32,
+                );
+                erc20_to_address = bytes_be_to_uint(ctx, self.gate(), &_erc20_to_address, 32);
+
+                let erc20_amount_bytes = &new_calldata
                     [FUNCTION_SELECTOR_BYTES_LEN + ERC20_TO_ADDRESS_BYTES_LEN..CALLDATA_BYTES_LEN];
+                let erc20_amount_len = ctx
+                    .load_constant((F::from(erc20_amount_bytes.len() as u64)).try_into().unwrap());
+                let _erc20_amount = bytes_be_var_to_fixed(
+                    ctx,
+                    self.gate(),
+                    &erc20_amount_bytes,
+                    erc20_amount_len,
+                    32,
+                );
+                erc20_amount = bytes_be_to_uint(ctx, self.gate(), &_erc20_amount, 32);
             }
         }
 
         // check MPT inclusion
         let mpt_witness = self.parse_mpt_inclusion_phase0(ctx, keccak, transaction_proofs);
-        EthTransactionTraceWitness { transaction_witness, mpt_witness }
+        EthTransactionTraceWitness {
+            transaction_witness,
+            mpt_witness,
+            erc20_witness: EthTransactionErc20Witness { erc20_to_address, erc20_amount },
+        }
     }
 
     // ================= SECOND PHASE ================

@@ -5,6 +5,7 @@ use crate::rlp::RlpChip;
 use crate::util::circuit::{PinnableCircuit, PreCircuit};
 use crate::util::{EthConfigParams, EthConfigPinning, Halo2ConfigPinning};
 use crate::{EthChip, EthCircuitBuilder};
+use futures::stream::iter;
 use halo2_base::gates::builder::CircuitBuilderStage;
 use halo2_base::gates::{RangeChip, RangeInstructions};
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
@@ -27,23 +28,25 @@ use std::env::var;
 pub struct FinalAssemblyCircuit {
     pub transaction_snark: Snark,
     pub block_snark: Snark,
-    pub mdc_state_snark: Snark,
-
-    pub block_has_accumulator: bool,
+    // pub mdc_state_snark: Snark,
     pub transaction_has_accumulator: bool,
-    pub mdc_state_has_accumulator: bool,
+    pub block_has_accumulator: bool,
+    // pub mdc_state_has_accumulator: bool,
 }
 
 impl FinalAssemblyCircuit {
-    pub fn new(transaction: (Snark, bool), block: (Snark, bool), mdc_state: (Snark, bool)) -> Self {
+    pub fn new(
+        transaction: (Snark, bool),
+        block: (Snark, bool),
+        // mdc_state: (Snark, bool)
+    ) -> Self {
         Self {
             transaction_snark: transaction.0,
             block_snark: block.0,
-            mdc_state_snark: mdc_state.0,
-
+            // mdc_state_snark: mdc_state.0,
             transaction_has_accumulator: transaction.1,
             block_has_accumulator: block.1,
-            mdc_state_has_accumulator: mdc_state.1,
+            // mdc_state_has_accumulator: mdc_state.1,
         }
     }
 }
@@ -63,16 +66,17 @@ impl FinalAssemblyCircuit {
             Some(Vec::new()), // break points aren't actually used, since we will just take the builder from this circuit
             lookup_bits,
             params,
-            [self.transaction_snark, self.block_snark, self.mdc_state_snark],
+            // [self.transaction_snark, self.block_snark, self.mdc_state_snark],
+            [self.transaction_snark, self.block_snark],
         );
 
-        let (transaction_instance, block_instance, mdc_state_instance) = aggregation
+        let (transaction_instance, block_instance) = aggregation
             .previous_instances
             .iter()
             .zip_eq([
                 self.transaction_has_accumulator,
                 self.block_has_accumulator,
-                self.mdc_state_has_accumulator,
+                // self.mdc_state_has_accumulator,
             ])
             .map(|(instance, has_accumulator)| {
                 let start = (has_accumulator as usize) * 4 * LIMBS;
@@ -94,6 +98,9 @@ impl FinalAssemblyCircuit {
 
         let builder = RlcThreadBuilder { threads_rlc: Vec::new(), gate_builder };
         let mut assigned_instances = aggregation.inner.assigned_instances;
+        // assigned_instances.extend(block_instance);
+
+        println!("assigned_instances:{:?}", &assigned_instances);
 
         EthCircuitBuilder::new(
             assigned_instances,

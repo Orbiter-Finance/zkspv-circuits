@@ -98,14 +98,14 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                 }
             }
             ArbitrationTask::Final(task) => {
-                println!("this is final task");
+                println!("FINAL ====== prev_snarks len {}", prev_snarks.len());
                 // let circuit_type = &task.circuit_type();
-                let [transaction_snark, block_snark, mdc_state_snark]: [_; 3] =
-                    prev_snarks.try_into().unwrap();
+                // let [transaction_snark, block_snark, mdc_state_snark]: [_; 3] =
+                //     prev_snarks.try_into().unwrap();
+                let [transaction_snark, block_snark]: [_; 2] = prev_snarks.try_into().unwrap();
                 CircuitRouter::FinalAssembly(FinalAssemblyCircuit::new(
                     (transaction_snark, false),
-                    (block_snark, false),
-                    (mdc_state_snark, false),
+                    (block_snark, false), // (mdc_state_snark, false),
                 ))
             }
         }

@@ -25,10 +25,17 @@ use super::circuit_types::{ArbitrationCircuitType, EthTrackBlockCircuitType};
 pub type CrossChainNetwork = Network;
 
 #[derive(Clone, Debug)]
+pub struct FinalAssemblyConstructor {
+    pub transaction_task: TransactionTask,
+    pub eth_block_track_task: ETHBlockTrackTask,
+}
+
+#[derive(Clone, Debug)]
 pub struct FinalAssemblyTask {
     pub round: usize,
     pub network: Network,
-    pub snarks: Vec<Snark>,
+    // pub snarks: Vec<Snark>,
+    pub constructor: FinalAssemblyConstructor,
 }
 
 impl scheduler::Task for FinalAssemblyTask {
@@ -43,17 +50,20 @@ impl scheduler::Task for FinalAssemblyTask {
     }
 
     fn dependencies(&self) -> Vec<Self> {
-        if self.round != 0 {
-            let mut circuit_type = self.circuit_type().clone();
-            circuit_type.round -= 1;
-            return vec![];
-        }
-        let snarks = self.snarks.clone();
-        let result = snarks
-            .into_iter()
-            .map(|snark| Self { round: 0, network: self.network, snarks: vec![snark] })
-            .collect_vec();
-        result
+        // if self.round != 0 {
+        //     let mut circuit_type = self.circuit_type().clone();
+        //     circuit_type.round -= 1;
+        //     return vec![];
+        // }
+        // println!("final dependencies");
+        // // vec![]
+        // let snarks = self.snarks.clone();
+        // let result = snarks
+        //     .into_iter()
+        //     .map(|snark| Self { round: 0, network: self.network, snarks: vec![snark] })
+        //     .collect_vec();
+        // result
+        vec![]
     }
 }
 
@@ -86,7 +96,9 @@ impl scheduler::Task for ETHBlockTrackTask {
     fn name(&self) -> String {
         if self.is_aggregated() {
             format!(
-                "blockTrack_aggregated_task_width_{}_task_len_{}", self.task_width, self.constructor.len()
+                "blockTrack_aggregated_task_width_{}_task_len_{}",
+                self.task_width,
+                self.constructor.len()
             )
         } else {
             format!(
@@ -210,7 +222,7 @@ impl scheduler::Task for TransactionTask {
     }
 
     fn dependencies(&self) -> Vec<Self> {
-        return if self.circuit_type().is_aggregated() {
+        if self.circuit_type().is_aggregated() {
             let constructor = self.constructor.clone();
             let result = constructor
                 .into_iter()
@@ -224,7 +236,7 @@ impl scheduler::Task for TransactionTask {
             result
         } else {
             vec![]
-        };
+        }
     }
 }
 
@@ -284,7 +296,14 @@ impl scheduler::Task for ArbitrationTask {
                 task.dependencies().into_iter().map(ArbitrationTask::ETHBlockTrack).collect()
             }
             ArbitrationTask::Final(task) => {
-                task.dependencies().into_iter().map(ArbitrationTask::Final).collect()
+                // task.dependencies().into_iter().map(ArbitrationTask::Final).collect()
+                // task.snarks
+                let task = task.clone();
+
+                vec![
+                    ArbitrationTask::Transaction(task.constructor.transaction_task),
+                    ArbitrationTask::ETHBlockTrack(task.constructor.eth_block_track_task),
+                ]
             }
         }
     }
