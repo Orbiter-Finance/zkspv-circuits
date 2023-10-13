@@ -33,6 +33,8 @@ bincode = { version = "1.3.3", optional = true }
 base64 = { version = "0.21", optional = true }
 serde_with = { version = "2.2", optional = true }
 
+regex-simple = { version = "1", package = "regex" }
+
 # halo2
 ff = "0.12"
 # halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib.git",  branch = "community-edition", default-features = false }
@@ -47,13 +49,13 @@ rand_core = { version = "0.6", default-features = false, features = ["getrandom"
 rand = "*"
 rand_chacha = "0.3.1"
 
-# aggregation 
-# snark-verifier = { git = "https://github.com/axiom-crypto/snark-verifier.git",  branch = "community-edition", default-features = false, features = ["loader_halo2"], optional = true }
-# snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", branch = "community-edition", default-features = false, features = ["loader_halo2"], optional = true }
-
+# aggregation
 snark-verifier = { git = "https://github.com/Orbiter-Finance/snark-verifier.git",  branch = "community-edition-performance", default-features = false, features = ["loader_halo2"], optional = true }
 snark-verifier-sdk = { git = "https://github.com/Orbiter-Finance/snark-verifier.git", branch = "community-edition-performance", default-features = false, features = ["loader_halo2"], optional = true }
 
+halo2_solidity_verifier = { git = "https://github.com/privacy-scaling-explorations/halo2-solidity-verifier" }
+# For feature = "evm"
+revm = { version = "3.3.0", optional = true }
 # generating circuit inputs from blockchain
 ethers-providers = { version = "=2.0.6", optional = true }
 tokio = { version = "1.26", default-features = false, features = ["rt", "rt-multi-thread"], optional = true }
@@ -87,7 +89,7 @@ test-case = "3.1.0"
 [features]
 default = ["halo2-axiom", "jemallocator", "display", "aggregation", "clap", "evm"]
 aggregation = ["dep:snark-verifier", "snark-verifier-sdk", "providers","dep:circuit_derive"]
-evm = ["snark-verifier-sdk?/loader_evm", "aggregation"]
+evm = ["snark-verifier-sdk?/loader_evm", "aggregation","dep:revm"]
 providers = ["dep:ethers-providers", "dep:tokio", "dep:bincode", "dep:base64", "dep:serde_with","dep:futures"]
 display = ["zkevm-keccak/display", "snark-verifier-sdk?/display", "dep:ark-std"]
 clap = ["dep:clap", "dep:clap-num"]
@@ -127,4 +129,3 @@ dev-graph = ["halo2-base/dev-graph"]
 # snark-verifier-sdk = { git = "https://github.com/Orbiter-Finance/snark-verifier.git", branch = "community-edition-performance", default-features = false, features = ["loader_halo2"], optional = true }
 # halo2-base = { git = "https://github.com/Orbiter-Finance/halo2-lib.git",  branch = "community-edition-performance", default-features = false }
 # zkevm-keccak = { git = "https://github.com/Orbiter-Finance/halo2-lib.git",  branch = "community-edition-performance", default-features = false }
-

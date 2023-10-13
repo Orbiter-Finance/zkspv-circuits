@@ -302,31 +302,6 @@ pub fn test_arbitration_circuit() {
         (snark, storage_proof_time)
     };
 
-    let (storage_snark, storage_proof_time) = {
-        set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&storage_param).unwrap());
-        let k = storage_param.degree;
-        let input = test_get_storage_circuit(Network::Ethereum(EthereumNetwork::Goerli), 9731724);
-        let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
-        let params = gen_srs(k);
-        let pk = gen_pk(&params, &circuit, None);
-        let break_points = circuit.circuit.break_points.take();
-        println!("break_points {:?}", break_points);
-        let manual_break_points = RlcThreadBreakPoints {
-            gate: [
-                [262034, 262034, 262034, 262032, 262032].into(),
-                [262034, 262034].into(),
-                [].into(),
-            ]
-            .into(),
-            rlc: [].into(),
-        };
-        let storage_proof_time = start_timer!(|| "Storage Proof SHPLONK");
-        let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
-        let snark = gen_snark_shplonk(&params, &pk, circuit, None::<&str>);
-        end_timer!(storage_proof_time);
-        (snark, storage_proof_time)
-    };
-
     let k = evm_param.degree;
     let params = gen_srs(k);
     set_var("LOOKUP_BITS", evm_param.lookup_bits.to_string());
@@ -351,8 +326,8 @@ pub fn test_arbitration_circuit() {
         Some(break_points),
         evm_param.lookup_bits,
         &params,
-        vec![eth_tx_snark.clone(), storage_snark.clone()],
-        // vec![eth_tx_snark.clone()],
+        // vec![eth_tx_snark.clone(), storage_snark.clone()],
+        vec![eth_tx_snark.clone()],
         false,
     );
     let proof = gen_evm_proof_shplonk(&params, &pk, pf_circuit, instances.clone());

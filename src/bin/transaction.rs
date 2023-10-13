@@ -71,7 +71,7 @@ fn main() {
     let scheduler = TransactionScheduler::new(
         network,
         false,
-        true,
+        false,
         PathBuf::from("configs/transactions"),
         PathBuf::from("data/transactions"),
     );

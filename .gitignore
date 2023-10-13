@@ -6,3 +6,5 @@ Cargo.lock
 params/
 *.srs
 data/
+.idea
+.vscode

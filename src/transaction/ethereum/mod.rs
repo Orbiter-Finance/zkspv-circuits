@@ -30,7 +30,9 @@ use crate::transaction::{
     EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_TX_TYPE_CRITICAL_VALUE,
 };
 use crate::util::helpers::load_bytes;
-use crate::util::{bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, AssignedH256};
+use crate::util::{
+    bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, encode_h256_to_field, AssignedH256,
+};
 use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS};
 
 pub mod helper;
@@ -115,6 +117,13 @@ impl EthBlockTransactionCircuit {
         let block_header_config = get_block_header_config(&constructor.network);
         Self { inputs, block_header_config }
     }
+
+    pub fn instance<F: Field>(&self, ctx: &mut Context<F>) -> Vec<F> {
+        let EthBlockTransactionInput { block_hash, .. } = &self.inputs;
+        let mut instance = Vec::with_capacity(1);
+        instance.extend(encode_h256_to_field::<F>(block_hash));
+        instance
+    }
 }
 
 impl EthPreCircuit for EthBlockTransactionCircuit {
@@ -150,7 +159,7 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
 
         let assigned_instances = block_hash
             .into_iter()
-            .chain([erc20_to_address, erc20_amount, time_stamp, tx_to])
+            // .chain([erc20_to_address, erc20_amount, time_stamp, tx_to])
             .collect_vec();
 
         {

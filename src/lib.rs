@@ -3,6 +3,8 @@
 #![feature(return_position_impl_trait_in_trait)]
 #![allow(incomplete_features)]
 
+extern crate core;
+
 use ark_std::{end_timer, start_timer};
 use std::env::{set_var, var};
 
@@ -47,6 +49,8 @@ pub mod track_block;
 pub mod transaction;
 
 pub mod config;
+pub mod ecdsa;
+mod gen;
 #[cfg(feature = "providers")]
 pub mod providers;
 pub mod server;
@@ -251,7 +255,6 @@ impl<F: Field, FnPhase1: FnSynthesize<F>> Circuit<F> for EthCircuitBuilder<F, Fn
         if !witness_gen_only {
             // expose public instances
             let mut layouter = layouter.namespace(|| "expose");
-            println!("public assigned_instances:{:?}", &self.assigned_instances);
             for (i, instance) in self.assigned_instances.iter().enumerate() {
                 let cell = instance.cell.unwrap();
                 let (cell, _) = assigned_advices

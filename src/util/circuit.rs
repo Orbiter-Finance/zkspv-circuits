@@ -301,7 +301,6 @@ pub fn write_calldata_generic<ConcreteCircuit: CircuitExt<Fr>>(
     let calldata = encode(encode_calldata(&instances, &proof));
     fs::write(path, &calldata).expect("write calldata should not fail");
     if let Some(deployment_code) = deployment_code {
-        println!("deployment_code:{:?}", deployment_code);
         evm_verify(deployment_code, instances, proof);
     }
     calldata
