@@ -98,17 +98,23 @@ impl scheduler::CircuitType for EthStorageCircuitType {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum FinalAssemblyFinality {
+    None,
+    Evm(usize),
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct FinalAssemblyCircuitType {
     /// Performs `round` rounds of SNARK verification using `PublicAggregationCircuit` on the final circuit.
     /// This is used to reduce circuit size and final EVM verification gas costs.
-    pub network: Network,
     pub round: usize,
+    pub network: Network,
 }
 
 impl scheduler::CircuitType for FinalAssemblyCircuitType {
     fn name(&self) -> String {
-        format!("final_round_{}", self.round)
+        format!("final_{}", self.round)
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
         if self.round == 0 {

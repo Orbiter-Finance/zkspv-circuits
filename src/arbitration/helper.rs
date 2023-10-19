@@ -8,6 +8,7 @@ use snark_verifier_sdk::Snark;
 
 use crate::arbitration::circuit_types::{
     EthStorageCircuitType, EthTransactionCircuitType, FinalAssemblyCircuitType,
+    FinalAssemblyFinality,
 };
 use crate::storage::util::{get_mdc_storage_circuit, StorageConstructor};
 use crate::storage::EthBlockStorageCircuit;
@@ -28,13 +29,13 @@ pub type CrossChainNetwork = Network;
 pub struct FinalAssemblyConstructor {
     pub transaction_task: TransactionTask,
     pub eth_block_track_task: ETHBlockTrackTask,
+    pub mdc_state_task: MDCStateTask,
 }
 
 #[derive(Clone, Debug)]
 pub struct FinalAssemblyTask {
     pub round: usize,
     pub network: Network,
-    // pub snarks: Vec<Snark>,
     pub constructor: FinalAssemblyConstructor,
 }
 
@@ -42,27 +43,14 @@ impl scheduler::Task for FinalAssemblyTask {
     type CircuitType = FinalAssemblyCircuitType;
 
     fn circuit_type(&self) -> Self::CircuitType {
-        FinalAssemblyCircuitType { network: self.network, round: self.round }
+        FinalAssemblyCircuitType { round: self.round, network: self.network }
     }
 
     fn name(&self) -> String {
-        format!("finalAssembly_round_{}", self.round)
+        format!("final_{}", self.round)
     }
 
     fn dependencies(&self) -> Vec<Self> {
-        // if self.round != 0 {
-        //     let mut circuit_type = self.circuit_type().clone();
-        //     circuit_type.round -= 1;
-        //     return vec![];
-        // }
-        // println!("final dependencies");
-        // // vec![]
-        // let snarks = self.snarks.clone();
-        // let result = snarks
-        //     .into_iter()
-        //     .map(|snark| Self { round: 0, network: self.network, snarks: vec![snark] })
-        //     .collect_vec();
-        // result
         vec![]
     }
 }
@@ -296,13 +284,20 @@ impl scheduler::Task for ArbitrationTask {
                 task.dependencies().into_iter().map(ArbitrationTask::ETHBlockTrack).collect()
             }
             ArbitrationTask::Final(task) => {
-                // task.dependencies().into_iter().map(ArbitrationTask::Final).collect()
-                // task.snarks
+                if task.circuit_type().round != 0 {
+                    let mut circuit_type = task.circuit_type().clone();
+                    circuit_type.round -= 1;
+                    return vec![ArbitrationTask::Final(FinalAssemblyTask {
+                        round: circuit_type.round,
+                        ..task.clone()
+                    })];
+                }
                 let task = task.clone();
 
                 vec![
                     ArbitrationTask::Transaction(task.constructor.transaction_task),
                     ArbitrationTask::ETHBlockTrack(task.constructor.eth_block_track_task),
+                    ArbitrationTask::MDCState(task.constructor.mdc_state_task),
                 ]
             }
         }

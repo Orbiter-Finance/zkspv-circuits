@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::EthScheduler;
-use crate::arbitration::final_assembly::assembly_circuit::FinalAssemblyCircuit;
+use crate::arbitration::circuit_types::FinalAssemblyFinality;
 use crate::storage::util::StorageConstructor;
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::EthBlockTransactionCircuit;
@@ -34,7 +34,10 @@ pub enum CircuitRouter {
     MdcStorage(EthBlockStorageCircuit),
     AggreateMdcStorages(PublicAggregationCircuit),
 
-    FinalAssembly(FinalAssemblyCircuit),
+    // FinalAssembly(FinalAssemblyCircuit),
+    Passthrough(PublicAggregationCircuit),
+    FinalAssemblyThroughAggregation(PublicAggregationCircuit),
+    // FinalAssemblyForEvm(PublicAggregationCircuit),
 }
 
 pub type ArbitrationScheduler = EthScheduler<ArbitrationTask>;
@@ -48,7 +51,10 @@ impl scheduler::Scheduler for ArbitrationScheduler {
         match task {
             ArbitrationTask::Transaction(task) => {
                 if task.circuit_type().is_aggregated() {
-                    println!("AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
+                    println!(
+                        "Transaction AGGREGATION ====== prev_snarks len {}",
+                        prev_snarks.len()
+                    );
                     let prev_snarks = prev_snarks
                         .into_iter()
                         .map(|snark| {
@@ -67,7 +73,7 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                     println!("TASK_LEN1======");
                     CircuitRouter::MdcStorage(task.input)
                 } else {
-                    println!("AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
+                    println!("MDCState AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
                     return CircuitRouter::AggreateMdcStorages(PublicAggregationCircuit::new(
                         prev_snarks
                             .into_iter()
@@ -84,7 +90,10 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                     println!("TASK_LEN1======");
                     CircuitRouter::BlockTrackInterval(task.input)
                 } else {
-                    println!("AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
+                    println!(
+                        "ETHBlockTrack AGGREGATION ====== prev_snarks len {}",
+                        prev_snarks.len()
+                    );
                     let prev_snarks = prev_snarks
                         .into_iter()
                         .map(|snark| {
@@ -97,16 +106,32 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                     ));
                 }
             }
-            ArbitrationTask::Final(task) => {
+            ArbitrationTask::Final(final_task) => {
                 println!("FINAL ====== prev_snarks len {}", prev_snarks.len());
-                // let circuit_type = &task.circuit_type();
-                // let [transaction_snark, block_snark, mdc_state_snark]: [_; 3] =
-                //     prev_snarks.try_into().unwrap();
-                let [transaction_snark, block_snark]: [_; 2] = prev_snarks.try_into().unwrap();
-                CircuitRouter::FinalAssembly(FinalAssemblyCircuit::new(
-                    (transaction_snark, false),
-                    (block_snark, false), // (mdc_state_snark, false),
+                if final_task.circuit_type().round != 0 {
+                    assert_eq!(prev_snarks.len(), 1);
+                    return CircuitRouter::Passthrough(PublicAggregationCircuit::new(
+                        prev_snarks.into_iter().map(|snark| (snark, true)).collect(),
+                    ));
+                }
+
+                let prev_snarks = prev_snarks
+                    .into_iter()
+                    .map(|snark| {
+                        println!("instances num {}", snark.instances.len());
+                        (snark, false)
+                    })
+                    .collect_vec();
+                CircuitRouter::FinalAssemblyThroughAggregation(PublicAggregationCircuit::new(
+                    prev_snarks,
                 ))
+
+                // FinalAssemblyCircuit
+                // let [transaction_snark, block_snark]: [_; 2] = prev_snarks.try_into().unwrap();
+                // CircuitRouter::FinalAssembly(FinalAssemblyCircuit::new(
+                //     (transaction_snark, false),
+                //     (block_snark, false), // (mdc_state_snark, false),
+                // ))
             }
         }
     }

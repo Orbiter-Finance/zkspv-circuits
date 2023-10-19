@@ -134,6 +134,74 @@ pub struct EthEbcRuleTraceWitness<F: Field> {
     ebc_rule_mpt_witness: MPTProofWitness<F>,
 }
 
+// parse value RLP([
+// chain_id0,chain_id1,
+// status0,status1,
+// token0,token1,
+// min_price0,min_price1,
+// max_price0,max_price1,
+// with_holding_fee0,with_holding_fee1,
+// trading_fee0,trading_fee1,
+// response_time0,response_time1,
+// compensation_ratio0,compensation_ratio1])
+impl<F: Field> EthEbcRuleTraceWitness<F> {
+    pub fn get_source_chain_id(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[0]
+    }
+    pub fn get_source_status(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[2]
+    }
+    pub fn get_source_token(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[4]
+    }
+    pub fn get_source_min_price(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[6]
+    }
+    pub fn get_source_max_price(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[8]
+    }
+    pub fn get_source_with_holding_fee(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[10]
+    }
+    pub fn get_source_trading_fee(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[12]
+    }
+    pub fn get_source_response_time(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[14]
+    }
+    pub fn get_source_compensation_ratio(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[16]
+    }
+
+    pub fn get_dest_chain_id(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[1]
+    }
+    pub fn get_dest_status(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[3]
+    }
+    pub fn get_dest_token(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[5]
+    }
+    pub fn get_dest_min_price(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[7]
+    }
+    pub fn get_dest_max_price(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[9]
+    }
+    pub fn get_dest_with_holding_fee(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[11]
+    }
+    pub fn get_dest_trading_fee(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[13]
+    }
+    pub fn get_dest_response_time(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[15]
+    }
+    pub fn get_dest_compensation_ratio(&self) -> &RlpFieldWitness<F> {
+        &self.ebc_rule_rlp_witness.field_witness[17]
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct EthBlockAccountStorageTrace<F: Field> {
     pub block_trace: EthBlockHeaderTrace<F>,
@@ -151,13 +219,34 @@ pub struct EthBlockAccountStorageTraceWitness<F: Field> {
 }
 
 #[derive(Clone, Debug)]
+pub struct EbcRuleConfig<F: Field> {
+    root_hash: AssignedH256<F>,
+    version: AssignedH256<F>,
+    source_chain_id: AssignedValue<F>,
+    source_token: AssignedValue<F>,
+    source_min_price: AssignedValue<F>,
+    source_max_price: AssignedValue<F>,
+    source_with_holding_fee: AssignedValue<F>,
+    source_trading_fee: AssignedValue<F>,
+    source_response_time: AssignedValue<F>,
+    dest_chain_id: AssignedValue<F>,
+    dest_token: AssignedValue<F>,
+    dest_min_price: AssignedValue<F>,
+    dest_max_price: AssignedValue<F>,
+    dest_with_holding_fee: AssignedValue<F>,
+    dest_trading_fee: AssignedValue<F>,
+    dest_response_time: AssignedValue<F>,
+}
+
+#[derive(Clone, Debug)]
 pub struct EIP1186ResponseDigest<F: Field> {
     pub block_hash: AssignedH256<F>,
     pub block_number: AssignedValue<F>,
-    pub address: AssignedValue<F>,
+    pub mdc_contract_address: AssignedValue<F>,
+    pub manage_contract_address: AssignedValue<F>,
     // the value U256 is interpreted as H256 (padded with 0s on left)
-    pub slots_values: Vec<(AssignedH256<F>, AssignedH256<F>)>,
-    pub ebc_rule_config: Vec<AssignedH256<F>>,
+    // pub slots_values: Vec<(AssignedH256<F>, AssignedH256<F>)>, // (slot key;slot value)
+    pub ebc_rule_config: EbcRuleConfig<F>,
     pub address_is_empty: AssignedValue<F>,
     pub slot_is_empty: Vec<AssignedValue<F>>,
 }
@@ -250,6 +339,13 @@ pub trait EthStorageChip<F: Field> {
     ) -> EthBlockAccountStorageTrace<F>
     where
         Self: EthBlockHeaderChip<F>;
+
+    fn rlp_field_witnesses_to_uint(
+        &self,
+        ctx: &mut Context<F>,
+        rlp_field_witnesses: Vec<&RlpFieldWitness<F>>,
+        num_bytes: Vec<usize>,
+    ) -> Vec<AssignedValue<F>>;
 }
 
 impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
@@ -368,17 +464,6 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
             ctx.constrain_equal(pf_root, root);
         }
 
-        // parse value RLP([
-        // chain_id0,chain_id1,
-        // status0,status1,
-        // token0,token1,
-        // min_price0,min_price1,
-        // max_price0,max_price1,
-        // with_holding_fee0,with_holding_fee1,
-        // trading_fee0,trading_fee1,
-        // response_time0,response_time1,
-        // compensation_ratio0,compensation_ratio1])
-
         let ebc_rule_rlp_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
             proof.value_bytes.clone(),
@@ -482,7 +567,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         Self: EthBlockHeaderChip<F>,
     {
         let ctx = thread_pool.main(FIRST_PHASE);
-        let address = input.storage.address;
+        let mdc_contract_address = input.storage.address;
         let mut block_header = input.block_header;
         block_header.resize(block_header_config.block_header_rlp_max_bytes, 0);
         let block_witness =
@@ -499,7 +584,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         let block_number = bytes_be_to_uint(ctx, self.gate(), &block_number, 4);
 
         // verify account + storage proof
-        let addr_bytes = uint_to_bytes_be(ctx, self.range(), &address, 20);
+        let addr_bytes = uint_to_bytes_be(ctx, self.range(), &mdc_contract_address, 20);
         let (slots, storage_pfs): (Vec<_>, Vec<_>) = input
             .storage
             .storage_pfs
@@ -538,26 +623,52 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
             .collect_vec();
 
         // ebc rule config
-        let ebc_rule_config = ebc_rule_witness
-            .ebc_rule_rlp_witness
-            .field_witness
-            .iter()
-            .map(|field_witness| {
-                let value_bytes = &field_witness.field_cells;
-                let value_len = field_witness.field_len;
-                let value_bytes =
-                    bytes_be_var_to_fixed(ctx, self.gate(), value_bytes, value_len, 32);
-                let value: [_; 2] =
-                    bytes_be_to_u128(ctx, self.gate(), &value_bytes).try_into().unwrap();
-                value
-            })
-            .collect_vec();
+        let mut ebc_rule_config;
+        {
+            let rlp_field_witnesses = vec![
+                ebc_rule_witness.get_source_chain_id(),
+                ebc_rule_witness.get_source_token(),
+                ebc_rule_witness.get_source_min_price(),
+                ebc_rule_witness.get_source_max_price(),
+                ebc_rule_witness.get_source_with_holding_fee(),
+                ebc_rule_witness.get_source_trading_fee(),
+                ebc_rule_witness.get_source_response_time(),
+                ebc_rule_witness.get_dest_chain_id(),
+                ebc_rule_witness.get_dest_token(),
+                ebc_rule_witness.get_dest_min_price(),
+                ebc_rule_witness.get_dest_max_price(),
+                ebc_rule_witness.get_dest_with_holding_fee(),
+                ebc_rule_witness.get_dest_trading_fee(),
+                ebc_rule_witness.get_dest_response_time(),
+            ];
+            let num_bytes = vec![8, 32, 16, 16, 16, 4, 4, 8, 32, 16, 16, 16, 4, 4];
+            let ebc_rule_fields =
+                self.rlp_field_witnesses_to_uint(ctx, rlp_field_witnesses, num_bytes);
+            ebc_rule_config = EbcRuleConfig {
+                root_hash: slots_values[0].1,
+                version: slots_values[1].1,
+                source_chain_id: ebc_rule_fields[0],
+                source_token: ebc_rule_fields[1],
+                source_min_price: ebc_rule_fields[2],
+                source_max_price: ebc_rule_fields[3],
+                source_with_holding_fee: ebc_rule_fields[4],
+                source_trading_fee: ebc_rule_fields[5],
+                source_response_time: ebc_rule_fields[6],
+                dest_chain_id: ebc_rule_fields[7],
+                dest_token: ebc_rule_fields[8],
+                dest_min_price: ebc_rule_fields[9],
+                dest_max_price: ebc_rule_fields[10],
+                dest_with_holding_fee: ebc_rule_fields[11],
+                dest_trading_fee: ebc_rule_fields[12],
+                dest_response_time: ebc_rule_fields[13],
+            };
+        }
 
         let digest = EIP1186ResponseDigest {
             block_hash: block_hash_hi_lo.try_into().unwrap(),
             block_number,
-            address,
-            slots_values,
+            mdc_contract_address,
+            manage_contract_address: mdc_contract_address, // The status of the manage contract has not been proved yet, so the same address is used temporarily.
             ebc_rule_config,
             address_is_empty: acct_witness.mpt_witness.slot_is_empty,
             slot_is_empty: storage_witness
@@ -591,6 +702,31 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
             (witness.acct_witness, witness.storage_witness, witness.ebc_rule_witness),
         );
         EthBlockAccountStorageTrace { block_trace, acct_trace, storage_trace, ebc_rule_trace }
+    }
+
+    fn rlp_field_witnesses_to_uint(
+        &self,
+        ctx: &mut Context<F>,
+        rlp_field_witnesses: Vec<&RlpFieldWitness<F>>,
+        num_bytes: Vec<usize>,
+    ) -> Vec<AssignedValue<F>> {
+        let assigned_values = rlp_field_witnesses
+            .iter()
+            .zip(num_bytes.iter())
+            .map(|(witness, num_byte)| {
+                let rlp_field_witness_bytes = &witness.field_cells;
+                let rlp_field_witness_len = witness.field_len;
+                let _rlp_field = bytes_be_var_to_fixed(
+                    ctx,
+                    self.gate(),
+                    rlp_field_witness_bytes,
+                    rlp_field_witness_len,
+                    *num_byte,
+                );
+                bytes_be_to_uint(ctx, self.gate(), &_rlp_field, *num_byte)
+            })
+            .collect_vec();
+        assigned_values
     }
 }
 
@@ -739,22 +875,34 @@ impl EthPreCircuit for EthBlockStorageCircuit {
         let EIP1186ResponseDigest {
             block_hash,
             block_number,
-            address,         //mdc
-            slots_values,    // slot one:root ; slot two:version
-            ebc_rule_config, // ebc rule config
+            mdc_contract_address,
+            manage_contract_address,
+            ebc_rule_config,
             address_is_empty,
             slot_is_empty,
         } = digest;
 
         let assigned_instances = block_hash
             .into_iter()
-            .chain([block_number, address])
-            .chain(
-                slots_values
-                    .into_iter()
-                    .flat_map(|(slot, value)| slot.into_iter().chain(value.into_iter())),
-            )
-            .chain(ebc_rule_config.into_iter().flat_map(|rule_config| rule_config.into_iter()))
+            .chain([block_number, mdc_contract_address, manage_contract_address])
+            .chain(ebc_rule_config.root_hash.into_iter())
+            .chain(ebc_rule_config.version.into_iter())
+            .chain([
+                ebc_rule_config.source_chain_id,
+                ebc_rule_config.source_token,
+                ebc_rule_config.source_min_price,
+                ebc_rule_config.source_max_price,
+                ebc_rule_config.source_with_holding_fee,
+                ebc_rule_config.source_trading_fee,
+                ebc_rule_config.source_response_time,
+                ebc_rule_config.dest_chain_id,
+                ebc_rule_config.dest_token,
+                ebc_rule_config.dest_min_price,
+                ebc_rule_config.dest_max_price,
+                ebc_rule_config.dest_with_holding_fee,
+                ebc_rule_config.dest_trading_fee,
+                ebc_rule_config.dest_response_time,
+            ])
             .collect_vec();
 
         // For now this circuit is going to constrain that all slots are occupied. We can also create a circuit that exposes the bitmap of slot_is_empty

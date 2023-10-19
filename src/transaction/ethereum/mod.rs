@@ -11,6 +11,7 @@ use halo2_base::{AssignedValue, Context};
 use hex::FromHex;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use zkevm_keccak::util::eth_types::Field;
 
@@ -24,10 +25,11 @@ use crate::providers::get_transaction_input;
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{RlcContextPair, FIRST_PHASE};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
+use crate::storage::EthStorageChip;
 use crate::transaction::ethereum::util::TransactionConstructor;
 use crate::transaction::{
     load_transaction_type, EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_2718_TX_TYPE,
-    EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_TX_TYPE_CRITICAL_VALUE,
+    EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_TX_TYPE_CRITICAL_VALUE, TX_MAX_LEN,
 };
 use crate::util::helpers::load_bytes;
 use crate::util::{
@@ -146,20 +148,31 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
             &self.block_header_config,
         );
 
-        let EIP1186ResponseDigest {
-            index,
-            block_hash,
-            slots_values,
-            transaction_is_empty,
-            erc20_to_address,
-            erc20_amount,
-            time_stamp,
-            tx_to,
-        } = digest;
+        let EIP1186ResponseDigest { index, block_hash, transaction_is_empty, transaction_field } =
+            digest;
+        println!("chain_id:{:?}", transaction_field.chain_id);
+        println!("hash:{:?}", transaction_field.hash);
+        println!("from:{:?}", transaction_field.from);
+        println!("to:{:?}", transaction_field.to);
+        println!("token:{:?}", transaction_field.token);
+        println!("amount:{:?}", transaction_field.amount);
+        println!("nonce:{:?}", transaction_field.nonce);
+        println!("time_stamp:{:?}", transaction_field.time_stamp);
 
         let assigned_instances = block_hash
             .into_iter()
-            // .chain([erc20_to_address, erc20_amount, time_stamp, tx_to])
+            .chain(transaction_field.hash.into_iter())
+            .chain([
+                transaction_field.chain_id,
+                transaction_field.from,
+                transaction_field.to,
+                transaction_field.token,
+                transaction_field.amount,
+                transaction_field.nonce,
+                transaction_field.time_stamp,
+                transaction_field.dest_transfer_address,
+                transaction_field.dest_transfer_token,
+            ])
             .collect_vec();
 
         {
@@ -185,16 +198,26 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
 }
 
 #[derive(Clone, Debug)]
+pub struct EthTransactionField<F: Field> {
+    pub chain_id: AssignedValue<F>,
+    pub hash: AssignedH256<F>,
+    pub from: AssignedValue<F>,
+    pub to: AssignedValue<F>, // ETH:is the to field of tx;Erc20:Erc20 to address
+    pub token: AssignedValue<F>, // ETH:0x00...;Erc20:Erc20 token address (is the to field of tx)
+    pub amount: AssignedValue<F>,
+    pub nonce: AssignedValue<F>,
+    pub time_stamp: AssignedValue<F>,
+    pub dest_transfer_address: AssignedValue<F>, // Cross-address transfer is not currently supported.
+    pub dest_transfer_token: AssignedValue<F>, // Cross-address transfer is not currently supported.
+}
+
+#[derive(Clone, Debug)]
 pub struct EIP1186ResponseDigest<F: Field> {
     pub index: AssignedValue<F>,
     pub block_hash: AssignedH256<F>,
     // the value U256 is interpreted as H256 (padded with 0s on left)
-    pub slots_values: Vec<AssignedValue<F>>,
     pub transaction_is_empty: AssignedValue<F>,
-    pub erc20_to_address: AssignedValue<F>,
-    pub erc20_amount: AssignedValue<F>,
-    pub time_stamp: AssignedValue<F>,
-    pub tx_to: AssignedValue<F>,
+    pub transaction_field: EthTransactionField<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -210,9 +233,14 @@ pub struct EthBlockTransactionTrace<F: Field> {
 
 #[derive(Clone, Debug)]
 pub struct EthTransactionExtraWitness<F: Field> {
-    pub tx_to: AssignedValue<F>,
-    pub erc20_to_address: AssignedValue<F>,
-    pub erc20_amount: AssignedValue<F>,
+    pub chain_id: AssignedValue<F>,
+    pub from: AssignedValue<F>,
+    pub to: AssignedValue<F>,
+    pub token: AssignedValue<F>,
+    pub amount: AssignedValue<F>,
+    pub nonce: AssignedValue<F>,
+    pub dest_transfer_address: AssignedValue<F>,
+    pub dest_transfer_token: AssignedValue<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -338,11 +366,8 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let transactions_root = &block_witness.get_transactions_root().field_cells;
 
         // timestamp
-        let time_stamp_bytes = &block_witness.get_timestamp().field_cells;
-        let time_stamp_len = block_witness.get_timestamp().field_len;
         let time_stamp =
-            bytes_be_var_to_fixed(ctx, self.gate(), time_stamp_bytes, time_stamp_len, 8);
-        let time_stamp = bytes_be_to_uint(ctx, self.gate(), &time_stamp, 8);
+            self.rlp_field_witnesses_to_uint(ctx, vec![&block_witness.get_timestamp()], vec![8])[0];
 
         // drop ctx
         let transaction_witness = self.parse_eip1186_proof_phase0(
@@ -354,15 +379,33 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         );
         let transaction_rlp = transaction_witness.mpt_witness.value_bytes.to_vec();
 
+        // tx hash
+        let ctx = thread_pool.main(FIRST_PHASE);
+        let tx_max_len = ctx.load_constant(F::from(TX_MAX_LEN as u64));
+        let tx_hash_idx =
+            keccak.keccak_fixed_len(ctx, self.range().gate(), transaction_rlp.to_vec(), None);
+
+        let tx_hash_bytes = keccak.fixed_len_queries[tx_hash_idx].output_assigned.clone();
+        let tx_hash_len = ctx.load_constant(F::from(tx_hash_bytes.len() as u64));
+        let _tx_hash = bytes_be_var_to_fixed(ctx, self.gate(), &tx_hash_bytes, tx_hash_len, 32);
+        let tx_hash: [_; 2] = bytes_be_to_u128(ctx, self.gate(), &_tx_hash).try_into().unwrap();
+
         let digest = EIP1186ResponseDigest {
             index: transaction_index,
             block_hash: block_hash.try_into().unwrap(),
-            slots_values: transaction_rlp,
             transaction_is_empty: transaction_witness.mpt_witness.slot_is_empty,
-            erc20_to_address: transaction_witness.extra_witness.erc20_to_address,
-            erc20_amount: transaction_witness.extra_witness.erc20_amount,
-            time_stamp,
-            tx_to: transaction_witness.extra_witness.tx_to,
+            transaction_field: EthTransactionField {
+                chain_id: transaction_witness.extra_witness.chain_id,
+                hash: tx_hash,
+                from: transaction_witness.extra_witness.from,
+                to: transaction_witness.extra_witness.to,
+                token: transaction_witness.extra_witness.token,
+                amount: transaction_witness.extra_witness.amount,
+                nonce: transaction_witness.extra_witness.nonce,
+                time_stamp,
+                dest_transfer_address: transaction_witness.extra_witness.dest_transfer_address,
+                dest_transfer_token: transaction_witness.extra_witness.dest_transfer_token,
+            },
         };
         (EthBlockTransactionTraceWitness { block_witness, transaction_witness }, digest)
     }
@@ -430,24 +473,83 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         );
 
         // parse calldata Todo:Need to separate 2718 from 1559
-        let mut calldata = &vec![zero];
-        let mut erc20_to_address = zero;
-        let mut erc20_amount = zero;
+        let mut calldata;
+        let mut tx_chain_id;
+        let mut tx_token_address = zero; // Eth is 0x00;Erc20 is tx's to
         let mut tx_to_witness;
+        let mut tx_amount_witness;
+        let mut tx_nonce_witness;
         // let mock_calldata = Vec::from_hex("a9059cbb0000000000000000000000003620401ebbc40533218d2d0f2c01398dc9148b6f0000000000000000000000000000000000000000000000000000000000116520").unwrap();
         // let calldata = load_bytes(ctx, mock_calldata.as_slice());
         if is_not_legacy_transaction.value == zero.value {
+            // [nonce,gasPrice,gasLimit,to,value,data,v,r,s]
             calldata = &transaction_witness.field_witness[5].field_cells;
             tx_to_witness = &transaction_witness.field_witness[3];
+            tx_amount_witness = &transaction_witness.field_witness[4];
+            tx_nonce_witness = &transaction_witness.field_witness[0];
+
+            // Derive the original chain ID
+            //         let numSub
+            //         if ((v - 35) % 2 === 0) {
+            //           numSub = 35
+            //         } else {
+            //           numSub = 36
+            //         }
+            //         // Use derived chain ID to create a proper Common
+            //         chainIdBigInt = BigInt(v - numSub) / BigInt(2)
+            let tx_v_witness = &transaction_witness.field_witness[6];
+            let tx_v = self.rlp_field_witnesses_to_uint(ctx, vec![tx_v_witness], vec![32])[0];
+            let thirty_five = ctx.load_constant(F::from(35));
+            let thirty_six = ctx.load_constant(F::from(36));
+            // v - 35
+            let dividend = self.gate().sub(ctx, tx_v, thirty_five);
+            // (v - 35) % 2
+            let divisor = 2u64;
+            let divisor_assigned = ctx.load_constant(F::from(divisor));
+            let (quotient, remainder) = self.range().div_mod(ctx, dividend, divisor, 32);
+            // (v - 35) % 2 === 0
+            // Whether the result of multiplying the quotient by the divisor and adding the remainder is equal to the dividend
+            let divisor_mul_quotient = self.gate().mul(ctx, divisor_assigned, quotient);
+            let expect_dividend = self.gate().add(ctx, divisor_mul_quotient, remainder);
+            let is_equal = self.gate().is_equal(ctx, dividend, expect_dividend);
+            // num_sub = 36 - ( is_equal )
+            let num_sub = self.gate().sub(ctx, thirty_six, is_equal);
+            let tx_v_sub_num_sub = self.gate().sub(ctx, tx_v, num_sub);
+            tx_chain_id = self.gate().div_unsafe(ctx, tx_v_sub_num_sub, divisor_assigned);
         } else {
+            // [chainId,nonce,maxPriorityFeePerGas,maxFeePerGas,gasLimit,to,value,data,accessList,v,r,s]
             calldata = &transaction_witness.field_witness[7].field_cells;
             tx_to_witness = &transaction_witness.field_witness[5];
+            tx_amount_witness = &transaction_witness.field_witness[6];
+            tx_nonce_witness = &transaction_witness.field_witness[1];
+
+            // tx source chain id
+            tx_chain_id = self.rlp_field_witnesses_to_uint(
+                ctx,
+                vec![&transaction_witness.field_witness[0]],
+                vec![32],
+            )[0];
         }
+
+        // tx to & tx amount
+        let mut tx_to;
+        let mut tx_amount;
+        {
+            let tx_fields = self.rlp_field_witnesses_to_uint(
+                ctx,
+                vec![&tx_to_witness, &tx_amount_witness],
+                vec![32, 32],
+            );
+            tx_to = tx_fields[0];
+            tx_amount = tx_fields[1];
+        }
+
         let function_selector = load_bytes(ctx, &FUNCTION_SELECTOR_ERC20_TRANSFER);
 
         let mut new_calldata = Vec::with_capacity(CALLDATA_BYTES_LEN);
 
-        if calldata.len() >= CALLDATA_BYTES_LEN {
+        // Determine whether the length of the calldata meets the length required by ERC20
+        if calldata.len() == CALLDATA_BYTES_LEN {
             let mut is_function_selector = ctx.load_constant(F::from(1));
 
             for i in 0..CALLDATA_BYTES_LEN - 1 {
@@ -465,6 +567,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             let val_byte = self.gate().select(ctx, zero, calldata[CALLDATA_BYTES_LEN - 1], zero);
             new_calldata.push(val_byte);
 
+            // is erc20 transaction
             if is_function_selector.value != zero.value {
                 let erc20_to_address_bytes = &new_calldata[FUNCTION_SELECTOR_BYTES_LEN
                     ..FUNCTION_SELECTOR_BYTES_LEN + ERC20_TO_ADDRESS_BYTES_LEN];
@@ -478,7 +581,8 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
                     erc20_to_address_len,
                     32,
                 );
-                erc20_to_address = bytes_be_to_uint(ctx, self.gate(), &_erc20_to_address, 32);
+                tx_token_address = tx_to;
+                tx_to = bytes_be_to_uint(ctx, self.gate(), &_erc20_to_address, 32);
 
                 let erc20_amount_bytes = &new_calldata
                     [FUNCTION_SELECTOR_BYTES_LEN + ERC20_TO_ADDRESS_BYTES_LEN..CALLDATA_BYTES_LEN];
@@ -491,22 +595,36 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
                     erc20_amount_len,
                     32,
                 );
-                erc20_amount = bytes_be_to_uint(ctx, self.gate(), &_erc20_amount, 32);
+                tx_amount = bytes_be_to_uint(ctx, self.gate(), &_erc20_amount, 32);
             }
         }
 
-        // tx to
-        let tx_to_bytes = &tx_to_witness.field_cells;
-        let tx_to_len = tx_to_witness.field_len;
-        let _tx_to = bytes_be_var_to_fixed(ctx, self.gate(), &tx_to_bytes, tx_to_len, 32);
-        let tx_to = bytes_be_to_uint(ctx, self.gate(), &_tx_to, 32);
+        // tx from
+        let tx_from = zero;
+
+        // tx nonce
+        let tx_nonce = self.rlp_field_witnesses_to_uint(ctx, vec![&tx_nonce_witness], vec![32])[0];
+
+        // dest_transfer
+        let dest_transfer_address = zero;
+        let dest_transfer_token = zero;
 
         // check MPT inclusion
         let mpt_witness = self.parse_mpt_inclusion_phase0(ctx, keccak, transaction_proofs);
+
         EthTransactionTraceWitness {
             transaction_witness,
             mpt_witness,
-            extra_witness: EthTransactionExtraWitness { tx_to, erc20_to_address, erc20_amount },
+            extra_witness: EthTransactionExtraWitness {
+                chain_id: tx_chain_id,
+                from: tx_from,
+                to: tx_to,
+                token: tx_token_address,
+                amount: tx_amount,
+                nonce: tx_nonce,
+                dest_transfer_address,
+                dest_transfer_token,
+            },
         }
     }
 

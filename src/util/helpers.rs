@@ -79,10 +79,6 @@ pub fn load_bytes<F: Field>(ctx: &mut Context<F>, bytes: &[u8]) -> Vec<AssignedV
     ctx.assign_witnesses(bytes.iter().map(|x| F::from(*x as u64)))
 }
 
-pub fn array_to_slice_with_4<F: Field>(array: Vec<AssignedValue<F>>) -> [AssignedValue<F>; 4] {
-    array.try_into().expect("slice with incorrect length")
-}
-
 /// keccak(LeftPad32(key, 0), LeftPad32(map position, 0))
 pub fn calculate_storage_mapping_key(mapping_layout: H256, address: Address) -> H256 {
     let internal_bytes =

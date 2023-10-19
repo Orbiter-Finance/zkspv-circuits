@@ -44,10 +44,11 @@ zkevm-keccak = { git = "https://github.com/Orbiter-Finance/halo2-lib.git",  bran
 
 # crypto
 rlp = "0.5.2"
-ethers-core = { version = "=2.0.6" } # used by halo2-mpt already
+ethers-core = { version = "2.0.10" } # used by halo2-mpt already
 rand_core = { version = "0.6", default-features = false, features = ["getrandom"] }
 rand = "*"
 rand_chacha = "0.3.1"
+num-bigint = { version = "0.4", features = ["rand"] }
 
 # aggregation
 snark-verifier = { git = "https://github.com/Orbiter-Finance/snark-verifier.git",  branch = "community-edition-performance", default-features = false, features = ["loader_halo2"], optional = true }
@@ -110,8 +111,8 @@ dev-graph = ["halo2-base/dev-graph"]
 # snark-verifier = { path = "../snark-verifier/snark-verifier"}
 
 
-# [patch."https://github.com/Orbiter-Finance/halo2-lib.git"]
-# halo2-base = { path = "../halo2-lib/halo2-base"}
+ [patch."https://github.com/Orbiter-Finance/halo2-lib.git"]
+ halo2-base = { path = "../ecdsa/halo2-lib/halo2-base"}
 # halo2-ecc = { path = "../halo2-lib/halo2-ecc" }
 
 # [patch."https://github.com/Orbiter-Finance/halo2curves.git"]

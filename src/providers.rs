@@ -32,12 +32,10 @@ use crate::config::token::zksync_era_token::{
     get_zksync_era_eth_address, get_zksync_era_token_layout_by_address,
 };
 use crate::mpt::MPTInput;
-use crate::proof::arbitrum::{
-    ArbitrumProofBlockTrack, ArbitrumProofInput, ArbitrumProofTransactionOrReceipt,
-};
 use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
 use crate::storage::util::EbcRuleParams;
 use crate::storage::EbcRuleVersion;
+use crate::track_block::util::TrackBlockConstructor;
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
 use crate::transaction::zksync_era::now::{ZkSyncBlockTransactionInput, ZkSyncTransactionsInput};
@@ -61,92 +59,18 @@ fn get_buffer_rlp(value: u32) -> Vec<u8> {
     rlp.out().into()
 }
 
-pub fn get_arbitrum_proof(
-    arbitrum_provider: &Provider<Http>,
-    ethereum_provider: &Provider<Http>,
-    l2_seq_num: u64,
-    transaction_or_receipt: Vec<ArbitrumProofTransactionOrReceipt>,
-    trace_blocks: Vec<ArbitrumProofBlockTrack>,
-) -> ArbitrumProofInput {
-    let rt = Runtime::new().unwrap();
-
-    let arbitrum_transaction = transaction_or_receipt.get(0).cloned().unwrap();
-    let arbitrum_receipt = transaction_or_receipt.get(1).cloned().unwrap();
-    let ethereum_transaction = transaction_or_receipt.get(2).cloned().unwrap();
-    let arbitrum_trace_block = trace_blocks.get(0).cloned().unwrap();
-    let ethereum_trace_block = trace_blocks.get(1).cloned().unwrap();
-
-    let arbitrum_transaction_status = get_transaction_input(
-        arbitrum_provider,
-        arbitrum_trace_block.start_block,
-        arbitrum_transaction.index,
-        arbitrum_transaction.rlp,
-        arbitrum_transaction.merkle_proof,
-        arbitrum_transaction.pf_max_depth,
-    );
-
-    let arbitrum_receipt_status = get_receipt_input(
-        arbitrum_provider,
-        arbitrum_trace_block.start_block,
-        arbitrum_receipt.index,
-        arbitrum_receipt.rlp,
-        arbitrum_receipt.merkle_proof,
-        arbitrum_receipt.pf_max_depth,
-    );
-
-    let arbitrum_block_end_hash =
-        rt.block_on(arbitrum_provider.get_block(arbitrum_trace_block.end_block)).unwrap().unwrap();
-    let mut arbitrum_block_number_interval = vec![];
-    for i in
-        arbitrum_trace_block.start_block as u64..arbitrum_block_end_hash.number.unwrap().as_u64()
-    {
-        arbitrum_block_number_interval.push(i);
-    }
-    let arbitrum_block_status =
-        get_block_track_input(arbitrum_provider, arbitrum_block_number_interval);
-
-    let ethereum_transaction_status = get_transaction_input(
-        ethereum_provider,
-        ethereum_trace_block.start_block,
-        ethereum_transaction.index,
-        ethereum_transaction.rlp,
-        ethereum_transaction.merkle_proof,
-        ethereum_transaction.pf_max_depth,
-    );
-
-    let ethereum_block_end_hash =
-        rt.block_on(ethereum_provider.get_block(ethereum_trace_block.end_block)).unwrap().unwrap();
-    let mut ethereum_block_number_interval = vec![];
-    for i in
-        ethereum_trace_block.start_block as u64..ethereum_block_end_hash.number.unwrap().as_u64()
-    {
-        ethereum_block_number_interval.push(i);
-    }
-
-    let ethereum_block_status =
-        get_block_track_input(ethereum_provider, ethereum_block_number_interval);
-
-    ArbitrumProofInput {
-        l2_seq_num,
-        arbitrum_transaction_status,
-        arbitrum_receipt_status,
-        arbitrum_block_status,
-        ethereum_transaction_status,
-        ethereum_block_status,
-    }
-}
-
 pub fn get_block_track_input(
     provider: &Provider<Http>,
-    block_number_interval: Vec<u64>,
+    constructor: &TrackBlockConstructor,
 ) -> EthTrackBlockInput {
     // assert_eq!(block_number_interval,256,"block_number_interval is a fixed-length array with a length of 256");
     let rt = Runtime::new().unwrap();
+    let block_number_interval = constructor.block_number_interval.clone();
     let mut block = Vec::with_capacity(block_number_interval.len());
     let mut block_number = Vec::with_capacity(block_number_interval.len());
     let mut block_hash = Vec::with_capacity(block_number_interval.len());
     let mut block_header = Vec::with_capacity(block_number_interval.len());
-    for i in block_number_interval {
+    for i in block_number_interval.clone() {
         let block_element = rt.block_on(provider.get_block(i)).unwrap().unwrap();
         let block_element_hash = block_element.hash.unwrap();
         let block_element_header = get_block_rlp(&block_element);
@@ -156,7 +80,9 @@ pub fn get_block_track_input(
         block_header.push(block_element_header);
     }
 
-    EthTrackBlockInput { block, block_number, block_hash, block_header }
+    let target_index = constructor.block_target - block_number_interval.first().unwrap();
+
+    EthTrackBlockInput { block, block_number, block_hash, block_header, target_index }
 }
 
 pub fn get_receipt_input(

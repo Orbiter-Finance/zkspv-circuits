@@ -1,3 +1,4 @@
+use ark_std::{end_timer, start_timer};
 use std::cell::RefCell;
 
 use ethers_core::types::{Block, H256};
@@ -17,11 +18,14 @@ use crate::block_header::{
 use crate::keccak::{
     parallelize_keccak_phase0, FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs,
 };
+use crate::mpt::AssignedBytes;
 use crate::providers::get_block_track_input;
 use crate::rlp::builder::{parallelize_phase1, RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::FIRST_PHASE;
 use crate::rlp::RlpChip;
+use crate::storage::EthStorageChip;
 use crate::track_block::util::TrackBlockConstructor;
+use crate::util::helpers::bytes_to_u8;
 use crate::util::{bytes_be_to_u128, AssignedH256};
 use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS};
 
@@ -35,17 +39,20 @@ pub struct EthTrackBlockInput {
     pub block_hash: Vec<H256>,
     // provided for convenience, actual block_hash is computed from block_header
     pub block_header: Vec<Vec<u8>>,
-    // pub dest_block_index:usize,
+    pub target_index: u64,
 }
 
 #[derive(Clone, Debug)]
-pub struct EthTrackBlockInputAssigned {
+pub struct EthTrackBlockInputAssigned<F: Field> {
     pub block_header: Vec<Vec<u8>>,
+    pub target_index: AssignedValue<F>,
 }
 
 impl EthTrackBlockInput {
-    pub fn assign<F: Field>(self, _ctx: &mut Context<F>) -> EthTrackBlockInputAssigned {
-        EthTrackBlockInputAssigned { block_header: self.block_header }
+    pub fn assign<F: Field>(self, ctx: &mut Context<F>) -> EthTrackBlockInputAssigned<F> {
+        let target_index = (F::from(self.target_index)).try_into().unwrap();
+        let target_index = ctx.load_witness(target_index);
+        EthTrackBlockInputAssigned { block_header: self.block_header, target_index }
     }
 }
 
@@ -57,7 +64,7 @@ pub struct EthTrackBlockCircuit {
 
 impl EthTrackBlockCircuit {
     pub fn from_provider(provider: &Provider<Http>, constructor: TrackBlockConstructor) -> Self {
-        let inputs = get_block_track_input(provider, constructor.block_number_interval);
+        let inputs = get_block_track_input(provider, &constructor);
         let block_header_config = get_block_header_config(&constructor.network);
         Self { inputs, block_header_config }
     }
@@ -83,9 +90,21 @@ impl EthPreCircuit for EthTrackBlockCircuit {
             &self.block_header_config,
         );
 
-        let EIP1186ResponseDigest { start_block_hash, end_block_hash } = digest;
+        let EIP1186ResponseDigest {
+            start_block_hash,
+            start_block_number,
+            end_block_hash,
+            end_block_number,
+            target_block_hash,
+            target_block_number,
+        } = digest;
 
-        let assigned_instances = start_block_hash.into_iter().chain(end_block_hash).collect_vec();
+        let assigned_instances = start_block_hash
+            .into_iter()
+            .chain(end_block_hash)
+            .chain(target_block_hash)
+            .chain([start_block_number, end_block_number, target_block_number])
+            .collect_vec();
 
         EthCircuitBuilder::new(
             assigned_instances,
@@ -107,7 +126,11 @@ impl EthPreCircuit for EthTrackBlockCircuit {
 #[derive(Clone, Debug)]
 pub struct EIP1186ResponseDigest<F: Field> {
     pub start_block_hash: AssignedH256<F>,
+    pub start_block_number: AssignedValue<F>,
     pub end_block_hash: AssignedH256<F>,
+    pub end_block_number: AssignedValue<F>,
+    pub target_block_hash: AssignedH256<F>,
+    pub target_block_number: AssignedValue<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -127,7 +150,7 @@ pub trait EthTrackBlockChip<F: Field> {
         &self,
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
-        input: EthTrackBlockInputAssigned,
+        input: EthTrackBlockInputAssigned<F>,
         block_header_config: &BlockHeaderConfig,
     ) -> (EthTrackBlockTraceWitness<F>, EIP1186ResponseDigest<F>)
     where
@@ -154,40 +177,53 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         &self,
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
-        input: EthTrackBlockInputAssigned,
+        input: EthTrackBlockInputAssigned<F>,
         block_header_config: &BlockHeaderConfig,
     ) -> (EthTrackBlockTraceWitness<F>, EIP1186ResponseDigest<F>)
     where
         Self: EthBlockHeaderChip<F>,
     {
-        let mut last_block_hash: Vec<AssignedValue<F>> = Vec::new();
         let mut start_block_hash: Vec<AssignedValue<F>> = Vec::new();
+        let mut last_block_hash: Vec<AssignedValue<F>> = Vec::new();
+        let mut target_block_hash: Vec<AssignedValue<F>> = Vec::new();
+
         // parallelize witness for blocks
+        #[cfg(feature = "display")]
+        let start_blocks = start_timer!(|| "parallelize witness for blocks");
         let blocks_witness = parallelize_keccak_phase0(
             thread_pool,
             keccak,
-            input.block_header,
+            input.block_header.clone(),
             |ctx, keccak, block_header| {
                 let mut block_header = block_header.to_vec();
                 block_header.resize(block_header_config.block_header_rlp_max_bytes, 0);
                 self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config)
             },
         );
+        #[cfg(feature = "display")]
+        end_timer!(start_blocks);
 
         let ctx = thread_pool.main(FIRST_PHASE);
-
+        #[cfg(feature = "display")]
+        let start = start_timer!(|| "blocks_witness");
+        let zero = ctx.load_constant(F::from(0));
+        let mut start_block_number = zero;
+        let mut end_block_number = zero;
+        let mut target_block_number = zero;
+        // The maximum total length of a single round calculation is 256, so make sure it is u8 type data.
+        let target_index = bytes_to_u8(&input.target_index);
         for (i, block_witness) in blocks_witness.iter().enumerate() {
             if i != 0 {
-                let mut temp_block_hash: Vec<AssignedValue<F>> = Vec::new();
-                for block_hash in &last_block_hash {
-                    temp_block_hash.push(*block_hash);
-                }
+                let temp_last_block_hash = last_block_hash.to_vec();
+
+                // Get the parent hash from the current block header
                 let parent_hash = bytes_be_to_u128(
                     ctx,
                     self.gate(),
                     &block_witness.get_parent_hash().field_cells,
                 );
-                for (pre_block_hash, parent_hash) in temp_block_hash.iter().zip(parent_hash.iter())
+                for (pre_block_hash, parent_hash) in
+                    temp_last_block_hash.iter().zip(parent_hash.iter())
                 {
                     ctx.constrain_equal(pre_block_hash, parent_hash);
                 }
@@ -196,45 +232,39 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
             last_block_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
 
             if i == 0 {
-                for block_hash in &last_block_hash {
-                    start_block_hash.push(*block_hash);
-                }
+                start_block_hash = last_block_hash.to_vec();
+                start_block_number = self.rlp_field_witnesses_to_uint(
+                    ctx,
+                    vec![&block_witness.get_number()],
+                    vec![8],
+                )[0];
+            } else if i == blocks_witness.len() - 1 {
+                end_block_number = self.rlp_field_witnesses_to_uint(
+                    ctx,
+                    vec![&block_witness.get_number()],
+                    vec![8],
+                )[0];
+            }
+
+            if i == target_index as usize {
+                target_block_hash = last_block_hash.to_vec();
+                target_block_number = self.rlp_field_witnesses_to_uint(
+                    ctx,
+                    vec![&block_witness.get_number()],
+                    vec![8],
+                )[0];
             }
         }
-
-        // let mut blocks_witness = Vec::with_capacity(input.block_header.len());
-        // for (i, block_header) in input.block_header.iter().enumerate() {
-        //     let mut block_header = block_header.to_vec();
-        //     block_header.resize(block_header_config.block_header_rlp_max_bytes, 0);
-        //
-        //     // It has been checked whether keccak(rlp(block_header)) is equal to block_hash.
-        //     // Therefore, there is no need to declare the qualification repeatedly.
-        //     let block_witness = self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config);
-        //
-        //     if i != 0 {
-        //         let mut temp_block_hash: Vec<AssignedValue<F>> = Vec::new();
-        //         for block_hash in &last_block_hash {
-        //             temp_block_hash.push(*block_hash);
-        //         }
-        //         let parent_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.get_parent_hash().field_cells);
-        //         for (pre_block_hash, parent_hash) in temp_block_hash.iter().zip(parent_hash.iter()) {
-        //             ctx.constrain_equal(pre_block_hash, parent_hash);
-        //         }
-        //     }
-        //
-        //     last_block_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
-        //
-        //     if i == 0{
-        //         for block_hash in &last_block_hash {
-        //             start_block_hash.push(*block_hash);
-        //         }
-        //     }
-        //     blocks_witness.push(block_witness);
-        // }
+        #[cfg(feature = "display")]
+        end_timer!(start);
 
         let digest = EIP1186ResponseDigest {
-            start_block_hash: start_block_hash.try_into().unwrap(),
-            end_block_hash: last_block_hash.try_into().unwrap(),
+            start_block_hash: start_block_hash.to_vec().try_into().unwrap(),
+            start_block_number,
+            end_block_hash: last_block_hash.to_vec().try_into().unwrap(),
+            end_block_number,
+            target_block_hash: target_block_hash.try_into().unwrap(),
+            target_block_number,
         };
 
         (EthTrackBlockTraceWitness { blocks_witness }, digest)
@@ -257,12 +287,6 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
                 self.decompose_block_header_phase1((ctx_gate, ctx_rlc), block_witness)
             },
         );
-
-        // let mut blocks_trace = Vec::with_capacity(witness.blocks_witness.len());
-        // for block_witness in witness.blocks_witness {
-        //     let block_trace = self.decompose_block_header_phase1(thread_pool.rlc_ctx_pair(), block_witness);
-        //     blocks_trace.push(block_trace);
-        // }
 
         EthTrackBlockTrace { blocks_trace }
     }

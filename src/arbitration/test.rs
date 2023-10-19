@@ -21,6 +21,7 @@ use snark_verifier_sdk::{
     CircuitExt, Snark, SHPLONK,
 };
 
+use crate::arbitration::circuit_types::FinalAssemblyFinality;
 use crate::arbitration::helper::{
     FinalAssemblyConstructor, FinalAssemblyTask, MDCStateTask, TransactionTask,
 };
@@ -28,6 +29,7 @@ use crate::storage::util::{get_mdc_storage_circuit, EbcRuleParams, StorageConstr
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
 use crate::util::helpers::calculate_mk_address_struct;
+use crate::util::scheduler::evm_wrapper::ForEvm;
 use crate::{
     rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder},
     storage::{
@@ -78,10 +80,16 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
 fn test_block_track_task(network: Network) -> ETHBlockTrackTask {
     let block_number_interval =
         vec![(17113952..17113953).collect_vec(), (17113955..17113956).collect_vec()];
-    let constructor_one =
-        TrackBlockConstructor { block_number_interval: block_number_interval[0].clone(), network };
-    let constructor_two =
-        TrackBlockConstructor { block_number_interval: block_number_interval[1].clone(), network };
+    let constructor_one = TrackBlockConstructor {
+        block_number_interval: block_number_interval[0].clone(),
+        block_target: *block_number_interval[0].first().clone().unwrap(),
+        network,
+    };
+    let constructor_two = TrackBlockConstructor {
+        block_number_interval: block_number_interval[1].clone(),
+        block_target: *block_number_interval[1].first().clone().unwrap(),
+        network,
+    };
     ETHBlockTrackTask {
         input: test_get_block_track_circuit(constructor_one.clone()),
         network: Network::Ethereum(EthereumNetwork::Mainnet),
@@ -142,11 +150,7 @@ pub fn test_arbitration_scheduler_transaction_task() {
     scheduler.get_snark(ArbitrationTask::Transaction(_task));
 }
 
-fn test_mdc_task() -> Snark {
-    let network = Network::Ethereum(EthereumNetwork::Goerli);
-
-    let scheduler = test_scheduler(network);
-
+fn test_mdc_task(network: Network) -> MDCStateTask {
     let block_number = 9731724;
 
     // ebc_rule_mpt
@@ -195,48 +199,45 @@ fn test_mdc_task() -> Snark {
         network,
     };
 
-    let _task = MDCStateTask {
+    MDCStateTask {
         input: get_mdc_storage_circuit(constructor.clone()),
         tasks_len: 1,
         task_width: 1,
         constructor: vec![constructor],
-    };
-
-    scheduler.get_snark(ArbitrationTask::MDCState(_task))
+    }
 }
 #[test]
 pub fn test_arbitration_scheduler_mdc_task() {
-    test_mdc_task();
+    let network = Network::Ethereum(EthereumNetwork::Goerli);
+    let scheduler = test_scheduler(network);
+    let _task = test_mdc_task(network);
+    scheduler.get_snark(ArbitrationTask::MDCState(_task));
 }
 
 #[test]
 pub fn test_arbitration_scheduler_final_task() {
+    //-- --nocapture
     let network = Network::Ethereum(EthereumNetwork::Mainnet);
 
     let block_network = Network::Ethereum(EthereumNetwork::Mainnet);
 
     let transaction_network = Network::Ethereum(EthereumNetwork::Mainnet);
 
+    let mdc_network = Network::Ethereum(EthereumNetwork::Goerli);
+
     let scheduler = test_scheduler(network);
 
     let transaction_task = test_transaction_task(transaction_network);
 
-    let block_task = test_block_track_task(block_network);
+    let eth_block_track_task = test_block_track_task(block_network);
+
+    let mdc_state_task = test_mdc_task(mdc_network);
 
     let constructor =
-        FinalAssemblyConstructor { transaction_task, eth_block_track_task: block_task };
+        FinalAssemblyConstructor { transaction_task, eth_block_track_task, mdc_state_task };
 
-    let _task = FinalAssemblyTask {
-        round: 0,
-        network,
-        // snarks: vec![
-        //     // test_transaction_task(),
-        //     test_block_track_task(mdc_network),
-        //     // test_mdc_task()
-        // ],
-        constructor,
-    };
-    scheduler.get_snark(ArbitrationTask::Final(_task));
+    let _task = FinalAssemblyTask { round: 0, network, constructor };
+    scheduler.get_calldata(ArbitrationTask::Final(_task), true);
 }
 
 #[test]
@@ -302,6 +303,31 @@ pub fn test_arbitration_circuit() {
         (snark, storage_proof_time)
     };
 
+    let (storage_snark, storage_proof_time) = {
+        set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&storage_param).unwrap());
+        let k = storage_param.degree;
+        let input = test_get_storage_circuit(Network::Ethereum(EthereumNetwork::Goerli), 9731724);
+        let circuit = input.clone().create_circuit(RlcThreadBuilder::keygen(), None);
+        let params = gen_srs(k);
+        let pk = gen_pk(&params, &circuit, None);
+        let break_points = circuit.circuit.break_points.take();
+        println!("break_points {:?}", break_points);
+        let manual_break_points = RlcThreadBreakPoints {
+            gate: [
+                [262034, 262034, 262034, 262032, 262032].into(),
+                [262034, 262034].into(),
+                [].into(),
+            ]
+            .into(),
+            rlc: [].into(),
+        };
+        let storage_proof_time = start_timer!(|| "Storage Proof SHPLONK");
+        let circuit = input.create_circuit(RlcThreadBuilder::prover(), Some(break_points));
+        let snark = gen_snark_shplonk(&params, &pk, circuit, None::<&str>);
+        end_timer!(storage_proof_time);
+        (snark, storage_proof_time)
+    };
+
     let k = evm_param.degree;
     let params = gen_srs(k);
     set_var("LOOKUP_BITS", evm_param.lookup_bits.to_string());
@@ -310,8 +336,8 @@ pub fn test_arbitration_circuit() {
         None,
         evm_param.lookup_bits,
         &params,
-        // vec![eth_tx_snark.clone(), storage_snark.clone()],
-        vec![eth_tx_snark.clone()],
+        vec![eth_tx_snark.clone(), storage_snark.clone()],
+        // vec![eth_tx_snark.clone()],
         false,
     );
     evm_circuit.config(k, Some(10));

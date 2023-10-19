@@ -39,8 +39,6 @@ pub mod keccak;
 pub mod mpt;
 pub mod rlp;
 
-pub mod proof;
-
 pub mod arbitration;
 pub mod block_header;
 pub mod receipt;

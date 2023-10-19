@@ -5,6 +5,7 @@ use crate::Network;
 #[derive(Clone, Debug)]
 pub struct TrackBlockConstructor {
     pub block_number_interval: Vec<u64>,
+    pub block_target: u64,
     pub network: Network,
 }
 

@@ -83,7 +83,6 @@ pub fn test_2718_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
-    println!("instance:{:?}", circuit.instance_count());
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())
 }

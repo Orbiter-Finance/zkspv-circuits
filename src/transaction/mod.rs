@@ -34,6 +34,7 @@ pub const EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN: [usize; EIP_2718_TX_TYPE_FIELD
 pub const EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN: [usize; EIP_1559_TX_TYPE_FIELDS_NUM] =
     [32, 32, 32, 32, 32, 20, 32, TX_DATA_MAX_LEN, TX_ACCESS_LIST_MAX_LEN, 1, 32, 32];
 
+pub const TX_MAX_LEN: usize = 32 * 8 + 20 + 1 + TX_DATA_MAX_LEN + TX_ACCESS_LIST_MAX_LEN;
 /// Get the transaction type and validate its support.
 pub fn get_transaction_type<F: Field>(ctx: &mut Context<F>, value: &AssignedValue<F>) -> u8 {
     let eip_1559_prefix = (F::from(EIP_1559_TX_TYPE as u64)).try_into().unwrap();
