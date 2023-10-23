@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
-import "./VerifierFuncAbst.sol";
+import "./VerifierLogicAbstract.sol";
 
-contract VerifierFunc<%ID%> is VerifierFuncAbst {
+contract VerifierLogicPart<%ID%> is VerifierLogicAbstract {
     function verifyPartial(
         uint256[] memory pubInputs,
         bytes memory proof,

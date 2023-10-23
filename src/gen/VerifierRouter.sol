@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
-import "./VerifierFuncAbst.sol";
+import "./VerifierLogicAbstract.sol";
 
 // MAX TRANSCRIPT ADDR: <%max_transcript_addr%>
-contract VerifierBase {
+contract VerifierRouter {
     uint256 constant SIZE_LIMIT =
         21888242871839275222246405745257275088696311157297823662689037894645226208583;
-    uint numVerifierFuncs;
-    address[] public verifierFuncs;
-    uint public maxTranscriptAddr;
+    address[] public verifierLogicParts;
+    uint public maxTranscriptAddr = <%max_transcript_addr%>;
 
     bytes16 private constant _HEX_DIGITS = "0123456789abcdef";
 
-    constructor(address[] memory _verifierFuncs, uint _maxTranscriptAddr) {
-        numVerifierFuncs = _verifierFuncs.length;
-        verifierFuncs = _verifierFuncs;
-        maxTranscriptAddr = _maxTranscriptAddr;
+    constructor(address[] memory _verifierLogicParts) {
+        verifierLogicParts = _verifierLogicParts;
     }
 
     function verify(
@@ -36,9 +33,10 @@ contract VerifierBase {
                 )
             );
         }
-        VerifierFuncAbst verifier;
-        for (uint i = 0; i < numVerifierFuncs; i++) {
-            verifier = VerifierFuncAbst(verifierFuncs[i]);
+        VerifierLogicAbstract verifier;
+        uint256 numVerifierLogicParts = verifierLogicParts.length;
+        for (uint i = 0; i < numVerifierLogicParts; i++) {
+            verifier = VerifierLogicAbstract(verifierLogicParts[i]);
             (success, transcript) = verifier
                 .verifyPartial(pubInputs, proof, success, transcript);
         }

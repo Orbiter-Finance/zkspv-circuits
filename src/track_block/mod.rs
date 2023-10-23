@@ -7,6 +7,7 @@ use futures::AsyncReadExt;
 use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::gates::RangeChip;
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
+use halo2_base::utils::bit_length;
 use halo2_base::{AssignedValue, Context};
 use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
@@ -161,7 +162,7 @@ pub trait EthTrackBlockChip<F: Field> {
     fn parse_track_block_proof_from_block_phase1(
         &self,
         thread_pool: &mut RlcThreadBuilder<F>,
-        witness: EthTrackBlockTraceWitness<F>,
+        witnesses: EthTrackBlockTraceWitness<F>,
     ) -> EthTrackBlockTrace<F>
     where
         Self: EthBlockHeaderChip<F>;
@@ -188,8 +189,6 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         let mut target_block_hash: Vec<AssignedValue<F>> = Vec::new();
 
         // parallelize witness for blocks
-        #[cfg(feature = "display")]
-        let start_blocks = start_timer!(|| "parallelize witness for blocks");
         let blocks_witness = parallelize_keccak_phase0(
             thread_pool,
             keccak,
@@ -200,12 +199,9 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
                 self.decompose_block_header_phase0(ctx, keccak, &block_header, block_header_config)
             },
         );
-        #[cfg(feature = "display")]
-        end_timer!(start_blocks);
 
         let ctx = thread_pool.main(FIRST_PHASE);
-        #[cfg(feature = "display")]
-        let start = start_timer!(|| "blocks_witness");
+
         let zero = ctx.load_constant(F::from(0));
         let mut start_block_number = zero;
         let mut end_block_number = zero;
@@ -222,6 +218,7 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
                     self.gate(),
                     &block_witness.get_parent_hash().field_cells,
                 );
+
                 for (pre_block_hash, parent_hash) in
                     temp_last_block_hash.iter().zip(parent_hash.iter())
                 {
@@ -255,8 +252,6 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
                 )[0];
             }
         }
-        #[cfg(feature = "display")]
-        end_timer!(start);
 
         let digest = EIP1186ResponseDigest {
             start_block_hash: start_block_hash.to_vec().try_into().unwrap(),
@@ -275,14 +270,20 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
     fn parse_track_block_proof_from_block_phase1(
         &self,
         thread_pool: &mut RlcThreadBuilder<F>,
-        witness: EthTrackBlockTraceWitness<F>,
+        witnesses: EthTrackBlockTraceWitness<F>,
     ) -> EthTrackBlockTrace<F>
     where
         Self: EthBlockHeaderChip<F>,
     {
+        assert!(!witnesses.blocks_witness.is_empty());
+        let ctx = thread_pool.rlc_ctx_pair();
+
+        let cache_bits = bit_length(witnesses.blocks_witness[0].rlp_witness.rlp_array.len() as u64);
+        self.rlc().load_rlc_cache(ctx, self.gate(), cache_bits);
+
         let blocks_trace = parallelize_phase1(
             thread_pool,
-            witness.blocks_witness,
+            witnesses.blocks_witness,
             |(ctx_gate, ctx_rlc), block_witness| {
                 self.decompose_block_header_phase1((ctx_gate, ctx_rlc), block_witness)
             },

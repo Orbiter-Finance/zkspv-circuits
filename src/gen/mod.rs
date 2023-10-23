@@ -17,7 +17,7 @@ pub struct DeployParamsJson {
 }
 #[test]
 fn test_sol() {
-    let yul: String = fs::read_to_string("./data/transaction/test.yul").unwrap().parse().unwrap();
+    let yul: String = fs::read_to_string("./data/transaction/de.yul").unwrap().parse().unwrap();
     gen_sol_verifiers(yul);
 }
 
@@ -33,7 +33,8 @@ pub fn gen_sol_verifiers(yul: String) {
     {
         fs::create_dir_all(&sols_dir).unwrap();
         for (idx, sol) in sols.iter().enumerate() {
-            let mut file = File::create(sols_dir.join(format!("VerifierFunc{}.sol", idx))).unwrap();
+            let mut file =
+                File::create(sols_dir.join(format!("VerifierLogicPart{}.sol", idx))).unwrap();
             file.write_all(sol.as_bytes()).unwrap();
         }
         let deploy_params =
@@ -45,14 +46,14 @@ pub fn gen_sol_verifiers(yul: String) {
     }
     let enter_verifier_sol = include_str!("Verifier.sol");
     fs::write(sols_dir.join("Verifier.sol"), enter_verifier_sol).unwrap();
-    let mut verifier_base_sol = include_str!("./VerifierBase.sol").to_string();
-    verifier_base_sol =
-        verifier_base_sol.replace("<%max_transcript_addr%>", &format!("{}", max_transcript_addr));
-    fs::write(sols_dir.join("VerifierBase.sol"), verifier_base_sol).unwrap();
-    let mut verifier_func_abst_sol = include_str!("./VerifierFuncAbst.sol").to_string();
-    verifier_func_abst_sol = verifier_func_abst_sol
+    let mut verifier_router_sol = include_str!("VerifierRouter.sol").to_string();
+    verifier_router_sol =
+        verifier_router_sol.replace("<%max_transcript_addr%>", &format!("{}", max_transcript_addr));
+    fs::write(sols_dir.join("VerifierRouter.sol"), verifier_router_sol).unwrap();
+    let mut verifier_logic_abstract_sol = include_str!("VerifierLogicAbstract.sol").to_string();
+    verifier_logic_abstract_sol = verifier_logic_abstract_sol
         .replace("<%max_transcript_addr%>", &format!("{}", max_transcript_addr));
-    fs::write(sols_dir.join("VerifierFuncAbst.sol"), verifier_func_abst_sol).unwrap();
+    fs::write(sols_dir.join("VerifierLogicAbstract.sol"), verifier_logic_abstract_sol).unwrap();
 }
 
 // original: https://github.com/zkonduit/ezkl/blob/main/src/eth.rs#L326-L602
@@ -332,7 +333,7 @@ pub fn gen_evm_verifier_sols_from_yul(
     for block in blocks.iter() {
         let new_block = format!("{}\n", block);
         if codes.len() + new_block.len() > max_line_size_per_file {
-            let mut template = include_str!("./VerifierFunc.sol").to_string();
+            let mut template = include_str!("VerifierLogicPart.sol").to_string();
             template =
                 template.replace("<%max_transcript_addr%>", &format!("{}", max_transcript_addr));
             template = template.replace("<%ID%>", &format!("{}", func_idx));
@@ -344,7 +345,7 @@ pub fn gen_evm_verifier_sols_from_yul(
         codes += &new_block;
     }
     if codes.len() > 0 {
-        let mut template = include_str!("./VerifierFunc.sol").to_string();
+        let mut template = include_str!("VerifierLogicPart.sol").to_string();
         template = template.replace("<%max_transcript_addr%>", &format!("{}", max_transcript_addr));
         template = template.replace("<%ID%>", &format!("{}", func_idx));
         template = template.replace("<%ASSEMBLY%>", &codes);

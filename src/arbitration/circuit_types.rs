@@ -117,11 +117,12 @@ impl scheduler::CircuitType for FinalAssemblyCircuitType {
         format!("final_{}", self.round)
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
-        if self.round == 0 {
-            EthConfigPinning::from_path(pinning_path.as_ref()).degree()
-        } else {
-            AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()
-        }
+        // if self.round == 0 {
+        //     EthConfigPinning::from_path(pinning_path.as_ref()).degree()
+        // } else {
+        //     AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()
+        // }
+        AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()
     }
 }
 

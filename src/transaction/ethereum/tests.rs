@@ -2,13 +2,15 @@ use ark_std::{end_timer, start_timer};
 use std::env::{set_var, var};
 use std::fs::File;
 use std::io::Write;
-use std::iter;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::{fs, iter};
 
 use ethers_core::types::Bytes;
 use ethers_core::utils::hex::FromHex;
+use ff::PrimeField;
 use halo2_base::utils::fs::gen_srs;
 use halo2_solidity_verifier::BatchOpenScheme::Bdfg21;
+use itertools::Itertools;
 use revm::EVM;
 use snark_verifier_sdk::CircuitExt;
 
@@ -205,14 +207,19 @@ pub fn evm_gen_yul() -> Result<(), Box<dyn std::error::Error>> {
     let proof = gen_evm_proof_shplonk(&params, &pk, pf_circuit, instances.clone());
     end_timer!(evm_proof_time);
     fs::create_dir_all("data/transaction").unwrap();
-    write_calldata(&instances, &proof, Path::new("data/transaction/test.calldata")).unwrap();
+    write_calldata(&instances, &proof, Path::new("data/transaction/de.calldata")).unwrap();
 
     let deployment_code = custom_gen_evm_verifier_shplonk(
         &params,
         pk.get_vk(),
         &evm_circuit,
-        Some(Path::new("data/transaction/test.yul")),
+        Some(Path::new("data/transaction/de.yul")),
     );
+
+    let proof_path = Path::new("data/transaction/de.proof");
+    encode_proof(&proof, proof_path);
+    let instance_path = Path::new("data/transaction/de.instance");
+    encode_instance(&instances, instance_path);
 
     // this verifies proof in EVM and outputs gas cost (if successful)
     // evm_verify(deployment_code, instances, proof);
@@ -399,3 +406,25 @@ pub fn evm_gen_yul() -> Result<(), Box<dyn std::error::Error>> {
 //     //     .unwrap();
 //     Ok(())
 // }
+
+pub fn encode_instance<F>(instances: &[Vec<F>], path: &Path)
+where
+    F: PrimeField<Repr = [u8; 32]>,
+{
+    let instance: Vec<u8> = iter::empty()
+        .chain(
+            instances
+                .iter()
+                .flatten()
+                .flat_map(|value| value.to_repr().as_ref().iter().rev().cloned().collect_vec()),
+        )
+        .collect();
+    let instance = hex::encode(instance);
+    fs::write(path, &instance).unwrap();
+}
+
+pub fn encode_proof(proof: &[u8], path: &Path) {
+    let proof: Vec<u8> = iter::empty().chain(proof.iter().cloned()).collect();
+    let proof = hex::encode(proof);
+    fs::write(path, &proof).unwrap();
+}

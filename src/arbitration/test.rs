@@ -78,23 +78,31 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
 }
 
 fn test_block_track_task(network: Network) -> ETHBlockTrackTask {
-    let block_number_interval =
-        vec![(17113952..17113953).collect_vec(), (17113955..17113956).collect_vec()];
+    let block_number_interval = vec![
+        (17113954..17113957).collect_vec(),
+        (17113964..17113967).collect_vec(),
+        // (17113978..17113979).collect_vec(),
+    ];
     let constructor_one = TrackBlockConstructor {
         block_number_interval: block_number_interval[0].clone(),
-        block_target: *block_number_interval[0].first().clone().unwrap(),
+        block_target: *block_number_interval[0].get(0).clone().unwrap(),
         network,
     };
     let constructor_two = TrackBlockConstructor {
         block_number_interval: block_number_interval[1].clone(),
-        block_target: *block_number_interval[1].first().clone().unwrap(),
+        block_target: *block_number_interval[1].get(0).clone().unwrap(),
         network,
     };
+    // let constructor_three = TrackBlockConstructor {
+    //     block_number_interval: block_number_interval[2].clone(),
+    //     block_target: *block_number_interval[2].get(0).clone().unwrap(),
+    //     network,
+    // };
     ETHBlockTrackTask {
         input: test_get_block_track_circuit(constructor_one.clone()),
         network: Network::Ethereum(EthereumNetwork::Mainnet),
         tasks_len: 2,
-        task_width: 1,
+        task_width: 3,
         constructor: vec![constructor_one, constructor_two],
     }
 }
@@ -215,8 +223,7 @@ pub fn test_arbitration_scheduler_mdc_task() {
 }
 
 #[test]
-pub fn test_arbitration_scheduler_final_task() {
-    //-- --nocapture
+pub fn test_arbitration_scheduler_source_final_task() {
     let network = Network::Ethereum(EthereumNetwork::Mainnet);
 
     let block_network = Network::Ethereum(EthereumNetwork::Mainnet);
@@ -236,7 +243,7 @@ pub fn test_arbitration_scheduler_final_task() {
     let constructor =
         FinalAssemblyConstructor { transaction_task, eth_block_track_task, mdc_state_task };
 
-    let _task = FinalAssemblyTask { round: 0, network, constructor };
+    let _task = FinalAssemblyTask { round: 3, network, constructor };
     scheduler.get_calldata(ArbitrationTask::Final(_task), true);
 }
 
