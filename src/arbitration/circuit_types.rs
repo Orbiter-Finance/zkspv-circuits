@@ -22,7 +22,7 @@ impl EthTrackBlockCircuitType {
 impl scheduler::CircuitType for EthTrackBlockCircuitType {
     fn name(&self) -> String {
         if self.is_aggregated() {
-            format!("blockTrack_aggregate_width_{}", self.task_width)
+            format!("blockTrack_aggregate_width_{}_task_len_{}", self.task_width, self.tasks_len)
         } else {
             format!("blockTrack_width_{}", self.task_width)
         }
