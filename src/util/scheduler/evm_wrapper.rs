@@ -65,7 +65,7 @@ impl<T: Task> Task for Wrapper<T> {
     }
 }
 
-pub trait SimpleTask: Task {
+pub trait SimpleTask: Task + Sync + Send {
     type PreCircuit: PreCircuit + Clone;
 
     fn get_circuit(&self, network: Network) -> Self::PreCircuit;

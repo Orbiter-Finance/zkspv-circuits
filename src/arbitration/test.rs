@@ -74,6 +74,7 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
         false,
         PathBuf::from("configs/arbitration/"),
         PathBuf::from("data/arbitration/"),
+        PathBuf::from("cache_data/arbitration/"),
     )
 }
 

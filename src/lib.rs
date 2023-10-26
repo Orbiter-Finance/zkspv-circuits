@@ -2,6 +2,7 @@
 #![feature(trait_alias)]
 #![feature(return_position_impl_trait_in_trait)]
 #![allow(incomplete_features)]
+#![feature(thread_id_value)]
 
 extern crate core;
 
@@ -28,6 +29,7 @@ use zkevm_keccak::KeccakConfig;
 use keccak::{FnSynthesize, KeccakCircuitBuilder, SharedKeccakChip};
 pub use mpt::EthChip;
 use util::EthConfigParams;
+use util::concur_var::{set_var_thread_safe, var_thread_safe};
 
 use crate::rlp::{
     builder::{RlcThreadBreakPoints, RlcThreadBuilder},
@@ -134,10 +136,18 @@ impl<F: Field> MPTConfig<F> {
             params.lookup_bits.unwrap_or(ETH_LOOKUP_BITS),
             degree as usize,
         );
-        set_var("KECCAK_DEGREE", degree.to_string());
-        set_var("KECCAK_ROWS", params.keccak_rows_per_round.to_string());
+        // set_var("KECCAK_DEGREE", degree.to_string());
+        // set_var("KECCAK_ROWS", params.keccak_rows_per_round.to_string());
+        // let keccak = KeccakConfig::new(meta, rlp.rlc.gamma);
+        // set_var("UNUSABLE_ROWS", meta.minimum_rows().to_string());
+        // #[cfg(feature = "display")]
+        // println!("Unusable rows: {}", meta.minimum_rows());
+        // rlp.range.gate.max_rows = (1 << degree) - meta.minimum_rows();
+        // Self { rlp, keccak }
+        set_var_thread_safe("KECCAK_DEGREE", degree.to_string());
+        set_var_thread_safe("KECCAK_ROWS", params.keccak_rows_per_round.to_string());
         let keccak = KeccakConfig::new(meta, rlp.rlc.gamma);
-        set_var("UNUSABLE_ROWS", meta.minimum_rows().to_string());
+        set_var_thread_safe("UNUSABLE_ROWS", meta.minimum_rows().to_string());
         #[cfg(feature = "display")]
         println!("Unusable rows: {}", meta.minimum_rows());
         rlp.range.gate.max_rows = (1 << degree) - meta.minimum_rows();
@@ -236,8 +246,11 @@ impl<F: Field, FnPhase1: FnSynthesize<F>> Circuit<F> for EthCircuitBuilder<F, Fn
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        // let params: EthConfigParams =
+        //     serde_json::from_str(&var("ETH_CONFIG_PARAMS").unwrap()).unwrap();
+        // EthConfig::configure(meta, params)
         let params: EthConfigParams =
-            serde_json::from_str(&var("ETH_CONFIG_PARAMS").unwrap()).unwrap();
+        serde_json::from_str(&var_thread_safe("ETH_CONFIG_PARAMS").unwrap()).unwrap();
         EthConfig::configure(meta, params)
     }
 
@@ -302,8 +315,13 @@ pub trait EthPreCircuit: Sized {
         end_timer!(start);
         #[cfg(not(feature = "production"))]
         if !prover {
+            // let config_params: EthConfigParams = serde_json::from_str(
+            //     var("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
+            // )
+            // .unwrap();
+            // circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
             let config_params: EthConfigParams = serde_json::from_str(
-                var("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
+                var_thread_safe("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
             )
             .unwrap();
             circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
@@ -343,7 +361,9 @@ pub trait AggregationPreCircuit: Sized {
         end_timer!(start);
         #[cfg(not(feature = "production"))]
         if stage != CircuitBuilderStage::Prover {
-            let minimum_rows = var("UNUSABLE_ROWS").map(|s| s.parse().unwrap_or(10)).unwrap_or(10);
+            // let minimum_rows = var("UNUSABLE_ROWS").map(|s| s.parse().unwrap_or(10)).unwrap_or(10);
+            // circuit.config(params.k(), Some(minimum_rows));
+            let minimum_rows = var_thread_safe("UNUSABLE_ROWS").map(|s| s.parse().unwrap_or(10)).unwrap_or(10);
             circuit.config(params.k(), Some(minimum_rows));
         }
         circuit

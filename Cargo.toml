@@ -102,6 +102,7 @@ halo2-axiom = ["zkevm-keccak/halo2-axiom", "snark-verifier-sdk?/halo2-axiom"]
 jemallocator = ["halo2-base/jemallocator"]
 
 dev-graph = ["halo2-base/dev-graph"]
+parallel-sub-circuit = [] # only for the sub-circuits that have NO share condition case! Currently not work properbly yet
 
 # [patch."https://github.com/Orbiter-Finance/halo2-axiom.git"]
 # halo2_proofs = { path = "../halo2-axiom/halo2_proofs"}
@@ -111,9 +112,11 @@ dev-graph = ["halo2-base/dev-graph"]
 # snark-verifier = { path = "../snark-verifier/snark-verifier"}
 
 
- [patch."https://github.com/Orbiter-Finance/halo2-lib.git"]
- halo2-base = { path = "../ecdsa/halo2-lib/halo2-base"}
+# [patch."https://github.com/Orbiter-Finance/halo2-lib.git"]
+# halo2-base = { path = "../halo2-lib/halo2-base"}
+# zkevm-keccak = { path = "../halo2-lib/hashes/zkevm-keccak" }
 # halo2-ecc = { path = "../halo2-lib/halo2-ecc" }
+
 
 # [patch."https://github.com/Orbiter-Finance/halo2curves.git"]
 # halo2curves = { path = "../halo2curves"}

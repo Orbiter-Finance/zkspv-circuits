@@ -302,6 +302,7 @@ mod aggregation {
             false,
             PathBuf::from("configs/headers"),
             PathBuf::from("data/headers"),
+            PathBuf::from("cache_data/headers"),
         )
     }
 

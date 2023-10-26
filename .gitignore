@@ -6,5 +6,7 @@ Cargo.lock
 params/
 *.srs
 data/
+cache_data/
 .idea
 .vscode
+arbitration_business
