@@ -37,7 +37,6 @@ pub enum CircuitRouter {
     // FinalAssembly(FinalAssemblyCircuit),
     Passthrough(PublicAggregationCircuit),
     FinalAssemblyThroughAggregation(PublicAggregationCircuit),
-    // FinalAssemblyForEvm(PublicAggregationCircuit),
 }
 
 pub type ArbitrationScheduler = EthScheduler<ArbitrationTask>;

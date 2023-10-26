@@ -22,12 +22,14 @@ use snark_verifier_sdk::{
 };
 
 use crate::arbitration::circuit_types::FinalAssemblyFinality;
+use crate::arbitration::final_assembly::FinalAssemblyType;
 use crate::arbitration::helper::{
     FinalAssemblyConstructor, FinalAssemblyTask, MDCStateTask, TransactionTask,
 };
 use crate::storage::util::{get_mdc_storage_circuit, EbcRuleParams, StorageConstructor};
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
+use crate::transaction::EthTransactionType;
 use crate::util::helpers::calculate_mk_address_struct;
 use crate::util::scheduler::evm_wrapper::ForEvm;
 use crate::{
@@ -79,9 +81,9 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
 
 fn test_block_track_task(network: Network) -> ETHBlockTrackTask {
     let block_number_interval = vec![
-        (17113954..17113964).collect_vec(),
-        (17113964..17113974).collect_vec(),
-        // (17113978..17113979).collect_vec(),
+        (17113954..17113975).collect_vec(),
+        (17113964..17113985).collect_vec(),
+        (17113974..17113995).collect_vec(),
     ];
     let constructor_one = TrackBlockConstructor {
         block_number_interval: block_number_interval[0].clone(),
@@ -93,17 +95,17 @@ fn test_block_track_task(network: Network) -> ETHBlockTrackTask {
         block_target: *block_number_interval[1].get(0).clone().unwrap(),
         network,
     };
-    // let constructor_three = TrackBlockConstructor {
-    //     block_number_interval: block_number_interval[2].clone(),
-    //     block_target: *block_number_interval[2].get(0).clone().unwrap(),
-    //     network,
-    // };
+    let constructor_three = TrackBlockConstructor {
+        block_number_interval: block_number_interval[2].clone(),
+        block_target: *block_number_interval[2].get(0).clone().unwrap(),
+        network,
+    };
     ETHBlockTrackTask {
         input: test_get_block_track_circuit(constructor_one.clone()),
         network: Network::Ethereum(EthereumNetwork::Mainnet),
-        tasks_len: 2,
-        task_width: 10,
-        constructor: vec![constructor_one, constructor_two],
+        tasks_len: 3,
+        task_width: 20,
+        constructor: vec![constructor_one, constructor_two, constructor_three],
     }
 }
 
@@ -144,8 +146,8 @@ fn test_transaction_task(network: Network) -> TransactionTask {
 
     TransactionTask {
         input: get_eth_transaction_circuit(constructor.clone()),
+        tx_type: EthTransactionType::DynamicFeeTxType,
         tasks_len: 1,
-        task_width: 1,
         constructor: vec![constructor],
     }
 }
@@ -243,7 +245,12 @@ pub fn test_arbitration_scheduler_source_final_task() {
     let constructor =
         FinalAssemblyConstructor { transaction_task, eth_block_track_task, mdc_state_task };
 
-    let _task = FinalAssemblyTask { round: 3, network, constructor };
+    let _task = FinalAssemblyTask {
+        round: 1,
+        aggregation_type: FinalAssemblyType::Source,
+        network,
+        constructor,
+    };
     scheduler.get_calldata(ArbitrationTask::Final(_task), true);
 }
 

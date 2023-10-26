@@ -1,4 +1,6 @@
 use halo2_base::{AssignedValue, Context};
+use revm::primitives::alloy_primitives::private::derive_more::Display;
+use serde::{Deserialize, Serialize};
 use zkevm_keccak::util::eth_types::Field;
 
 pub mod ethereum;
@@ -35,6 +37,23 @@ pub const EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN: [usize; EIP_1559_TX_TYPE_FIELD
     [32, 32, 32, 32, 32, 20, 32, TX_DATA_MAX_LEN, TX_ACCESS_LIST_MAX_LEN, 1, 32, 32];
 
 pub const TX_MAX_LEN: usize = 32 * 8 + 20 + 1 + TX_DATA_MAX_LEN + TX_ACCESS_LIST_MAX_LEN;
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum EthTransactionType {
+    LegacyTxType,     // 0x00
+    AccessListTxType, // 0x01
+    DynamicFeeTxType, // 0x02
+}
+
+impl ToString for EthTransactionType {
+    fn to_string(&self) -> String {
+        match self {
+            EthTransactionType::LegacyTxType => String::from("legacy_tx_type"),
+            EthTransactionType::AccessListTxType => String::from("access_list_tx_type"),
+            EthTransactionType::DynamicFeeTxType => String::from("dynamic_fee_tx_type"),
+        }
+    }
+}
 /// Get the transaction type and validate its support.
 pub fn get_transaction_type<F: Field>(ctx: &mut Context<F>, value: &AssignedValue<F>) -> u8 {
     let eip_1559_prefix = (F::from(EIP_1559_TX_TYPE as u64)).try_into().unwrap();

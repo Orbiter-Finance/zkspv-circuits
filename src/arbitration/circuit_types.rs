@@ -1,5 +1,9 @@
+use revm::primitives::alloy_primitives::private::derive_more::Display;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::arbitration::final_assembly::FinalAssemblyType;
+use crate::transaction::EthTransactionType;
 use crate::util::AggregationConfigPinning;
 use crate::{
     util::{scheduler, EthConfigPinning, Halo2ConfigPinning},
@@ -14,18 +18,21 @@ pub struct EthTrackBlockCircuitType {
 }
 
 impl EthTrackBlockCircuitType {
-    pub fn is_aggregated(&self) -> bool {
+    fn name(&self) -> String {
+        if self.is_aggregated() {
+            format!("block_track_aggregate_width_{}_task_len_{}", self.task_width, self.tasks_len)
+        } else {
+            format!("block_track_width_{}", self.task_width)
+        }
+    }
+    pub(crate) fn is_aggregated(&self) -> bool {
         return self.tasks_len != 1;
     }
 }
 
 impl scheduler::CircuitType for EthTrackBlockCircuitType {
     fn name(&self) -> String {
-        if self.is_aggregated() {
-            format!("blockTrack_aggregate_width_{}_task_len_{}", self.task_width, self.tasks_len)
-        } else {
-            format!("blockTrack_width_{}", self.task_width)
-        }
+        self.name()
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
         if self.is_aggregated() {
@@ -36,16 +43,15 @@ impl scheduler::CircuitType for EthTrackBlockCircuitType {
     }
 }
 
-//Todo Replace the task_width with the appropriate parameters
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct EthTransactionCircuitType {
     pub network: Network,
+    pub tx_type: EthTransactionType,
     pub tasks_len: u64,
-    pub task_width: u64,
 }
 
 impl EthTransactionCircuitType {
-    pub fn is_aggregated(&self) -> bool {
+    pub(crate) fn is_aggregated(&self) -> bool {
         self.tasks_len != 1
     }
 }
@@ -53,9 +59,13 @@ impl EthTransactionCircuitType {
 impl scheduler::CircuitType for EthTransactionCircuitType {
     fn name(&self) -> String {
         if self.is_aggregated() {
-            format!("transaction_aggregate_width_{}", self.task_width)
+            format!(
+                "transaction_aggregate_{}_tasks_len_{}",
+                self.tx_type.to_string(),
+                self.tasks_len
+            )
         } else {
-            format!("transaction_width_{}", self.task_width)
+            format!("transaction_{}", self.tx_type.to_string())
         }
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
@@ -76,7 +86,7 @@ pub struct EthStorageCircuitType {
 }
 
 impl EthStorageCircuitType {
-    pub fn is_aggregated(&self) -> bool {
+    pub(crate) fn is_aggregated(&self) -> bool {
         self.tasks_len != 1
     }
 }
@@ -109,19 +119,21 @@ pub struct FinalAssemblyCircuitType {
     /// Performs `round` rounds of SNARK verification using `PublicAggregationCircuit` on the final circuit.
     /// This is used to reduce circuit size and final EVM verification gas costs.
     pub round: usize,
+    pub aggregation_type: FinalAssemblyType,
     pub network: Network,
+}
+
+impl FinalAssemblyCircuitType {
+    pub fn name(&self) -> String {
+        format!("{}_final_{}", self.aggregation_type.to_string(), self.round)
+    }
 }
 
 impl scheduler::CircuitType for FinalAssemblyCircuitType {
     fn name(&self) -> String {
-        format!("final_{}", self.round)
+        self.name()
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
-        // if self.round == 0 {
-        //     EthConfigPinning::from_path(pinning_path.as_ref()).degree()
-        // } else {
-        //     AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()
-        // }
         AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()
     }
 }

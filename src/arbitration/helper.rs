@@ -10,10 +10,13 @@ use crate::arbitration::circuit_types::{
     EthStorageCircuitType, EthTransactionCircuitType, FinalAssemblyCircuitType,
     FinalAssemblyFinality,
 };
+use crate::arbitration::final_assembly::FinalAssemblyType;
 use crate::storage::util::{get_mdc_storage_circuit, StorageConstructor};
 use crate::storage::EthBlockStorageCircuit;
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
+use crate::transaction::EthTransactionType;
+use crate::util::scheduler::CircuitType;
 use crate::{
     track_block::{util::get_eth_track_block_circuit, EthTrackBlockCircuit},
     transaction::ethereum::EthBlockTransactionCircuit,
@@ -26,48 +29,12 @@ use super::circuit_types::{ArbitrationCircuitType, EthTrackBlockCircuitType};
 pub type CrossChainNetwork = Network;
 
 #[derive(Clone, Debug)]
-pub struct FinalAssemblyConstructor {
-    pub transaction_task: TransactionTask,
-    pub eth_block_track_task: ETHBlockTrackTask,
-    pub mdc_state_task: MDCStateTask,
-}
-
-#[derive(Clone, Debug)]
-pub struct FinalAssemblyTask {
-    pub round: usize,
-    pub network: Network,
-    pub constructor: FinalAssemblyConstructor,
-}
-
-impl scheduler::Task for FinalAssemblyTask {
-    type CircuitType = FinalAssemblyCircuitType;
-
-    fn circuit_type(&self) -> Self::CircuitType {
-        FinalAssemblyCircuitType { round: self.round, network: self.network }
-    }
-
-    fn name(&self) -> String {
-        format!("final_{}", self.round)
-    }
-
-    fn dependencies(&self) -> Vec<Self> {
-        vec![]
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct ETHBlockTrackTask {
     pub input: EthTrackBlockCircuit,
     pub network: Network,
-    pub tasks_len: u64,
-    pub task_width: u64,
+    pub tasks_len: u64,  // Group number of blocks
+    pub task_width: u64, // Length of a group of blocks
     pub constructor: Vec<TrackBlockConstructor>,
-}
-
-impl ETHBlockTrackTask {
-    pub fn is_aggregated(&self) -> bool {
-        return self.tasks_len != 1;
-    }
 }
 
 impl scheduler::Task for ETHBlockTrackTask {
@@ -82,15 +49,15 @@ impl scheduler::Task for ETHBlockTrackTask {
     }
 
     fn name(&self) -> String {
-        if self.is_aggregated() {
+        if self.circuit_type().is_aggregated() {
             format!(
-                "blockTrack_aggregated_task_width_{}_task_len_{}",
+                "block_track_aggregated_task_width_{}_task_len_{}",
                 self.task_width,
                 self.constructor.len()
             )
         } else {
             format!(
-                "blockTrack_width_{}_start_{}_end_{}",
+                "block_track_width_{}_start_{}_end_{}",
                 self.task_width,
                 self.constructor[0].block_number_interval.first().unwrap(),
                 self.constructor[0].block_number_interval.last().unwrap()
@@ -99,7 +66,7 @@ impl scheduler::Task for ETHBlockTrackTask {
     }
 
     fn dependencies(&self) -> Vec<Self> {
-        if self.is_aggregated() {
+        if self.circuit_type().is_aggregated() {
             let constructors = self.constructor.clone();
             let result = constructors
                 .into_iter()
@@ -116,6 +83,69 @@ impl scheduler::Task for ETHBlockTrackTask {
             vec![]
         }
     }
+}
+
+/// Transaction
+#[derive(Clone, Debug)]
+pub struct TransactionTask {
+    pub input: EthBlockTransactionCircuit,
+    pub tx_type: EthTransactionType,
+    pub tasks_len: u64,
+    pub constructor: Vec<TransactionConstructor>,
+}
+
+impl TransactionTask {
+    fn hash(&self) -> H256 {
+        H256(keccak256(bincode::serialize(&self.constructor[0].transaction_rlp).unwrap()))
+    }
+}
+
+impl scheduler::Task for TransactionTask {
+    type CircuitType = EthTransactionCircuitType;
+
+    fn circuit_type(&self) -> Self::CircuitType {
+        EthTransactionCircuitType {
+            network: self.constructor[0].network,
+            tx_type: self.tx_type.clone(),
+            tasks_len: self.tasks_len,
+        }
+    }
+
+    fn name(&self) -> String {
+        if self.circuit_type().is_aggregated() {
+            format!(
+                "transaction_aggregated_{}_task_len_{}",
+                self.tx_type.to_string(),
+                self.tasks_len
+            )
+        } else {
+            format!("transaction_{}_tx_{}", self.tx_type.to_string(), self.hash())
+        }
+    }
+
+    fn dependencies(&self) -> Vec<Self> {
+        if self.circuit_type().is_aggregated() {
+            let constructor = self.constructor.clone();
+            let result = constructor
+                .into_iter()
+                .map(|constructor| Self {
+                    input: get_eth_transaction_circuit(constructor.clone()),
+                    tx_type: self.tx_type.clone(),
+                    tasks_len: 1u64,
+                    constructor: [constructor].to_vec(),
+                })
+                .collect_vec();
+            result
+        } else {
+            vec![]
+        }
+    }
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug)]
+pub enum TransactionInput {
+    EthereumTx(),
 }
 
 #[derive(Clone, Debug)]
@@ -170,68 +200,39 @@ impl scheduler::Task for MDCStateTask {
     }
 }
 
-// #[allow(clippy::large_enum_variant)]
-// #[derive(Clone, Debug)]
-// pub enum TransactionInput {
-//     EthBlockTransactionCircuit,
-// }
+#[derive(Clone, Debug)]
+pub struct FinalAssemblyConstructor {
+    pub transaction_task: TransactionTask,
+    pub eth_block_track_task: ETHBlockTrackTask,
+    pub mdc_state_task: MDCStateTask,
+}
 
 #[derive(Clone, Debug)]
-pub struct TransactionTask {
-    pub input: EthBlockTransactionCircuit,
-    pub tasks_len: u64,
-    pub task_width: u64,
-    pub constructor: Vec<TransactionConstructor>,
+pub struct FinalAssemblyTask {
+    pub round: usize,
+    pub aggregation_type: FinalAssemblyType,
+    pub network: Network,
+    pub constructor: FinalAssemblyConstructor,
 }
 
-impl TransactionTask {
-    fn hash(&self) -> H256 {
-        H256(keccak256(bincode::serialize(&self.constructor[0].transaction_rlp).unwrap()))
-    }
-}
-
-impl scheduler::Task for TransactionTask {
-    type CircuitType = EthTransactionCircuitType;
+impl scheduler::Task for FinalAssemblyTask {
+    type CircuitType = FinalAssemblyCircuitType;
 
     fn circuit_type(&self) -> Self::CircuitType {
-        EthTransactionCircuitType {
-            network: self.constructor[0].network,
-            tasks_len: self.tasks_len,
-            task_width: self.task_width,
+        FinalAssemblyCircuitType {
+            round: self.round,
+            aggregation_type: self.aggregation_type.clone(),
+            network: self.network,
         }
     }
 
     fn name(&self) -> String {
-        if self.circuit_type().is_aggregated() {
-            format!("transaction_aggregated_task_len_{}", self.constructor.len())
-        } else {
-            format!("transaction_width_{}_tx_{}", self.task_width, self.hash())
-        }
+        self.circuit_type().name()
     }
 
     fn dependencies(&self) -> Vec<Self> {
-        if self.circuit_type().is_aggregated() {
-            let constructor = self.constructor.clone();
-            let result = constructor
-                .into_iter()
-                .map(|constructor| Self {
-                    input: get_eth_transaction_circuit(constructor.clone()),
-                    tasks_len: 1u64,
-                    task_width: self.task_width,
-                    constructor: [constructor].to_vec(),
-                })
-                .collect_vec();
-            result
-        } else {
-            vec![]
-        }
+        vec![]
     }
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug)]
-pub enum TransactionInput {
-    EthereumTx(),
 }
 
 #[allow(clippy::large_enum_variant)]
