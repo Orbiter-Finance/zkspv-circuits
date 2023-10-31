@@ -1,4 +1,4 @@
-cd ../ 
+cd ../
 mkdir -p params && cd params
 
 wget -b https://axiom-crypto.s3.amazonaws.com/challenge_0078/kzg_bn254_15.srs

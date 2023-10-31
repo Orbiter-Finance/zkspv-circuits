@@ -70,21 +70,17 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
 }
 
 fn test_block_track_task(network: Network) -> ETHBlockTrackTask {
-    let block_number_interval = vec![
-        (17113954..17113994).collect_vec(),
-        (17113864..17113904).collect_vec(),
-        // (17113978..17113979).collect_vec(),
-    ];
+    let mut block_number_interval = vec![17113952,17113957,17113959];
     let constructor_one = TrackBlockConstructor {
-        block_number_interval: block_number_interval[0].clone(),
-        block_target: *block_number_interval[0].get(0).clone().unwrap(),
+        block_number_interval: block_number_interval.clone(),
+        block_target: block_number_interval[0],
         network,
     };
-    let constructor_two = TrackBlockConstructor {
-        block_number_interval: block_number_interval[1].clone(),
-        block_target: *block_number_interval[1].get(0).clone().unwrap(),
-        network,
-    };
+    // let constructor_two = TrackBlockConstructor {
+    //     block_number_interval: block_number_interval[1].clone(),
+    //     block_target: *block_number_interval[1].get(0).clone().unwrap(),
+    //     network,
+    // };
     // let constructor_three = TrackBlockConstructor {
     //     block_number_interval: block_number_interval[2].clone(),
     //     block_target: *block_number_interval[2].get(0).clone().unwrap(),
@@ -93,9 +89,11 @@ fn test_block_track_task(network: Network) -> ETHBlockTrackTask {
     ETHBlockTrackTask {
         input: test_get_block_track_circuit(constructor_one.clone()),
         network: Network::Ethereum(EthereumNetwork::Mainnet),
-        tasks_len: 3,
-        task_width: 40,
-        constructor: vec![constructor_one, constructor_two],
+        tasks_len: 1,
+        task_width: 3,
+        // constructor: vec![constructor_one, constructor_two, constructor_three],
+        // constructor: vec![constructor_one, constructor_two],
+        constructor: vec![constructor_one]
     }
 }
 
@@ -188,6 +186,7 @@ fn test_transaction_task(network: Network) -> TransactionTask {
         tasks_len: 1,
         task_width: 1,
         constructor: vec![constructor],
+        aggregated: false,
     }
 }
 
@@ -206,12 +205,14 @@ fn main() {
 
     let eth_block_track_task = test_block_track_task(block_network);
 
-    let mdc_state_task = test_mdc_task(mdc_network);
+    let mdc_state_task0 = test_mdc_task(mdc_network);
+    let mdc_state_task1 = test_mdc_task(mdc_network);
 
     let constructor =
-        FinalAssemblyConstructor { transaction_task, eth_block_track_task, mdc_state_task };
+        FinalAssemblyConstructor { transaction_task, eth_block_track_task,  mdc_state_task0, mdc_state_task1};
 
-    let _task = FinalAssemblyTask { round: 3, network, constructor };
+
+    let _task = FinalAssemblyTask { round: 1, network, constructor };
     let cache_time = start_timer!(|| "Cache srs pk files time");
     scheduler.cache_srs_pk_files(ArbitrationTask::Final(_task.clone()));
     end_timer!(cache_time);

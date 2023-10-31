@@ -104,6 +104,9 @@ jemallocator = ["halo2-base/jemallocator"]
 dev-graph = ["halo2-base/dev-graph"]
 parallel-sub-circuit = [] # only for the sub-circuits that have NO share condition case! Currently not work properbly yet
 
+[profile.test]
+opt-level = 2
+
 # [patch."https://github.com/Orbiter-Finance/halo2-axiom.git"]
 # halo2_proofs = { path = "../halo2-axiom/halo2_proofs"}
 

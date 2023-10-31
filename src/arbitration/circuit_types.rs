@@ -42,11 +42,12 @@ pub struct EthTransactionCircuitType {
     pub network: Network,
     pub tasks_len: u64,
     pub task_width: u64,
+    pub aggregated: bool,
 }
 
 impl EthTransactionCircuitType {
     pub fn is_aggregated(&self) -> bool {
-        self.tasks_len != 1
+        return self.aggregated
     }
 }
 
@@ -84,7 +85,7 @@ impl EthStorageCircuitType {
 impl scheduler::CircuitType for EthStorageCircuitType {
     fn name(&self) -> String {
         if self.is_aggregated() {
-            format!("storage_aggregate_width_{}", self.task_width)
+            format!("storage_aggregate_tasks_len_{}", self.tasks_len)
         } else {
             format!("storage_width_{}", self.task_width)
         }

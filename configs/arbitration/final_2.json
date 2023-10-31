@@ -1,6 +1,6 @@
 {
   "params": {
-    "degree": 24,
+    "degree": 25,
     "num_advice": 1,
     "num_lookup_advice": 1,
     "num_fixed": 1,

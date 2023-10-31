@@ -29,7 +29,8 @@ pub type CrossChainNetwork = Network;
 pub struct FinalAssemblyConstructor {
     pub transaction_task: TransactionTask,
     pub eth_block_track_task: ETHBlockTrackTask,
-    pub mdc_state_task: MDCStateTask,
+    pub mdc_state_task0: MDCStateTask,
+    pub mdc_state_task1: MDCStateTask,
 }
 
 #[derive(Clone, Debug)]
@@ -182,6 +183,7 @@ pub struct TransactionTask {
     pub tasks_len: u64,
     pub task_width: u64,
     pub constructor: Vec<TransactionConstructor>,
+    pub aggregated: bool,
 }
 
 impl TransactionTask {
@@ -198,6 +200,7 @@ impl scheduler::Task for TransactionTask {
             network: self.constructor[0].network,
             tasks_len: self.tasks_len,
             task_width: self.task_width,
+            aggregated: self.aggregated,
         }
     }
 
@@ -219,6 +222,7 @@ impl scheduler::Task for TransactionTask {
                     tasks_len: 1u64,
                     task_width: self.task_width,
                     constructor: [constructor].to_vec(),
+                    aggregated: false,
                 })
                 .collect_vec();
             result
@@ -297,7 +301,8 @@ impl scheduler::Task for ArbitrationTask {
                 vec![
                     ArbitrationTask::Transaction(task.constructor.transaction_task),
                     ArbitrationTask::ETHBlockTrack(task.constructor.eth_block_track_task),
-                    ArbitrationTask::MDCState(task.constructor.mdc_state_task),
+                    ArbitrationTask::MDCState(task.constructor.mdc_state_task0),
+                    ArbitrationTask::MDCState(task.constructor.mdc_state_task1),
                 ]
             }
         }

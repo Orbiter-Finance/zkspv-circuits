@@ -92,20 +92,22 @@ impl EthPreCircuit for EthTrackBlockCircuit {
         );
 
         let EIP1186ResponseDigest {
-            start_block_hash,
-            start_block_number,
-            end_block_hash,
-            end_block_number,
-            target_block_hash,
-            target_block_number,
+            track_blocks_info
         } = digest;
 
-        let assigned_instances = start_block_hash
-            .into_iter()
-            .chain(end_block_hash)
-            .chain(target_block_hash)
-            .chain([start_block_number, end_block_number, target_block_number])
-            .collect_vec();
+        // let assigned_instances = start_block_hash
+        //     .into_iter()
+        //     .chain(end_block_hash)
+        //     .chain(target_block_hash)
+        //     .chain([start_block_number, end_block_number, target_block_number])
+        //     .collect_vec();
+
+        let assigned_instances = track_blocks_info
+                                                            .iter()
+                                                            .flat_map(|block| block.block_hash
+                                                                                                        .into_iter()
+                                                                                                        .chain([block.block_num]))
+                                                                                                        .collect_vec();
 
         EthCircuitBuilder::new(
             assigned_instances,
@@ -126,12 +128,7 @@ impl EthPreCircuit for EthTrackBlockCircuit {
 
 #[derive(Clone, Debug)]
 pub struct EIP1186ResponseDigest<F: Field> {
-    pub start_block_hash: AssignedH256<F>,
-    pub start_block_number: AssignedValue<F>,
-    pub end_block_hash: AssignedH256<F>,
-    pub end_block_number: AssignedValue<F>,
-    pub target_block_hash: AssignedH256<F>,
-    pub target_block_number: AssignedValue<F>,
+    pub track_blocks_info: Vec<TrackBlockInfo<F>>,
 }
 
 #[derive(Clone, Debug)]
@@ -168,6 +165,12 @@ pub trait EthTrackBlockChip<F: Field> {
         Self: EthBlockHeaderChip<F>;
 }
 
+#[derive(Clone, Debug)]
+pub struct TrackBlockInfo<F: Field> {
+    pub block_hash: AssignedH256<F>,
+    pub block_num: AssignedValue<F>,
+}
+
 impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
     // ================= FIRST PHASE ================
 
@@ -184,6 +187,7 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
     where
         Self: EthBlockHeaderChip<F>,
     {
+        let mut track_blocks_info: Vec<TrackBlockInfo<F>> = Vec::new();
         let mut start_block_hash: Vec<AssignedValue<F>> = Vec::new();
         let mut last_block_hash: Vec<AssignedValue<F>> = Vec::new();
         let mut target_block_hash: Vec<AssignedValue<F>> = Vec::new();
@@ -209,6 +213,16 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         // The maximum total length of a single round calculation is 256, so make sure it is u8 type data.
         let target_index = bytes_to_u8(&input.target_index);
         for (i, block_witness) in blocks_witness.iter().enumerate() {
+            track_blocks_info.push(
+                TrackBlockInfo::<F> {
+                    block_hash: bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash).to_vec().try_into().unwrap(),
+                    block_num: self.rlp_field_witnesses_to_uint(
+                        ctx,
+                        vec![&block_witness.get_number()],
+                        vec![8],
+                    )[0],
+                }
+            );
             if i != 0 {
                 let temp_last_block_hash = last_block_hash.to_vec();
 
@@ -219,11 +233,11 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
                     &block_witness.get_parent_hash().field_cells,
                 );
 
-                for (pre_block_hash, parent_hash) in
-                    temp_last_block_hash.iter().zip(parent_hash.iter())
-                {
-                    ctx.constrain_equal(pre_block_hash, parent_hash);
-                }
+                // for (pre_block_hash, parent_hash) in
+                //     temp_last_block_hash.iter().zip(parent_hash.iter())
+                // {
+                //     ctx.constrain_equal(pre_block_hash, parent_hash);
+                // }
             }
 
             last_block_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
@@ -254,12 +268,7 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
         }
 
         let digest = EIP1186ResponseDigest {
-            start_block_hash: start_block_hash.to_vec().try_into().unwrap(),
-            start_block_number,
-            end_block_hash: last_block_hash.to_vec().try_into().unwrap(),
-            end_block_number,
-            target_block_hash: target_block_hash.try_into().unwrap(),
-            target_block_number,
+            track_blocks_info: track_blocks_info
         };
 
         (EthTrackBlockTraceWitness { blocks_witness }, digest)

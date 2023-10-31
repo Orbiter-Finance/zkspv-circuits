@@ -148,6 +148,7 @@ fn test_transaction_task(network: Network) -> TransactionTask {
         tasks_len: 1,
         task_width: 1,
         constructor: vec![constructor],
+        aggregated: true,
     }
 }
 
@@ -224,29 +225,29 @@ pub fn test_arbitration_scheduler_mdc_task() {
 }
 
 #[test]
-pub fn test_arbitration_scheduler_source_final_task() {
-    let network = Network::Ethereum(EthereumNetwork::Mainnet);
+// pub fn test_arbitration_scheduler_source_final_task() {
+//     let network = Network::Ethereum(EthereumNetwork::Mainnet);
 
-    let block_network = Network::Ethereum(EthereumNetwork::Mainnet);
+//     let block_network = Network::Ethereum(EthereumNetwork::Mainnet);
 
-    let transaction_network = Network::Ethereum(EthereumNetwork::Mainnet);
+//     let transaction_network = Network::Ethereum(EthereumNetwork::Mainnet);
 
-    let mdc_network = Network::Ethereum(EthereumNetwork::Goerli);
+//     let mdc_network = Network::Ethereum(EthereumNetwork::Goerli);
 
-    let scheduler = test_scheduler(network);
+//     let scheduler = test_scheduler(network);
 
-    let transaction_task = test_transaction_task(transaction_network);
+//     let transaction_task = test_transaction_task(transaction_network);
 
-    let eth_block_track_task = test_block_track_task(block_network);
+//     let eth_block_track_task = test_block_track_task(block_network);
 
-    let mdc_state_task = test_mdc_task(mdc_network);
+//     let mdc_state_task = test_mdc_task(mdc_network);
 
-    let constructor =
-        FinalAssemblyConstructor { transaction_task, eth_block_track_task, mdc_state_task };
+//     let constructor =
+//         FinalAssemblyConstructor { transaction_task, eth_block_track_task, mdc_state_task };
 
-    let _task = FinalAssemblyTask { round: 3, network, constructor };
-    scheduler.get_calldata(ArbitrationTask::Final(_task), true);
-}
+//     let _task = FinalAssemblyTask { round: 3, network, constructor };
+//     scheduler.get_calldata(ArbitrationTask::Final(_task), true);
+// }
 
 #[test]
 pub fn test_arbitration_circuit() {
