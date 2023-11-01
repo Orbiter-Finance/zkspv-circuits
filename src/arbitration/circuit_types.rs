@@ -1,5 +1,3 @@
-use revm::primitives::alloy_primitives::private::derive_more::Display;
-use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::arbitration::final_assembly::FinalAssemblyType;
@@ -48,11 +46,12 @@ pub struct EthTransactionCircuitType {
     pub network: Network,
     pub tx_type: EthTransactionType,
     pub tasks_len: u64,
+    pub aggregated: bool,
 }
 
 impl EthTransactionCircuitType {
-    pub(crate) fn is_aggregated(&self) -> bool {
-        self.tasks_len != 1
+    pub fn is_aggregated(&self) -> bool {
+        return self.aggregated;
     }
 }
 
@@ -94,7 +93,7 @@ impl EthStorageCircuitType {
 impl scheduler::CircuitType for EthStorageCircuitType {
     fn name(&self) -> String {
         if self.is_aggregated() {
-            format!("storage_aggregate_width_{}_task_len_{}", self.task_width, self.tasks_len)
+            format!("storage_aggregate_tasks_len_{}", self.tasks_len)
         } else {
             format!("storage_width_{}", self.task_width)
         }

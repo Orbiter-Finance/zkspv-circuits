@@ -2,16 +2,14 @@ use ark_std::{end_timer, start_timer};
 use std::env::{set_var, var};
 use std::fs::File;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::{fs, iter};
 
 use ethers_core::types::Bytes;
 use ethers_core::utils::hex::FromHex;
 use ff::PrimeField;
 use halo2_base::utils::fs::gen_srs;
-use halo2_solidity_verifier::BatchOpenScheme::Bdfg21;
 use itertools::Itertools;
-use revm::EVM;
 use snark_verifier_sdk::CircuitExt;
 
 use crate::halo2_proofs::dev::MockProver;
@@ -20,7 +18,7 @@ use crate::transaction::ethereum::util::TransactionConstructor;
 use crate::transaction::ethereum::EthBlockTransactionCircuit;
 use crate::util::helpers::get_provider;
 use crate::util::EthConfigParams;
-use crate::{ArbitrumNetwork, EthPreCircuit, EthereumNetwork, Network};
+use crate::{EthPreCircuit, EthereumNetwork, Network};
 
 pub fn get_test_circuit(
     block_number: u32,
@@ -74,7 +72,7 @@ pub fn test_2718_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-pub fn test_1559_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
+pub fn test_1559_source_transaction_mpt() -> Result<(), Box<dyn std::error::Error>> {
     let params = EthConfigParams::from_path("configs/tests/transaction.json");
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let k = params.degree;

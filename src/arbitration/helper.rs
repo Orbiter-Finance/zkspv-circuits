@@ -1,14 +1,11 @@
 use ethers_core::types::{Bytes, H256};
 use ethers_core::utils::keccak256;
-use std::{fmt::format, ops::Range, path::Path};
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use snark_verifier_sdk::Snark;
 
 use crate::arbitration::circuit_types::{
     EthStorageCircuitType, EthTransactionCircuitType, FinalAssemblyCircuitType,
-    FinalAssemblyFinality,
 };
 use crate::arbitration::final_assembly::FinalAssemblyType;
 use crate::storage::util::{get_mdc_storage_circuit, StorageConstructor};
@@ -59,8 +56,8 @@ impl scheduler::Task for ETHBlockTrackTask {
             format!(
                 "block_track_width_{}_start_{}_end_{}",
                 self.task_width,
-                self.constructor[0].block_number_interval.first().unwrap(),
-                self.constructor[0].block_number_interval.last().unwrap()
+                self.constructor[0].blocks_number.first().unwrap(),
+                self.constructor[0].blocks_number.last().unwrap()
             )
         }
     }
@@ -92,6 +89,7 @@ pub struct TransactionTask {
     pub tx_type: EthTransactionType,
     pub tasks_len: u64,
     pub constructor: Vec<TransactionConstructor>,
+    pub aggregated: bool,
 }
 
 impl TransactionTask {
@@ -108,6 +106,7 @@ impl scheduler::Task for TransactionTask {
             network: self.constructor[0].network,
             tx_type: self.tx_type.clone(),
             tasks_len: self.tasks_len,
+            aggregated: self.aggregated,
         }
     }
 
@@ -133,6 +132,7 @@ impl scheduler::Task for TransactionTask {
                     tx_type: self.tx_type.clone(),
                     tasks_len: 1u64,
                     constructor: [constructor].to_vec(),
+                    aggregated: false,
                 })
                 .collect_vec();
             result
@@ -208,7 +208,7 @@ impl scheduler::Task for MDCStateTask {
 pub struct FinalAssemblyConstructor {
     pub transaction_task: Option<TransactionTask>,
     pub eth_block_track_task: Option<ETHBlockTrackTask>,
-    pub mdc_state_task: Option<MDCStateTask>,
+    pub mdc_state_task: Option<Vec<MDCStateTask>>,
 }
 
 #[derive(Clone, Debug)]
@@ -300,15 +300,22 @@ impl scheduler::Task for ArbitrationTask {
                 let task = task.clone();
                 match task.aggregation_type {
                     FinalAssemblyType::Source => {
-                        vec![
-                            ArbitrationTask::Transaction(
-                                task.constructor.transaction_task.unwrap(),
-                            ),
-                            ArbitrationTask::ETHBlockTrack(
-                                task.constructor.eth_block_track_task.unwrap(),
-                            ),
-                            ArbitrationTask::MDCState(task.constructor.mdc_state_task.unwrap()),
-                        ]
+                        let mut task_array = vec![];
+                        task_array.push(ArbitrationTask::Transaction(
+                            task.constructor.transaction_task.unwrap(),
+                        ));
+                        task_array.push(ArbitrationTask::ETHBlockTrack(
+                            task.constructor.eth_block_track_task.unwrap(),
+                        ));
+                        let mut mdc_state_tasks = task
+                            .constructor
+                            .mdc_state_task
+                            .unwrap()
+                            .iter()
+                            .map(|mdc_state| ArbitrationTask::MDCState(mdc_state.clone()))
+                            .collect_vec();
+                        task_array.append(&mut mdc_state_tasks);
+                        task_array
                     }
                     FinalAssemblyType::Destination => {
                         vec![

@@ -71,32 +71,14 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
 }
 
 fn test_block_track_task(network: Network) -> ETHBlockTrackTask {
-    let block_number_interval = vec![
-        (17113954..17113995).collect_vec(),
-        (17113864..17113905).collect_vec(),
-        (17113874..17113915).collect_vec(),
-    ];
-    let constructor_one = TrackBlockConstructor {
-        block_number_interval: block_number_interval[0].clone(),
-        block_target: *block_number_interval[0].get(0).clone().unwrap(),
-        network,
-    };
-    let constructor_two = TrackBlockConstructor {
-        block_number_interval: block_number_interval[1].clone(),
-        block_target: *block_number_interval[1].get(0).clone().unwrap(),
-        network,
-    };
-    let constructor_three = TrackBlockConstructor {
-        block_number_interval: block_number_interval[2].clone(),
-        block_target: *block_number_interval[2].get(0).clone().unwrap(),
-        network,
-    };
+    let constructor =
+        TrackBlockConstructor { blocks_number: vec![17113954, 17113964, 17113974], network };
     ETHBlockTrackTask {
-        input: test_get_block_track_circuit(constructor_one.clone()),
+        input: test_get_block_track_circuit(constructor.clone()),
         network: Network::Ethereum(EthereumNetwork::Mainnet),
-        tasks_len: 3,
-        task_width: 40,
-        constructor: vec![constructor_one, constructor_two, constructor_three],
+        tasks_len: 1,
+        task_width: 3,
+        constructor: vec![constructor],
     }
 }
 
@@ -187,9 +169,10 @@ fn test_transaction_task(network: Network) -> TransactionTask {
 
     TransactionTask {
         input: get_eth_transaction_circuit(constructor.clone()),
-        tx_type: EthTransactionType::LegacyTxType,
+        tx_type: EthTransactionType::DynamicFeeTxType,
         tasks_len: 1,
         constructor: vec![constructor],
+        aggregated: false,
     }
 }
 
@@ -208,16 +191,17 @@ fn main() {
 
     let eth_block_track_task = test_block_track_task(block_network);
 
-    let mdc_state_task = test_mdc_task(mdc_network);
+    let mdc_state_task0 = test_mdc_task(mdc_network);
+    let mdc_state_task1 = test_mdc_task(mdc_network);
 
     let constructor = FinalAssemblyConstructor {
         transaction_task: Option::from(transaction_task),
         eth_block_track_task: Option::from(eth_block_track_task),
-        mdc_state_task: Option::from(mdc_state_task),
+        mdc_state_task: Option::from(vec![mdc_state_task0, mdc_state_task1]),
     };
 
     let _task = FinalAssemblyTask {
-        round: 3,
+        round: 1,
         aggregation_type: FinalAssemblyType::Source,
         network,
         constructor,

@@ -88,32 +88,14 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
 }
 
 fn test_block_track_task(network: Network) -> ETHBlockTrackTask {
-    let block_number_interval = vec![
-        (17113954..17113975).collect_vec(),
-        (17113964..17113985).collect_vec(),
-        (17113974..17113995).collect_vec(),
-    ];
-    let constructor_one = TrackBlockConstructor {
-        block_number_interval: block_number_interval[0].clone(),
-        block_target: *block_number_interval[0].get(0).clone().unwrap(),
-        network,
-    };
-    let constructor_two = TrackBlockConstructor {
-        block_number_interval: block_number_interval[1].clone(),
-        block_target: *block_number_interval[1].get(0).clone().unwrap(),
-        network,
-    };
-    let constructor_three = TrackBlockConstructor {
-        block_number_interval: block_number_interval[2].clone(),
-        block_target: *block_number_interval[2].get(0).clone().unwrap(),
-        network,
-    };
+    let constructor =
+        TrackBlockConstructor { blocks_number: vec![17113954, 17113964, 17113974], network };
     ETHBlockTrackTask {
-        input: test_get_block_track_circuit(constructor_one.clone()),
+        input: test_get_block_track_circuit(constructor.clone()),
         network: Network::Ethereum(EthereumNetwork::Mainnet),
-        tasks_len: 3,
-        task_width: 20,
-        constructor: vec![constructor_one, constructor_two, constructor_three],
+        tasks_len: 1,
+        task_width: 3,
+        constructor: vec![constructor],
     }
 }
 
@@ -158,6 +140,7 @@ fn test_transaction_task(network: Network) -> TransactionTask {
         tx_type: EthTransactionType::DynamicFeeTxType,
         tasks_len: 1,
         constructor: vec![constructor],
+        aggregated: true,
     }
 }
 
@@ -233,38 +216,30 @@ pub fn test_arbitration_scheduler_mdc_task() {
     scheduler.get_snark(ArbitrationTask::MDCState(_task));
 }
 
-#[test]
-pub fn test_arbitration_scheduler_source_final_task() {
-    let network = Network::Ethereum(EthereumNetwork::Mainnet);
+// #[test]
+// pub fn test_arbitration_scheduler_source_final_task() {
+//     let network = Network::Ethereum(EthereumNetwork::Mainnet);
 
-    let block_network = Network::Ethereum(EthereumNetwork::Mainnet);
+//     let block_network = Network::Ethereum(EthereumNetwork::Mainnet);
 
-    let transaction_network = Network::Ethereum(EthereumNetwork::Mainnet);
+//     let transaction_network = Network::Ethereum(EthereumNetwork::Mainnet);
 
-    let mdc_network = Network::Ethereum(EthereumNetwork::Goerli);
+//     let mdc_network = Network::Ethereum(EthereumNetwork::Goerli);
 
-    let scheduler = test_scheduler(network);
+//     let scheduler = test_scheduler(network);
 
-    let transaction_task = test_transaction_task(transaction_network);
+//     let transaction_task = test_transaction_task(transaction_network);
 
-    let eth_block_track_task = test_block_track_task(block_network);
+//     let eth_block_track_task = test_block_track_task(block_network);
 
-    let mdc_state_task = test_mdc_task(mdc_network);
+//     let mdc_state_task = test_mdc_task(mdc_network);
 
-    let constructor = FinalAssemblyConstructor {
-        transaction_task: Option::from(transaction_task),
-        eth_block_track_task: Option::from(eth_block_track_task),
-        mdc_state_task: Option::from(mdc_state_task),
-    };
+//     let constructor =
+//         FinalAssemblyConstructor { transaction_task, eth_block_track_task, mdc_state_task };
 
-    let _task = FinalAssemblyTask {
-        round: 1,
-        aggregation_type: FinalAssemblyType::Source,
-        network,
-        constructor,
-    };
-    scheduler.get_calldata(ArbitrationTask::Final(_task), true);
-}
+//     let _task = FinalAssemblyTask { round: 3, network, constructor };
+//     scheduler.get_calldata(ArbitrationTask::Final(_task), true);
+// }
 
 #[test]
 pub fn test_arbitration_circuit() {

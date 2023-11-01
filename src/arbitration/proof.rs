@@ -70,6 +70,7 @@ impl ProofRouter {
                     tx_type: EthTransactionType::DynamicFeeTxType,
                     tasks_len: 1,
                     constructor: vec![ethereum_transaction_constructor],
+                    aggregated: false,
                 };
 
                 let mdc_storage_constructor_pre = StorageConstructor {
@@ -150,51 +151,43 @@ impl ProofRouter {
                     network,
                 };
 
-                let mdc_storage_task = MDCStateTask {
+                let mdc_storage_pre_task = MDCStateTask {
                     input: get_mdc_storage_circuit(mdc_storage_constructor_pre.clone()),
-                    tasks_len: 2,
+                    tasks_len: 1,
                     task_width: 1,
-                    constructor: vec![mdc_storage_constructor_pre, mdc_storage_constructor_current],
+                    constructor: vec![mdc_storage_constructor_pre],
+                };
+                let mdc_storage_current_task = MDCStateTask {
+                    input: get_mdc_storage_circuit(mdc_storage_constructor_current.clone()),
+                    tasks_len: 1,
+                    task_width: 1,
+                    constructor: vec![mdc_storage_constructor_current],
                 };
 
-                let block_track_for_anchor_transaction = TrackBlockConstructor {
-                    block_number_interval: (proof.transaction_proof.block_number
-                        ..proof.transaction_proof.block_number + 1)
-                        .collect_vec(),
-                    block_target: proof.transaction_proof.block_number,
-                    network,
-                };
-                let block_track_for_anchor_mdc_pre = TrackBlockConstructor {
-                    block_number_interval: (proof.mdc_rule_proofs.mdc_pre_rule.block_number
-                        ..proof.mdc_rule_proofs.mdc_pre_rule.block_number + 1)
-                        .collect_vec(),
-                    block_target: proof.mdc_rule_proofs.mdc_pre_rule.block_number,
-                    network,
-                };
-                let block_track_for_anchor_mdc_current = TrackBlockConstructor {
-                    block_number_interval: (proof.mdc_rule_proofs.mdc_current_rule.block_number
-                        ..proof.mdc_rule_proofs.mdc_current_rule.block_number + 1)
-                        .collect_vec(),
-                    block_target: proof.mdc_rule_proofs.mdc_current_rule.block_number,
+                let block_track_constructor = TrackBlockConstructor {
+                    blocks_number: vec![
+                        proof.transaction_proof.block_number,
+                        proof.mdc_rule_proofs.mdc_pre_rule.block_number,
+                        proof.mdc_rule_proofs.mdc_current_rule.block_number,
+                    ],
                     network,
                 };
 
                 let block_track_task = ETHBlockTrackTask {
-                    input: get_eth_track_block_circuit(block_track_for_anchor_transaction.clone()),
+                    input: get_eth_track_block_circuit(block_track_constructor.clone()),
                     network,
-                    tasks_len: 3,
+                    tasks_len: 1,
                     task_width: 1,
-                    constructor: vec![
-                        block_track_for_anchor_transaction,
-                        block_track_for_anchor_mdc_pre,
-                        block_track_for_anchor_mdc_current,
-                    ],
+                    constructor: vec![block_track_constructor],
                 };
 
                 let constructor = FinalAssemblyConstructor {
                     transaction_task: Option::from(transaction_task),
                     eth_block_track_task: Option::from(block_track_task),
-                    mdc_state_task: Option::from(mdc_storage_task),
+                    mdc_state_task: Option::from(vec![
+                        mdc_storage_pre_task,
+                        mdc_storage_current_task,
+                    ]),
                 };
 
                 let task = FinalAssemblyTask {
@@ -241,22 +234,20 @@ impl ProofRouter {
                     tx_type: EthTransactionType::DynamicFeeTxType,
                     tasks_len: 1,
                     constructor: vec![ethereum_transaction_constructor],
+                    aggregated: false,
                 };
 
-                let block_track_for_anchor_transaction = TrackBlockConstructor {
-                    block_number_interval: (proof.transaction_proof.block_number
-                        ..proof.transaction_proof.block_number + 1)
-                        .collect_vec(),
-                    block_target: proof.transaction_proof.block_number,
+                let block_track_constructor = TrackBlockConstructor {
+                    blocks_number: vec![proof.transaction_proof.block_number],
                     network,
                 };
 
                 let block_track_task = ETHBlockTrackTask {
-                    input: get_eth_track_block_circuit(block_track_for_anchor_transaction.clone()),
+                    input: get_eth_track_block_circuit(block_track_constructor.clone()),
                     network,
                     tasks_len: 1,
                     task_width: 1,
-                    constructor: vec![block_track_for_anchor_transaction],
+                    constructor: vec![block_track_constructor],
                 };
 
                 let constructor = FinalAssemblyConstructor {

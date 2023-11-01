@@ -40,20 +40,16 @@ pub struct EthTrackBlockInput {
     pub block_hash: Vec<H256>,
     // provided for convenience, actual block_hash is computed from block_header
     pub block_header: Vec<Vec<u8>>,
-    pub target_index: u64,
 }
 
 #[derive(Clone, Debug)]
-pub struct EthTrackBlockInputAssigned<F: Field> {
+pub struct EthTrackBlockInputAssigned {
     pub block_header: Vec<Vec<u8>>,
-    pub target_index: AssignedValue<F>,
 }
 
 impl EthTrackBlockInput {
-    pub fn assign<F: Field>(self, ctx: &mut Context<F>) -> EthTrackBlockInputAssigned<F> {
-        let target_index = (F::from(self.target_index)).try_into().unwrap();
-        let target_index = ctx.load_witness(target_index);
-        EthTrackBlockInputAssigned { block_header: self.block_header, target_index }
+    pub fn assign<F: Field>(self, _ctx: &mut Context<F>) -> EthTrackBlockInputAssigned {
+        EthTrackBlockInputAssigned { block_header: self.block_header }
     }
 }
 
@@ -91,20 +87,11 @@ impl EthPreCircuit for EthTrackBlockCircuit {
             &self.block_header_config,
         );
 
-        let EIP1186ResponseDigest {
-            start_block_hash,
-            start_block_number,
-            end_block_hash,
-            end_block_number,
-            target_block_hash,
-            target_block_number,
-        } = digest;
+        let EIP1186ResponseDigest { track_blocks_info } = digest;
 
-        let assigned_instances = start_block_hash
-            .into_iter()
-            .chain(end_block_hash)
-            .chain(target_block_hash)
-            .chain([start_block_number, end_block_number, target_block_number])
+        let assigned_instances = track_blocks_info
+            .iter()
+            .flat_map(|block| block.block_hash.into_iter().chain([block.block_number]))
             .collect_vec();
 
         EthCircuitBuilder::new(
@@ -125,13 +112,14 @@ impl EthPreCircuit for EthTrackBlockCircuit {
 }
 
 #[derive(Clone, Debug)]
+pub struct TrackBlockInfo<F: Field> {
+    pub block_hash: AssignedH256<F>,
+    pub block_number: AssignedValue<F>,
+}
+
+#[derive(Clone, Debug)]
 pub struct EIP1186ResponseDigest<F: Field> {
-    pub start_block_hash: AssignedH256<F>,
-    pub start_block_number: AssignedValue<F>,
-    pub end_block_hash: AssignedH256<F>,
-    pub end_block_number: AssignedValue<F>,
-    pub target_block_hash: AssignedH256<F>,
-    pub target_block_number: AssignedValue<F>,
+    pub track_blocks_info: Vec<TrackBlockInfo<F>>,
 }
 
 #[derive(Clone, Debug)]
@@ -151,7 +139,7 @@ pub trait EthTrackBlockChip<F: Field> {
         &self,
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
-        input: EthTrackBlockInputAssigned<F>,
+        input: EthTrackBlockInputAssigned,
         block_header_config: &BlockHeaderConfig,
     ) -> (EthTrackBlockTraceWitness<F>, EIP1186ResponseDigest<F>)
     where
@@ -171,22 +159,17 @@ pub trait EthTrackBlockChip<F: Field> {
 impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
     // ================= FIRST PHASE ================
 
-    /// 1. last_hash <- first.block.hash
-    /// 2. second.block.parent_hash == last_hash;last_hash <- second.block.hash
-    /// 3...
     fn parse_track_block_proof_from_block_phase0(
         &self,
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
-        input: EthTrackBlockInputAssigned<F>,
+        input: EthTrackBlockInputAssigned,
         block_header_config: &BlockHeaderConfig,
     ) -> (EthTrackBlockTraceWitness<F>, EIP1186ResponseDigest<F>)
     where
         Self: EthBlockHeaderChip<F>,
     {
-        let mut start_block_hash: Vec<AssignedValue<F>> = Vec::new();
-        let mut last_block_hash: Vec<AssignedValue<F>> = Vec::new();
-        let mut target_block_hash: Vec<AssignedValue<F>> = Vec::new();
+        let mut track_blocks_info: Vec<TrackBlockInfo<F>> = Vec::new();
 
         // parallelize witness for blocks
         let blocks_witness = parallelize_keccak_phase0(
@@ -202,65 +185,21 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
 
         let ctx = thread_pool.main(FIRST_PHASE);
 
-        let zero = ctx.load_constant(F::from(0));
-        let mut start_block_number = zero;
-        let mut end_block_number = zero;
-        let mut target_block_number = zero;
-        // The maximum total length of a single round calculation is 256, so make sure it is u8 type data.
-        let target_index = bytes_to_u8(&input.target_index);
-        for (i, block_witness) in blocks_witness.iter().enumerate() {
-            if i != 0 {
-                let temp_last_block_hash = last_block_hash.to_vec();
-
-                // Get the parent hash from the current block header
-                let parent_hash = bytes_be_to_u128(
-                    ctx,
-                    self.gate(),
-                    &block_witness.get_parent_hash().field_cells,
-                );
-
-                for (pre_block_hash, parent_hash) in
-                    temp_last_block_hash.iter().zip(parent_hash.iter())
-                {
-                    ctx.constrain_equal(pre_block_hash, parent_hash);
-                }
-            }
-
-            last_block_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
-
-            if i == 0 {
-                start_block_hash = last_block_hash.to_vec();
-                start_block_number = self.rlp_field_witnesses_to_uint(
+        for block_witness in blocks_witness.clone() {
+            track_blocks_info.push(TrackBlockInfo {
+                block_hash: bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash)
+                    .to_vec()
+                    .try_into()
+                    .unwrap(),
+                block_number: self.rlp_field_witnesses_to_uint(
                     ctx,
                     vec![&block_witness.get_number()],
                     vec![8],
-                )[0];
-            } else if i == blocks_witness.len() - 1 {
-                end_block_number = self.rlp_field_witnesses_to_uint(
-                    ctx,
-                    vec![&block_witness.get_number()],
-                    vec![8],
-                )[0];
-            }
-
-            if i == target_index as usize {
-                target_block_hash = last_block_hash.to_vec();
-                target_block_number = self.rlp_field_witnesses_to_uint(
-                    ctx,
-                    vec![&block_witness.get_number()],
-                    vec![8],
-                )[0];
-            }
+                )[0],
+            });
         }
 
-        let digest = EIP1186ResponseDigest {
-            start_block_hash: start_block_hash.to_vec().try_into().unwrap(),
-            start_block_number,
-            end_block_hash: last_block_hash.to_vec().try_into().unwrap(),
-            end_block_number,
-            target_block_hash: target_block_hash.try_into().unwrap(),
-            target_block_number,
-        };
+        let digest = EIP1186ResponseDigest { track_blocks_info };
 
         (EthTrackBlockTraceWitness { blocks_witness }, digest)
     }

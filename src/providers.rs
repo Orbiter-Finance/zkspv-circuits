@@ -64,14 +64,13 @@ pub fn get_block_track_input(
     provider: &Provider<Http>,
     constructor: &TrackBlockConstructor,
 ) -> EthTrackBlockInput {
-    // assert_eq!(block_number_interval,256,"block_number_interval is a fixed-length array with a length of 256");
     let rt = Runtime::new().unwrap();
-    let block_number_interval = constructor.block_number_interval.clone();
-    let mut block = Vec::with_capacity(block_number_interval.len());
-    let mut block_number = Vec::with_capacity(block_number_interval.len());
-    let mut block_hash = Vec::with_capacity(block_number_interval.len());
-    let mut block_header = Vec::with_capacity(block_number_interval.len());
-    for i in block_number_interval.clone() {
+    let blocks_number = constructor.blocks_number.clone();
+    let mut block = Vec::with_capacity(blocks_number.len());
+    let mut block_number = Vec::with_capacity(blocks_number.len());
+    let mut block_hash = Vec::with_capacity(blocks_number.len());
+    let mut block_header = Vec::with_capacity(blocks_number.len());
+    for i in blocks_number.clone() {
         let block_element = rt.block_on(provider.get_block(i)).unwrap().unwrap();
         let block_element_hash = block_element.hash.unwrap();
         let block_element_header = get_block_rlp(&block_element);
@@ -81,9 +80,7 @@ pub fn get_block_track_input(
         block_header.push(block_element_header);
     }
 
-    let target_index = constructor.block_target - block_number_interval.first().unwrap();
-
-    EthTrackBlockInput { block, block_number, block_hash, block_header, target_index }
+    EthTrackBlockInput { block, block_number, block_hash, block_header }
 }
 
 pub fn get_receipt_input(
