@@ -222,6 +222,10 @@ pub struct EthBlockAccountStorageTraceWitness<F: Field> {
 pub struct EbcRuleConfig<F: Field> {
     root_hash: AssignedH256<F>,
     version: AssignedH256<F>,
+    enable_time: AssignedH256<F>,
+    root_hash_slot: AssignedH256<F>,
+    version_slot: AssignedH256<F>,
+    enable_time_slot: AssignedH256<F>,
     source_chain_id: AssignedValue<F>,
     source_token: AssignedValue<F>,
     source_min_price: AssignedValue<F>,
@@ -459,7 +463,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         ebc_rule_root_bytes: &[AssignedValue<F>],
         proof: MPTProof<F>,
     ) -> EthEbcRuleTraceWitness<F> {
-        // check MPT root is ebc rule root
+        // Check whether the MPT root is consistent with the ebc rule root, and the ebc rule root has been recorded on the chain.
         for (pf_root, root) in proof.root_hash_bytes.iter().zip(ebc_rule_root_bytes.iter()) {
             ctx.constrain_equal(pf_root, root);
         }
@@ -471,7 +475,6 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
             true,
         );
 
-        // check ebc rule MPT inclusion
         let ebc_rule_mpt_witness = self.parse_mpt_inclusion_phase0(ctx, keccak, proof);
 
         EthEbcRuleTraceWitness { ebc_rule_rlp_witness, ebc_rule_mpt_witness }
@@ -506,7 +509,6 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
     where
         Self: Sync,
     {
-        // TODO: spawn separate thread for account proof; just need to get storage_root first somehow
         let ctx = thread_pool.main(FIRST_PHASE);
         let acct_trace = self.parse_account_proof_phase0(ctx, keccak, state_root, addr, acct_pf);
         // ctx dropped
@@ -647,6 +649,10 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
             ebc_rule_config = EbcRuleConfig {
                 root_hash: slots_values[0].1,
                 version: slots_values[1].1,
+                enable_time: slots_values[2].1,
+                root_hash_slot: slots_values[0].0,
+                version_slot: slots_values[1].0,
+                enable_time_slot: slots_values[2].0,
                 source_chain_id: ebc_rule_fields[0],
                 source_token: ebc_rule_fields[1],
                 source_min_price: ebc_rule_fields[2],
@@ -887,6 +893,10 @@ impl EthPreCircuit for EthBlockStorageCircuit {
             .chain([block_number, mdc_contract_address, manage_contract_address])
             .chain(ebc_rule_config.root_hash.into_iter())
             .chain(ebc_rule_config.version.into_iter())
+            .chain(ebc_rule_config.enable_time.into_iter())
+            .chain(ebc_rule_config.root_hash_slot.into_iter())
+            .chain(ebc_rule_config.version_slot.into_iter())
+            .chain(ebc_rule_config.enable_time_slot.into_iter())
             .chain([
                 ebc_rule_config.source_chain_id,
                 ebc_rule_config.source_token,

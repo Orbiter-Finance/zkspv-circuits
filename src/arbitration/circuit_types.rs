@@ -94,7 +94,7 @@ impl EthStorageCircuitType {
 impl scheduler::CircuitType for EthStorageCircuitType {
     fn name(&self) -> String {
         if self.is_aggregated() {
-            format!("storage_aggregate_width_{}", self.task_width)
+            format!("storage_aggregate_width_{}_task_len_{}", self.task_width, self.tasks_len)
         } else {
             format!("storage_width_{}", self.task_width)
         }

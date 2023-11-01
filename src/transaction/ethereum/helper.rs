@@ -83,7 +83,8 @@ impl SimpleTask for TransactionTask {
         let provider = get_provider(&network);
         let constructor = TransactionConstructor {
             block_number: self.block_number,
-            transaction_index: self.transaction_index,
+            transaction_index: Option::from(self.transaction_index),
+            transaction_index_bytes: None,
             transaction_rlp: self.transaction_rlp.clone(),
             merkle_proof: self.merkle_proof.clone(),
             transaction_pf_max_depth: self.transaction_pf_max_depth,

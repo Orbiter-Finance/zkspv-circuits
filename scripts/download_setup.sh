@@ -1,0 +1,14 @@
+cd ../ 
+mkdir -p params && cd params
+
+wget -b https://axiom-crypto.s3.amazonaws.com/challenge_0078/kzg_bn254_15.srs
+wget -b https://axiom-crypto.s3.amazonaws.com/challenge_0078/kzg_bn254_16.srs
+wget -b https://axiom-crypto.s3.amazonaws.com/challenge_0078/kzg_bn254_17.srs
+wget -b https://axiom-crypto.s3.amazonaws.com/challenge_0078/kzg_bn254_18.srs
+wget -b https://axiom-crypto.s3.amazonaws.com/challenge_0078/kzg_bn254_19.srs
+wget -b https://axiom-crypto.s3.amazonaws.com/challenge_0078/kzg_bn254_20.srs
+wget -b https://axiom-crypto.s3.amazonaws.com/challenge_0078/kzg_bn254_21.srs
+wget -b https://axiom-crypto.s3.amazonaws.com/challenge_0078/kzg_bn254_22.srs
+wget -b https://axiom-crypto.s3.amazonaws.com/challenge_0078/kzg_bn254_23.srs
+wget -b https://axiom-crypto.s3.amazonaws.com/challenge_0078/kzg_bn254_24.srs
+wget -b https://axiom-crypto.s3.amazonaws.com/challenge_0078/kzg_bn254_25.srs

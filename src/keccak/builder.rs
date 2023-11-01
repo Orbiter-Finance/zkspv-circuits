@@ -4,6 +4,8 @@ use crate::rlp::rlc::FIRST_PHASE;
 
 use super::*;
 
+use crate::util::concur_var::{var_thread_safe, set_var_thread_safe};
+
 /// We need a more custom synthesize function to work with the outputs of keccak RLCs.
 pub trait FnSynthesize<F> =
     FnOnce(&mut RlcThreadBuilder<F>, RlpChip<F>, (FixedLenRLCs<F>, VarLenRLCs<F>)) + Clone;
@@ -76,9 +78,12 @@ where
         self.keccak.borrow_mut().num_rows_per_round = params.keccak_rows_per_round;
         #[cfg(feature = "display")]
         log::info!("KeccakCircuitBuilder auto-calculated config params: {:#?}", params);
-        set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
-        set_var("KECCAK_DEGREE", k.to_string());
-        set_var("KECCAK_ROWS", params.keccak_rows_per_round.to_string());
+        // set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
+        // set_var("KECCAK_DEGREE", k.to_string());
+        // set_var("KECCAK_ROWS", params.keccak_rows_per_round.to_string());
+        set_var_thread_safe("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
+        set_var_thread_safe("KECCAK_DEGREE", k.to_string());
+        set_var_thread_safe("KECCAK_ROWS", params.keccak_rows_per_round.to_string());
 
         params
     }
@@ -233,8 +238,10 @@ impl<F: Field, FnPhase1: FnSynthesize<F>> Circuit<F> for KeccakCircuitBuilder<F,
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> MPTConfig<F> {
+        // let params: EthConfigParams =
+        //     serde_json::from_str(&std::env::var("ETH_CONFIG_PARAMS").unwrap()).unwrap();
         let params: EthConfigParams =
-            serde_json::from_str(&std::env::var("ETH_CONFIG_PARAMS").unwrap()).unwrap();
+            serde_json::from_str(&var_thread_safe("ETH_CONFIG_PARAMS").unwrap()).unwrap();
         MPTConfig::configure(meta, params)
     }
 

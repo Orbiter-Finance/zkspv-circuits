@@ -74,6 +74,7 @@ fn main() {
         false,
         PathBuf::from("configs/transactions"),
         PathBuf::from("data/transactions"),
+        PathBuf::from("cache_data/transactions"),
     );
 
     let transaction_index = 1;

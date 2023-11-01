@@ -51,7 +51,7 @@ impl scheduler::Task for ETHBlockTrackTask {
     fn name(&self) -> String {
         if self.circuit_type().is_aggregated() {
             format!(
-                "block_track_aggregated_task_width_{}_task_len_{}",
+                "block_track_aggregated_width_{}_task_len_{}",
                 self.task_width,
                 self.constructor.len()
             )
@@ -169,7 +169,11 @@ impl scheduler::Task for MDCStateTask {
 
     fn name(&self) -> String {
         if self.circuit_type().is_aggregated() {
-            format!("storage_aggregated_task_len_{}", self.constructor.len())
+            format!(
+                "storage_aggregated_with_{}_task_len_{}",
+                self.task_width,
+                self.constructor.len()
+            )
         } else {
             format!(
                 "storage_width_{}_address_{}_slots_{}_block_number_{}",
@@ -202,9 +206,9 @@ impl scheduler::Task for MDCStateTask {
 
 #[derive(Clone, Debug)]
 pub struct FinalAssemblyConstructor {
-    pub transaction_task: TransactionTask,
-    pub eth_block_track_task: ETHBlockTrackTask,
-    pub mdc_state_task: MDCStateTask,
+    pub transaction_task: Option<TransactionTask>,
+    pub eth_block_track_task: Option<ETHBlockTrackTask>,
+    pub mdc_state_task: Option<MDCStateTask>,
 }
 
 #[derive(Clone, Debug)]
@@ -294,12 +298,29 @@ impl scheduler::Task for ArbitrationTask {
                     })];
                 }
                 let task = task.clone();
-
-                vec![
-                    ArbitrationTask::Transaction(task.constructor.transaction_task),
-                    ArbitrationTask::ETHBlockTrack(task.constructor.eth_block_track_task),
-                    ArbitrationTask::MDCState(task.constructor.mdc_state_task),
-                ]
+                match task.aggregation_type {
+                    FinalAssemblyType::Source => {
+                        vec![
+                            ArbitrationTask::Transaction(
+                                task.constructor.transaction_task.unwrap(),
+                            ),
+                            ArbitrationTask::ETHBlockTrack(
+                                task.constructor.eth_block_track_task.unwrap(),
+                            ),
+                            ArbitrationTask::MDCState(task.constructor.mdc_state_task.unwrap()),
+                        ]
+                    }
+                    FinalAssemblyType::Destination => {
+                        vec![
+                            ArbitrationTask::Transaction(
+                                task.constructor.transaction_task.unwrap(),
+                            ),
+                            ArbitrationTask::ETHBlockTrack(
+                                task.constructor.eth_block_track_task.unwrap(),
+                            ),
+                        ]
+                    }
+                }
             }
         }
     }

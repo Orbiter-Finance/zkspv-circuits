@@ -31,17 +31,18 @@ use crate::util::helpers::get_provider;
 use crate::Network;
 
 use super::circuit::AnyCircuit;
+use rayon::prelude::*;
 
 /// This is a tag for the type of a circuit, independent of the circuit's inputs.
 /// For example, it can be used to fetch the proving key for the circuit.
-pub trait CircuitType: Clone + Debug + Eq + Hash {
+pub trait CircuitType: Clone + Debug + Eq + Hash + Send + Sync{
     fn name(&self) -> String;
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32;
 }
 
 /// This is an identifier for a specific proof request, consisting of the circuit type together with any data necessary to create the circuit inputs.
 /// It should be thought of as a node in a DAG (directed acyclic graph), where the edges specify previous SNARKs this one depends on.
-pub trait Task: Clone + Debug {
+pub trait Task: Clone + Debug + Sync + Send{
     type CircuitType: CircuitType;
 
     fn circuit_type(&self) -> Self::CircuitType;
@@ -56,6 +57,7 @@ pub trait SchedulerCommon {
 
     fn config_dir(&self) -> &Path;
     fn data_dir(&self) -> &Path;
+    fn cache_data_dir(&self) -> &Path;
     fn pkey_readonly(&self) -> bool;
     fn srs_readonly(&self) -> bool;
     /// The path to the file with the circuit configuration pinning.
@@ -75,7 +77,6 @@ pub trait SchedulerCommon {
     /// Assumes this uses the same HashMap as `get_pkey`.
     fn insert_pkey(&self, circuit_type: Self::CircuitType, pkey: ProvingKey<G1Affine>);
 }
-
 /// A basic implementation of `SchedulerCommon` with support for ETH JSON-RPC requests.
 pub struct EthScheduler<T: Task> {
     /// Specifies if universal trusted setup should only be read (production mode) or randomly generated (UNSAFE non-production mode)
@@ -84,6 +85,7 @@ pub struct EthScheduler<T: Task> {
     read_only: bool,
     config_dir: PathBuf,
     data_dir: PathBuf,
+    cache_data_dir: PathBuf,
 
     pub pkeys: RwLock<HashMap<T::CircuitType, Arc<ProvingKey<G1Affine>>>>,
     pub degree: RwLock<HashMap<T::CircuitType, u32>>,
@@ -101,6 +103,7 @@ impl<T: Task> EthScheduler<T> {
         read_only: bool,
         config_dir: PathBuf,
         data_dir: PathBuf,
+        cache_data_dir: PathBuf,
     ) -> Self {
         let provider = get_provider(&network);
         fs::create_dir_all(&config_dir).expect("could not create config directory");
@@ -115,6 +118,7 @@ impl<T: Task> EthScheduler<T> {
             read_only,
             config_dir,
             data_dir,
+            cache_data_dir,
             pkeys: Default::default(),
             degree: Default::default(),
             params: Default::default(),
@@ -130,6 +134,9 @@ impl<T: Task> SchedulerCommon for EthScheduler<T> {
 
     fn config_dir(&self) -> &Path {
         self.config_dir.as_path()
+    }
+    fn cache_data_dir(&self) -> &Path {
+        self.cache_data_dir.as_path()
     }
     fn data_dir(&self) -> &Path {
         self.data_dir.as_path()
@@ -168,7 +175,7 @@ impl<T: Task> SchedulerCommon for EthScheduler<T> {
 
 /// A scheduler that can recursively generate SNARKs for a DAG of tasks. The directed acyclic graph (DAG) is implicitly
 /// defined by the `Task` implementation and `get_circuit`. For any task, either a snark or calldata + on-chain verifier can be generated.
-pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::CircuitType> {
+pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::CircuitType> + Sync{
     type Task: Task;
     /// The intended use is that `CircuitRouter` is an enum containing the different `PreCircuit`s that `Task` can become in the `get_circuit` function.
     // TODO: better way to do this with macros? `PreCircuit` is not object safe so cannot use `dyn`
@@ -183,34 +190,86 @@ pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::Circuit
     fn pkey_path(&self, circuit_type: &<Self::Task as Task>::CircuitType) -> PathBuf {
         self.data_dir().join(format!("{}.pk", circuit_type.name()))
     }
+
+    fn pkey_cache_path(&self, circuit_type: &<Self::Task as Task>::CircuitType) -> PathBuf {
+        self.cache_data_dir().join(format!("{}.pk", circuit_type.name()))
+    }
+
     fn yul_path(&self, circuit_type: &<Self::Task as Task>::CircuitType) -> PathBuf {
         self.data_dir().join(format!("{}.yul", circuit_type.name()))
     }
+
     fn snark_path(&self, task: &Self::Task) -> PathBuf {
         self.data_dir().join(format!("{}.snark", task.name()))
     }
+    fn snark_cache_path(&self, task: &Self::Task) -> PathBuf {
+        self.cache_data_dir().join(format!("{}.snark", task.name()))
+    }
+
     fn calldata_path(&self, task: &Self::Task) -> PathBuf {
         self.data_dir().join(format!("{}.calldata", task.name()))
     }
+    fn cache_srs_pk_files(&self, task: Self::Task) -> Box<Snark> {
+        let snark_path = self.snark_cache_path(&task);
+       
+        let read_only = self.pkey_readonly();
+
+        // Recursively generate the SNARKs for the dependencies of this task.
+        #[cfg(feature = "parallel-sub-circuit")]
+        let dep_snarks: Vec<Box<Snark>> =
+            task.dependencies().par_iter().map(|dep| self.cache_srs_pk_files(dep.clone())).collect();
+        #[cfg(not(feature = "parallel-sub-circuit"))]
+        let dep_snarks: Vec<Box<Snark>> =
+            task.dependencies().into_iter().map(|dep| self.cache_srs_pk_files(dep)).collect();
+
+        let circuit_type = task.circuit_type();
+        let k = self.get_degree(&circuit_type);
+        let params = &self.get_params(k);
+        // Construct the pre-circuit for this task from the dependency SNARKs.
+        let pre_circuit = self.get_circuit(task, dep_snarks.into_iter().map(|a| *a).collect());
+        let pk_path = self.pkey_cache_path(&circuit_type);
+        let pinning_path = self.pinning_path(&circuit_type);
+
+        let pk = if let Some(pk) = self.get_pkey(&circuit_type) {
+            pk
+        } else {
+            let pk =
+                pre_circuit.clone().read_or_create_pk(params, pk_path, &pinning_path, read_only);
+            self.insert_pkey(circuit_type.clone(), pk);
+            self.get_pkey(&circuit_type).unwrap()
+        };
+        #[cfg(feature = "halo2-axiom")]
+        if let Ok(snark) = read_snark(snark_path.clone()) {
+            return Box::new(snark);
+        } else {
+            let snark_path = Some(snark_path);
+            let snark_result = pre_circuit.gen_snark_shplonk(params, &pk, &pinning_path, snark_path);
+            return Box::new(snark_result);
+        }
+    }
 
     // recursively generates necessary circuits and snarks to create snark
-    fn get_snark(&self, task: Self::Task) -> Snark {
+    fn get_snark(&self, task: Self::Task) -> Box<Snark> {
         let snark_path = self.snark_path(&task);
         #[cfg(feature = "halo2-axiom")]
         if let Ok(snark) = read_snark(snark_path.clone()) {
-            return snark;
+            return Box::new(snark);
         }
         let read_only = self.pkey_readonly();
 
         // Recursively generate the SNARKs for the dependencies of this task.
-        let dep_snarks: Vec<Snark> =
+        #[cfg(feature = "parallel-sub-circuit")]
+        let dep_snarks: Vec<Box<Snark>> =
+            task.dependencies().par_iter().map(|dep| self.get_snark(dep.clone())).collect();
+        #[cfg(not(feature = "parallel-sub-circuit"))]
+        let dep_snarks: Vec<Box<Snark>> =
             task.dependencies().into_iter().map(|dep| self.get_snark(dep)).collect();
 
         let circuit_type = task.circuit_type();
         let k = self.get_degree(&circuit_type);
         let params = &self.get_params(k);
         // Construct the pre-circuit for this task from the dependency SNARKs.
-        let pre_circuit = self.get_circuit(task, dep_snarks);
+        let pre_circuit = self.get_circuit(task, dep_snarks.into_iter().map(|a| *a).collect());
         let pk_path = self.pkey_path(&circuit_type);
         let pinning_path = self.pinning_path(&circuit_type);
 
@@ -223,7 +282,8 @@ pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::Circuit
             self.get_pkey(&circuit_type).unwrap()
         };
         let snark_path = Some(snark_path);
-        pre_circuit.gen_snark_shplonk(params, &pk, &pinning_path, snark_path)
+        let snark_result = pre_circuit.gen_snark_shplonk(params, &pk, &pinning_path, snark_path);
+        Box::new(snark_result)
     }
 
     #[cfg(feature = "evm")]
@@ -236,15 +296,19 @@ pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::Circuit
             // calldata is serialized as a hex string
             return calldata;
         }
-
-        let dep_snarks: Vec<Snark> =
+        
+        #[cfg(feature = "parallel-sub-circuit")]
+        let dep_snarks: Vec<Box<Snark>> =
+            task.dependencies().par_iter().map(|dep| self.get_snark(dep.clone())).collect();
+        #[cfg(not(feature = "parallel-sub-circuit"))]
+        let dep_snarks: Vec<Box<Snark>> =
             task.dependencies().into_iter().map(|dep| self.get_snark(dep)).collect();
 
         let circuit_type = task.circuit_type();
         let k = self.get_degree(&circuit_type);
         let params = &self.get_params(k);
         // Construct the pre-circuit for this task from the dependency SNARKs.
-        let pre_circuit = self.get_circuit(task, dep_snarks);
+        let pre_circuit = self.get_circuit(task, dep_snarks.into_iter().map(|a| *a).collect());
         let pk_path = self.pkey_path(&circuit_type);
         let pinning_path = self.pinning_path(&circuit_type);
 

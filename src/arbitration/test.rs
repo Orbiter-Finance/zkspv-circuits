@@ -57,12 +57,19 @@ fn test_get_storage_circuit(network: Network, block_number: u32) -> EthBlockStor
 }
 
 fn test_get_ethereum_tx_circuit(
+    block_number: u32,
     transaction_index: u32,
     transaction_rlp: Vec<u8>,
     merkle_proof: Vec<Bytes>,
     network: Network,
 ) -> EthBlockTransactionCircuit {
-    get_test_ethereum_tx_circuit(transaction_index, transaction_rlp, merkle_proof, network)
+    get_test_ethereum_tx_circuit(
+        block_number,
+        transaction_index,
+        transaction_rlp,
+        merkle_proof,
+        network,
+    )
 }
 
 fn test_get_block_track_circuit(constructor: TrackBlockConstructor) -> EthTrackBlockCircuit {
@@ -76,6 +83,7 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
         false,
         PathBuf::from("configs/arbitration/"),
         PathBuf::from("data/arbitration/"),
+        PathBuf::from("cache_data/arbitration/"),
     )
 }
 
@@ -119,7 +127,7 @@ pub fn test_arbitration_scheduler_block_track_task() {
 
 fn test_transaction_task(network: Network) -> TransactionTask {
     let block_number = 0xeee246;
-    let transaction_index = 53;
+    let transaction_index = 53u32;
     let transaction_rlp = Vec::from_hex("02f873010285020a08fb2885020a08fb2882520894a79ed52d6774259535428f2533a8420703a4078f87054e13428c955280c080a02a3222ebb694535ee03ced3a0bc75a7c37b5053be9dcccc15894e014b1fd3a81a079250a246c8846c86cc24a84d2966752d9999ab4f05b5cca98762400e0a0f813").unwrap();
 
     let proof_one_str = Vec::from_hex("f8b1a0d2b8a354f61d3d7a1fa0de1af78958094a3eed9374756cea377879edb0bc7422a0460779b6e7622dfc26dc9d87a5660dfd08a7338323d287f7d370ac1a474fbd53a03d77ff4a636303a1415da7085256e5041f36d7d0c9b97cfd6ba394b4f66e5f31a0d7e1a6ff03b18783bc4de36fd8c2122907e56de404c6eac2084432f4dacf231680808080a0e3263af8ff4c48d1b5bf85931a69ad8d759df6ef7b6507fbdb87a62547edd0238080808080808080").unwrap();
@@ -137,7 +145,8 @@ fn test_transaction_task(network: Network) -> TransactionTask {
 
     let constructor = TransactionConstructor {
         block_number,
-        transaction_index,
+        transaction_index: Option::from(transaction_index),
+        transaction_index_bytes: None,
         transaction_rlp,
         merkle_proof,
         transaction_pf_max_depth,
@@ -242,8 +251,11 @@ pub fn test_arbitration_scheduler_source_final_task() {
 
     let mdc_state_task = test_mdc_task(mdc_network);
 
-    let constructor =
-        FinalAssemblyConstructor { transaction_task, eth_block_track_task, mdc_state_task };
+    let constructor = FinalAssemblyConstructor {
+        transaction_task: Option::from(transaction_task),
+        eth_block_track_task: Option::from(eth_block_track_task),
+        mdc_state_task: Option::from(mdc_state_task),
+    };
 
     let _task = FinalAssemblyTask {
         round: 1,
@@ -278,6 +290,7 @@ pub fn test_arbitration_circuit() {
 
         let k = transaction_param.degree;
         let input = test_get_ethereum_tx_circuit(
+            0xeee246,
             transaction_index,
             transaction_rlp,
             merkle_proof,

@@ -24,7 +24,10 @@ use std::{
     iter,
     path::Path,
 };
+pub mod concur_var;
 
+
+use concur_var::{set_var_thread_safe, var_thread_safe};
 #[cfg(feature = "aggregation")]
 pub mod circuit;
 pub mod contract_abi;
@@ -93,10 +96,14 @@ impl Halo2ConfigPinning for EthConfigPinning {
     }
 
     fn set_var(&self) {
-        set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&self.params).unwrap());
-        set_var("KECCAK_ROWS", self.params.keccak_rows_per_round.to_string());
+        // set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&self.params).unwrap());
+        // set_var("KECCAK_ROWS", self.params.keccak_rows_per_round.to_string());
+        // let bits = self.params.lookup_bits.unwrap_or(ETH_LOOKUP_BITS);
+        // set_var("LOOKUP_BITS", bits.to_string());
+        set_var_thread_safe("ETH_CONFIG_PARAMS", serde_json::to_string(&self.params).unwrap());
+        set_var_thread_safe("KECCAK_ROWS", self.params.keccak_rows_per_round.to_string());
         let bits = self.params.lookup_bits.unwrap_or(ETH_LOOKUP_BITS);
-        set_var("LOOKUP_BITS", bits.to_string());
+        set_var_thread_safe("LOOKUP_BITS", bits.to_string());
     }
 
     fn break_points(self) -> RlcThreadBreakPoints {
@@ -104,8 +111,10 @@ impl Halo2ConfigPinning for EthConfigPinning {
     }
 
     fn from_var(break_points: RlcThreadBreakPoints) -> Self {
+        // let params: EthConfigParams =
+        //     serde_json::from_str(&var("ETH_CONFIG_PARAMS").unwrap()).unwrap();
         let params: EthConfigParams =
-            serde_json::from_str(&var("ETH_CONFIG_PARAMS").unwrap()).unwrap();
+            serde_json::from_str(&var_thread_safe("ETH_CONFIG_PARAMS").unwrap()).unwrap();
         Self { params, break_points }
     }
 
@@ -141,8 +150,10 @@ impl Halo2ConfigPinning for AggregationConfigPinning {
             strategy: GateStrategy::Vertical,
             num_fixed: self.params.num_fixed,
         };
-        set_var("FLEX_GATE_CONFIG_PARAMS", serde_json::to_string(&gate_params).unwrap());
-        set_var("LOOKUP_BITS", self.params.lookup_bits.to_string());
+        // set_var("FLEX_GATE_CONFIG_PARAMS", serde_json::to_string(&gate_params).unwrap());
+        // set_var("LOOKUP_BITS", self.params.lookup_bits.to_string());
+        set_var_thread_safe("FLEX_GATE_CONFIG_PARAMS", serde_json::to_string(&gate_params).unwrap());
+        set_var_thread_safe("LOOKUP_BITS", self.params.lookup_bits.to_string());
     }
 
     fn break_points(self) -> MultiPhaseThreadBreakPoints {

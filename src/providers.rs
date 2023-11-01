@@ -39,7 +39,7 @@ use crate::track_block::util::TrackBlockConstructor;
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
 use crate::transaction::zksync_era::now::{ZkSyncBlockTransactionInput, ZkSyncTransactionsInput};
-use crate::transaction::{EIP_1559_TX_TYPE, EIP_2718_TX_TYPE};
+use crate::transaction::{EIP_1559_TX_TYPE, EIP_2718_TX_TYPE, TX_MAX_LEN};
 use crate::util::contract_abi::erc20::{decode_input, is_erc20_transaction};
 use crate::util::helpers::calculate_storage_mapping_key;
 use crate::{
@@ -48,6 +48,7 @@ use crate::{
     Network,
 };
 
+/// RLP[nonce,balance,storageRoot,codeHash], so max len is 2(rlp prefix length) + 16 + 32 + 32 + 32
 const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 114;
 const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
 const TRANSACTION_INDEX_MAX_KEY_BYTES_LEN: usize = 3;
@@ -125,7 +126,8 @@ pub fn get_receipt_input(
 pub fn get_transaction_input(
     provider: &Provider<Http>,
     block_number: u32,
-    transaction_index: u32,
+    transaction_index: Option<u32>,
+    transaction_index_bytes: Option<Vec<u8>>,
     transaction_rlp: Vec<u8>,
     merkle_proof: Vec<Bytes>,
     transaction_pf_max_depth: usize,
@@ -134,8 +136,8 @@ pub fn get_transaction_input(
     let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
     let block_hash = block.hash.unwrap();
     let block_header = get_block_rlp(&block);
-    let transaction_key_u256 = U256::from(transaction_index);
-    let transaction_key = get_buffer_rlp(transaction_key_u256.as_u32());
+    let transaction_key = transaction_index_bytes
+        .unwrap_or(get_buffer_rlp(U256::from(transaction_index.unwrap()).as_u32()));
     let slot_is_empty = false;
     let transaction_proofs = MPTInput {
         path: (&transaction_key).into(),
@@ -143,7 +145,7 @@ pub fn get_transaction_input(
         root_hash: block.transactions_root,
         proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
         slot_is_empty,
-        value_max_byte_len: transaction_rlp.len(),
+        value_max_byte_len: TX_MAX_LEN,
         max_depth: transaction_pf_max_depth,
         max_key_byte_len: TRANSACTION_INDEX_MAX_KEY_BYTES_LEN,
         key_byte_len: Some(transaction_key.len()),
@@ -154,7 +156,10 @@ pub fn get_transaction_input(
         block_number,
         block_hash,
         block_header,
-        transaction: EthTransactionInput { transaction_index, transaction_proofs },
+        transaction: EthTransactionInput {
+            transaction_index: transaction_index.unwrap(),
+            transaction_proofs,
+        },
     }
 }
 

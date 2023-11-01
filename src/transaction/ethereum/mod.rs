@@ -112,6 +112,7 @@ impl EthBlockTransactionCircuit {
             provider,
             constructor.block_number,
             constructor.transaction_index,
+            constructor.transaction_index_bytes,
             constructor.transaction_rlp,
             constructor.merkle_proof,
             constructor.transaction_pf_max_depth,
@@ -161,8 +162,9 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
 
         let assigned_instances = block_hash
             .into_iter()
-            .chain(transaction_field.hash.into_iter())
+            .chain(transaction_field.hash)
             .chain([
+                index,
                 transaction_field.chain_id,
                 transaction_field.from,
                 transaction_field.to,
@@ -199,8 +201,8 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
 
 #[derive(Clone, Debug)]
 pub struct EthTransactionField<F: Field> {
-    pub chain_id: AssignedValue<F>,
     pub hash: AssignedH256<F>,
+    pub chain_id: AssignedValue<F>,
     pub from: AssignedValue<F>,
     pub to: AssignedValue<F>, // ETH:is the to field of tx;Erc20:Erc20 to address
     pub token: AssignedValue<F>, // ETH:0x00...;Erc20:Erc20 token address (is the to field of tx)
@@ -233,6 +235,7 @@ pub struct EthBlockTransactionTrace<F: Field> {
 
 #[derive(Clone, Debug)]
 pub struct EthTransactionExtraWitness<F: Field> {
+    pub hash: AssignedH256<F>,
     pub chain_id: AssignedValue<F>,
     pub from: AssignedValue<F>,
     pub to: AssignedValue<F>,
@@ -363,6 +366,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         };
         let ctx = thread_pool.main(FIRST_PHASE);
         let block_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
+
         let transactions_root = &block_witness.get_transactions_root().field_cells;
 
         // timestamp
@@ -377,26 +381,14 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             transactions_root,
             input.transaction.transaction_proofs,
         );
-        let transaction_rlp = transaction_witness.mpt_witness.value_bytes.to_vec();
-
-        // tx hash
-        let ctx = thread_pool.main(FIRST_PHASE);
-        let tx_max_len = ctx.load_constant(F::from(TX_MAX_LEN as u64));
-        let tx_hash_idx =
-            keccak.keccak_fixed_len(ctx, self.range().gate(), transaction_rlp.to_vec(), None);
-
-        let tx_hash_bytes = keccak.fixed_len_queries[tx_hash_idx].output_assigned.clone();
-        let tx_hash_len = ctx.load_constant(F::from(tx_hash_bytes.len() as u64));
-        let _tx_hash = bytes_be_var_to_fixed(ctx, self.gate(), &tx_hash_bytes, tx_hash_len, 32);
-        let tx_hash: [_; 2] = bytes_be_to_u128(ctx, self.gate(), &_tx_hash).try_into().unwrap();
 
         let digest = EIP1186ResponseDigest {
             index: transaction_index,
             block_hash: block_hash.try_into().unwrap(),
             transaction_is_empty: transaction_witness.mpt_witness.slot_is_empty,
             transaction_field: EthTransactionField {
+                hash: transaction_witness.extra_witness.hash,
                 chain_id: transaction_witness.extra_witness.chain_id,
-                hash: tx_hash,
                 from: transaction_witness.extra_witness.from,
                 to: transaction_witness.extra_witness.to,
                 token: transaction_witness.extra_witness.token,
@@ -456,6 +448,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
 
         let mut transaction_rlp_bytes = transaction_proofs.value_bytes.to_vec();
         let mut field_lens = EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN.to_vec();
+        let mut join_hash_len = zero;
 
         if is_not_legacy_transaction.value == zero.value {
             let legacy_transaction_type = load_transaction_type(ctx, EIP_2718_TX_TYPE);
@@ -463,6 +456,8 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         } else {
             transaction_rlp_bytes = transaction_rlp_bytes[1..].to_vec();
             field_lens = EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN.to_vec();
+            let one = ctx.load_constant(F::from(1));
+            join_hash_len = one;
         }
 
         let transaction_witness = self.rlp().decompose_rlp_array_phase0(
@@ -473,7 +468,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         );
 
         // parse calldata Todo:Need to separate 2718 from 1559
-        let mut calldata;
+        let mut calldata_witness;
         let mut tx_chain_id;
         let mut tx_token_address = zero; // Eth is 0x00;Erc20 is tx's to
         let mut tx_to_witness;
@@ -483,7 +478,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         // let calldata = load_bytes(ctx, mock_calldata.as_slice());
         if is_not_legacy_transaction.value == zero.value {
             // [nonce,gasPrice,gasLimit,to,value,data,v,r,s]
-            calldata = &transaction_witness.field_witness[5].field_cells;
+            calldata_witness = &transaction_witness.field_witness[5];
             tx_to_witness = &transaction_witness.field_witness[3];
             tx_amount_witness = &transaction_witness.field_witness[4];
             tx_nonce_witness = &transaction_witness.field_witness[0];
@@ -518,7 +513,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             tx_chain_id = self.gate().div_unsafe(ctx, tx_v_sub_num_sub, divisor_assigned);
         } else {
             // [chainId,nonce,maxPriorityFeePerGas,maxFeePerGas,gasLimit,to,value,data,accessList,v,r,s]
-            calldata = &transaction_witness.field_witness[7].field_cells;
+            calldata_witness = &transaction_witness.field_witness[7];
             tx_to_witness = &transaction_witness.field_witness[5];
             tx_amount_witness = &transaction_witness.field_witness[6];
             tx_nonce_witness = &transaction_witness.field_witness[1];
@@ -547,9 +542,11 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let function_selector = load_bytes(ctx, &FUNCTION_SELECTOR_ERC20_TRANSFER);
 
         let mut new_calldata = Vec::with_capacity(CALLDATA_BYTES_LEN);
+        let calldata_is_erc20_bytes_len = ctx.load_constant(F::from(CALLDATA_BYTES_LEN as u64));
 
         // Determine whether the length of the calldata meets the length required by ERC20
-        if calldata.len() == CALLDATA_BYTES_LEN {
+        if calldata_witness.field_len.value == calldata_is_erc20_bytes_len.value {
+            let calldata = calldata_witness.field_cells[0..CALLDATA_BYTES_LEN - 1].to_vec();
             let mut is_function_selector = ctx.load_constant(F::from(1));
 
             for i in 0..CALLDATA_BYTES_LEN - 1 {
@@ -599,6 +596,20 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             }
         }
 
+        let real_join_hash_len = self.gate().add(ctx, transaction_witness.rlp_len, join_hash_len);
+
+        let hash_idx = keccak.keccak_var_len(
+            ctx,
+            self.range(),
+            transaction_proofs.value_bytes.to_vec(), // depends on the value of the constant TX_MAX_LEN = 789,
+            None,
+            real_join_hash_len,
+            0,
+        );
+
+        let hash_bytes = keccak.var_len_queries[hash_idx].output_assigned.clone();
+        let hash: [_; 2] = bytes_be_to_u128(ctx, self.gate(), &hash_bytes).try_into().unwrap();
+
         // tx from
         let tx_from = zero;
 
@@ -616,6 +627,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             transaction_witness,
             mpt_witness,
             extra_witness: EthTransactionExtraWitness {
+                hash,
                 chain_id: tx_chain_id,
                 from: tx_from,
                 to: tx_to,

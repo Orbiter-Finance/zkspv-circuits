@@ -75,6 +75,7 @@ fn main() {
         args.readonly,
         PathBuf::from("configs/headers"),
         PathBuf::from("data/headers"),
+        PathBuf::from("cache_data/headers"),
     );
 
     #[cfg(feature = "display")]
