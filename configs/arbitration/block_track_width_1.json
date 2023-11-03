@@ -1,9 +1,9 @@
 {
   "params": {
-    "degree": 19,
+    "degree": 16,
     "num_rlc_columns": 1,
     "num_range_advice": [
-      1,
+      2,
       1,
       0
     ],
@@ -19,7 +19,9 @@
   },
   "break_points": {
     "gate": [
-      [],
+      [
+        65425
+      ],
       [],
       []
     ],

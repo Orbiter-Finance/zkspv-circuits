@@ -50,16 +50,10 @@ pub struct Layout {
     pub zksync_eth: u64,
     pub zksync_usdc: u64,
 }
-#[derive(Clone, Debug, Deserialize)]
-pub struct MDCConfig {
-    pub mainnet: String,
-    pub goerli: String,
-}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Settings {
     pub api: Api,
-    pub mdc_config: MDCConfig,
     pub rpcs: Rpcs,
     pub contracts: Contracts,
     pub token: Token,

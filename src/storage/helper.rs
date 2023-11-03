@@ -56,7 +56,7 @@ impl BatchStorageTask {
 
 impl CircuitType for (Network, u32, u32, u32) {
     fn name(&self) -> String {
-        format!("{}_{}_{}_{}", self.0, self.1, self.2, self.3)
+        format!("{}_{}_{}_{}", self.0.to_string(), self.1, self.2, self.3)
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
         let pinning_path = pinning_path.as_ref();

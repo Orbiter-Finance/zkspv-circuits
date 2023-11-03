@@ -14,7 +14,6 @@ use hex::FromHex;
 use serde::{Deserialize, Serialize};
 use test_log::test;
 
-use crate::config::contract::get_mdc_config;
 use crate::storage::util::EbcRuleParams;
 use crate::util::helpers::{calculate_mk_address_struct, get_provider};
 use crate::{
@@ -39,21 +38,7 @@ use crate::{
 use super::*;
 
 pub fn get_test_circuit(network: Network, block_number: u32) -> EthBlockStorageCircuit {
-    let mut addr = Default::default();
-    let mdc_config = get_mdc_config();
     let provider = get_provider(&network);
-
-    match network {
-        Network::Ethereum(EthereumNetwork::Mainnet) => {
-            addr = mdc_config.mainnet;
-        }
-        Network::Ethereum(EthereumNetwork::Goerli) => {
-            addr = mdc_config.goerli;
-        }
-        _ => {
-            panic!("no match network Type! {:?}", network)
-        }
-    }
 
     // ebc_rule_mpt
     let ebc_rule_key =
@@ -78,7 +63,7 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> EthBlockStorageC
     };
 
     // slots:
-    addr = "0x5A295a98bD9FCa8784D98c98f222B7BA52367470".parse().unwrap(); // for test
+    let addr = "0x5A295a98bD9FCa8784D98c98f222B7BA52367470".parse().unwrap(); // for test
 
     let root_slot =
         H256::from_str("0xbb01b056691692273b8d0c6bed43fbc90e57d25c4eb695038e7b6a6c4a7b5b4d")

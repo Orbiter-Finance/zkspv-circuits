@@ -350,6 +350,14 @@ pub trait EthStorageChip<F: Field> {
         rlp_field_witnesses: Vec<&RlpFieldWitness<F>>,
         num_bytes: Vec<usize>,
     ) -> Vec<AssignedValue<F>>;
+
+    fn assigned_value_to_uint(
+        &self,
+        ctx: &mut Context<F>,
+        assigned_value: Vec<AssignedValue<F>>,
+        len: AssignedValue<F>,
+        num_byte: usize,
+    ) -> AssignedValue<F>;
 }
 
 impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
@@ -722,17 +730,26 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
             .map(|(witness, num_byte)| {
                 let rlp_field_witness_bytes = &witness.field_cells;
                 let rlp_field_witness_len = witness.field_len;
-                let _rlp_field = bytes_be_var_to_fixed(
+                self.assigned_value_to_uint(
                     ctx,
-                    self.gate(),
-                    rlp_field_witness_bytes,
+                    rlp_field_witness_bytes.to_vec(),
                     rlp_field_witness_len,
                     *num_byte,
-                );
-                bytes_be_to_uint(ctx, self.gate(), &_rlp_field, *num_byte)
+                )
             })
             .collect_vec();
         assigned_values
+    }
+
+    fn assigned_value_to_uint(
+        &self,
+        ctx: &mut Context<F>,
+        assigned_value: Vec<AssignedValue<F>>,
+        len: AssignedValue<F>,
+        num_byte: usize,
+    ) -> AssignedValue<F> {
+        let _field = bytes_be_var_to_fixed(ctx, self.gate(), &assigned_value, len, num_byte);
+        bytes_be_to_uint(ctx, self.gate(), &_field, num_byte)
     }
 }
 

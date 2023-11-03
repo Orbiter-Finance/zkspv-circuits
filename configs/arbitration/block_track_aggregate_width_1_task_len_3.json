@@ -1,23 +1,14 @@
 {
   "params": {
-    "degree": 22,
-    "num_advice": 11,
-    "num_lookup_advice": 2,
+    "degree": 24,
+    "num_advice": 2,
+    "num_lookup_advice": 1,
     "num_fixed": 1,
     "lookup_bits": 19
   },
   "break_points": [
     [
-      4194293,
-      4194293,
-      4194294,
-      4194294,
-      4194293,
-      4194294,
-      4194292,
-      4194292,
-      4194292,
-      4194292
+      16777206
     ],
     [],
     []

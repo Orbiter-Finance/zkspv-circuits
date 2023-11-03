@@ -20,7 +20,7 @@ use ethers_providers::{Http, Middleware, Provider, ProviderError, StreamExt};
 use futures::future::{join, join_all};
 use itertools::Itertools;
 use lazy_static::__Deref;
-use rlp::{decode, decode_list, Encodable, Rlp, RlpIterator, RlpStream};
+use rlp::{decode, decode_list, Decodable, Encodable, Rlp, RlpIterator, RlpStream};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use tokio::runtime::Runtime;
@@ -31,6 +31,8 @@ use crate::config::contract::zksync_era_contract::{
 use crate::config::token::zksync_era_token::{
     get_zksync_era_eth_address, get_zksync_era_token_layout_by_address,
 };
+use crate::ecdsa::util::recover_tx_info;
+use crate::ecdsa::EthEcdsaInput;
 use crate::mpt::MPTInput;
 use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
 use crate::storage::util::EbcRuleParams;
@@ -148,6 +150,8 @@ pub fn get_transaction_input(
         key_byte_len: Some(transaction_key.len()),
     };
 
+    let transaction = Transaction::decode(&Rlp::new(&transaction_rlp)).unwrap();
+    let (signature, message, message_hash, public_key) = recover_tx_info(&transaction);
     EthBlockTransactionInput {
         block,
         block_number,
@@ -156,6 +160,12 @@ pub fn get_transaction_input(
         transaction: EthTransactionInput {
             transaction_index: transaction_index.unwrap(),
             transaction_proofs,
+            transaction_ecdsa_verify: EthEcdsaInput {
+                signature,
+                message,
+                message_hash,
+                public_key,
+            },
         },
     }
 }

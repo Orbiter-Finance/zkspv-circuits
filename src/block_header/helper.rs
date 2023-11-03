@@ -75,9 +75,9 @@ impl CircuitType {
 
     pub fn fname_prefix(&self) -> String {
         if self.depth == self.initial_depth {
-            format!("{}_{}", self.network, self.depth)
+            format!("{}_{}", self.network.to_string(), self.depth)
         } else {
-            format!("{}_{}_{}", self.network, self.depth, self.initial_depth)
+            format!("{}_{}_{}", self.network.to_string(), self.depth, self.initial_depth)
         }
     }
 

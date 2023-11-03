@@ -32,7 +32,6 @@
 //     async fn generate_proof(&self, op: OriginalProof) -> RpcResult<Value> {
 //         let now: DateTime<Local> = Local::now();
 //         let formatted = format!("{}", now.format("%Y-%m-%d %H:%M:%S"));
-//         println!("接收到请求的时间:{:?}", formatted);
 //
 //         tokio::spawn(async move {
 //             println!("original_proof{}", op.chain_id);
@@ -41,12 +40,10 @@
 //             send_to_client().await.unwrap();
 //             let now: DateTime<Local> = Local::now();
 //             let formatted = format!("{}", now.format("%Y-%m-%d %H:%M:%S"));
-//             println!("将结果发送给客户端的时间:{:?}", formatted);
 //         });
 //
 //         let now: DateTime<Local> = Local::now();
 //         let formatted = format!("{}", now.format("%Y-%m-%d %H:%M:%S"));
-//         println!("回复请求的时间:{:?}", formatted);
 //         let response = Response { status: 200 };
 //         let serialized = serde_json::to_string(&response).unwrap();
 //         Ok(Value::String(serialized))

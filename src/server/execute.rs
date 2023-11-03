@@ -1,25 +1,29 @@
 use crate::arbitration::types::{
-    EthereumDestProof, EthereumSourceProof, MerkleProof, ProofsRouter, RouterType,
+    EthereumDestProof, EthereumSourceProof, MerkleProof, ProofsRouter,
 };
+use crate::get_network_from_chain_id;
 use crate::server::OriginalProof;
 use ethers_core::types::{Address, Bytes, H256};
 use hex::FromHex;
 use serde_json::Value;
 use std::str::FromStr;
 
-pub fn parse_original_proof(op: &OriginalProof) -> Option<ProofsRouter> {
+pub fn parse_original_proof(op: OriginalProof) -> Option<ProofsRouter> {
+    let network = get_network_from_chain_id(op.chain_id as usize).ok()?;
     if op.chain_id == 5 {
         return if op.source {
-            let proof = parse_ethereum_source_proof(op);
+            let proof = parse_ethereum_source_proof(&op);
             Option::from(ProofsRouter {
-                router_type: RouterType::GoerliSource,
+                source: true,
+                network,
                 ethereum_source_proof: Option::from(proof),
                 ethereum_dest_proof: None,
             })
         } else {
-            let proof = parse_ethereum_dest_proof(op);
+            let proof = parse_ethereum_dest_proof(&op);
             Option::from(ProofsRouter {
-                router_type: RouterType::GoerliDest,
+                source: false,
+                network,
                 ethereum_source_proof: None,
                 ethereum_dest_proof: Option::from(proof),
             })

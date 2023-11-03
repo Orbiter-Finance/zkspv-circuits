@@ -6,6 +6,7 @@ use crate::config::api::get_internal_api;
 use crate::server::client::send_to_client;
 // use crate::server::server::{RpcServerImpl, ZkpRpcServer};
 use chrono::{DateTime, Local};
+use ethers_core::types::H256;
 use hyper::Method;
 use jsonrpsee::server::{RpcModule, Server};
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,7 @@ use tower_http::cors::{Any, CorsLayer};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct OriginalProof {
+    pub task_id: H256,
     pub chain_id: u64,
     pub source: bool,
     pub proof: String,
@@ -50,24 +52,12 @@ pub async fn init_server(tx: UnboundedSender<OriginalProof>) -> std::io::Result<
 
     module
         .register_method("generate_proof", move |params, c| {
-            let now: DateTime<Local> = Local::now();
-            let formatted = format!("{}", now.format("%Y-%m-%d %H:%M:%S"));
-            println!("Time the request was received:{:?}", formatted);
             let tx = tx.clone();
             let original_proof: OriginalProof = params.parse().unwrap();
             tokio::spawn(async move {
                 tx.send(original_proof).unwrap();
             });
-            // tokio::spawn(async move {
-            //     execute(&original_proof);
-            //     let now: DateTime<Local> = Local::now();
-            //     let formatted = format!("{}", now.format("%Y-%m-%d %H:%M:%S"));
-            //     println!("Time to send results to client:{:?}", formatted);
-            // });
 
-            let now: DateTime<Local> = Local::now();
-            let formatted = format!("{}", now.format("%Y-%m-%d %H:%M:%S"));
-            println!("Time to reply to request:{:?}", formatted);
             let response = Response { status: 200 };
             let serialized = serde_json::to_string(&response).unwrap();
             Value::String(serialized)

@@ -13,12 +13,14 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
+use snark_verifier::loader::halo2::halo2_ecc::secp256k1::{FpChip, FqChip};
 use zkevm_keccak::util::eth_types::Field;
 
 use crate::block_header::{
     get_block_header_config, BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace,
     EthBlockHeaderTraceWitness,
 };
+use crate::ecdsa::{EcdsaChip, EthEcdsaInput, EthEcdsaInputAssigned};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::mpt::{AssignedBytes, MPTInput, MPTProof, MPTProofWitness};
 use crate::providers::get_transaction_input;
@@ -35,7 +37,10 @@ use crate::util::helpers::load_bytes;
 use crate::util::{
     bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, encode_h256_to_field, AssignedH256,
 };
-use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS};
+use crate::{
+    EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LIMB_BITS, ETH_LOOKUP_BITS,
+    ETH_NUM_LIMBS,
+};
 
 pub mod helper;
 pub mod tests;
@@ -59,12 +64,14 @@ const CALLDATA_BYTES_LEN: usize =
 pub struct EthTransactionInput {
     pub transaction_index: u32,
     pub transaction_proofs: MPTInput,
+    pub transaction_ecdsa_verify: EthEcdsaInput,
 }
 
 #[derive(Clone, Debug)]
 pub struct EthTransactionInputAssigned<F: Field> {
     pub transaction_index: AssignedValue<F>,
     pub transaction_proofs: MPTProof<F>,
+    pub transaction_ecdsa_verify: EthEcdsaInputAssigned<F>,
 }
 
 impl EthTransactionInput {
@@ -72,8 +79,12 @@ impl EthTransactionInput {
         let transaction_index = (F::from(self.transaction_index as u64)).try_into().unwrap();
         let transaction_index = ctx.load_witness(transaction_index);
         let transaction_proofs = self.transaction_proofs.assign(ctx);
-
-        EthTransactionInputAssigned { transaction_index, transaction_proofs }
+        let transaction_ecdsa_verify = self.transaction_ecdsa_verify.assign(ctx);
+        EthTransactionInputAssigned {
+            transaction_index,
+            transaction_proofs,
+            transaction_ecdsa_verify,
+        }
     }
 }
 
@@ -138,6 +149,9 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
         let range = RangeChip::default(ETH_LOOKUP_BITS);
         let chip = EthChip::new(RlpChip::new(&range, None), None);
         let mut keccak = KeccakChip::default();
+        let fp_chip = FpChip::new(&range, ETH_LIMB_BITS, ETH_NUM_LIMBS);
+        let fq_chip = FqChip::new(&range, ETH_LIMB_BITS, ETH_NUM_LIMBS);
+        let ecdsa = EcdsaChip::new(&fp_chip, &fq_chip);
 
         // ================= FIRST PHASE ================
         let ctx = builder.gate_builder.main(FIRST_PHASE);
@@ -145,6 +159,7 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
         let (witness, digest) = chip.parse_transaction_proof_from_block_phase0(
             &mut builder.gate_builder,
             &mut keccak,
+            &ecdsa,
             input,
             &self.block_header_config,
         );
@@ -164,8 +179,8 @@ impl EthPreCircuit for EthBlockTransactionCircuit {
             .into_iter()
             .chain(transaction_field.hash)
             .chain([
-                index,
                 transaction_field.chain_id,
+                index,
                 transaction_field.from,
                 transaction_field.to,
                 transaction_field.token,
@@ -296,6 +311,7 @@ pub trait EthBlockTransactionChip<F: Field> {
         &self,
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
+        ecdsa: &EcdsaChip<F>,
         input: EthBlockTransactionInputAssigned<F>,
         block_header_config: &BlockHeaderConfig,
     ) -> (EthBlockTransactionTraceWitness<F>, EIP1186ResponseDigest<F>)
@@ -306,18 +322,18 @@ pub trait EthBlockTransactionChip<F: Field> {
         &self,
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
-        transaction_index: &AssignedValue<F>,
+        ecdsa: &EcdsaChip<F>,
         transactions_root: &[AssignedValue<F>],
-        transaction_proofs: MPTProof<F>,
+        transaction_input: EthTransactionInputAssigned<F>,
     ) -> EthTransactionTraceWitness<F>;
 
     fn parse_transaction_proof_phase0(
         &self,
         ctx: &mut Context<F>,
         keccak: &mut KeccakChip<F>,
-        transaction_index: &AssignedValue<F>,
+        ecdsa: &EcdsaChip<F>,
         transactions_root: &[AssignedValue<F>],
-        transaction_proofs: MPTProof<F>,
+        transaction_input: EthTransactionInputAssigned<F>,
     ) -> EthTransactionTraceWitness<F>;
 
     // ================= SECOND PHASE ================
@@ -350,6 +366,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         &self,
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
+        ecdsa: &EcdsaChip<F>,
         input: EthBlockTransactionInputAssigned<F>,
         block_header_config: &BlockHeaderConfig,
     ) -> (EthBlockTransactionTraceWitness<F>, EIP1186ResponseDigest<F>)
@@ -377,9 +394,9 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let transaction_witness = self.parse_eip1186_proof_phase0(
             thread_pool,
             keccak,
-            &transaction_index,
+            ecdsa,
             transactions_root,
-            input.transaction.transaction_proofs,
+            input.transaction.clone(),
         );
 
         let digest = EIP1186ResponseDigest {
@@ -406,17 +423,17 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         &self,
         thread_pool: &mut GateThreadBuilder<F>,
         keccak: &mut KeccakChip<F>,
-        transaction_index: &AssignedValue<F>,
+        ecdsa: &EcdsaChip<F>,
         transactions_root: &[AssignedValue<F>],
-        transaction_proofs: MPTProof<F>,
+        transaction_input: EthTransactionInputAssigned<F>,
     ) -> EthTransactionTraceWitness<F> {
         let ctx = thread_pool.main(FIRST_PHASE);
         let transaction_trace = self.parse_transaction_proof_phase0(
             ctx,
             keccak,
-            transaction_index,
+            ecdsa,
             transactions_root,
-            transaction_proofs,
+            transaction_input,
         );
         transaction_trace
     }
@@ -425,28 +442,32 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         &self,
         ctx: &mut Context<F>,
         keccak: &mut KeccakChip<F>,
-        transaction_index: &AssignedValue<F>,
+        ecdsa: &EcdsaChip<F>,
         transactions_root: &[AssignedValue<F>],
-        transaction_proofs: MPTProof<F>,
+        transaction_input: EthTransactionInputAssigned<F>,
     ) -> EthTransactionTraceWitness<F> {
         // ctx.constrain_equal(&transaction_proofs.key_bytes,transaction_index); key_bytes in transaction_proofs is constructed by transaction_index itself, which seems unnecessary to verify.
 
         // check MPT root is transactions_root
-        for (pf_root, root) in
-            transaction_proofs.root_hash_bytes.iter().zip(transactions_root.iter())
+        for (pf_root, root) in transaction_input
+            .transaction_proofs
+            .root_hash_bytes
+            .iter()
+            .zip(transactions_root.iter())
         {
             ctx.constrain_equal(pf_root, root);
         }
 
-        let transaction_type = transaction_proofs.value_bytes.first().unwrap();
+        let transaction_type = transaction_input.transaction_proofs.value_bytes.first().unwrap();
 
         let tx_type_critical_value = load_transaction_type(ctx, EIP_TX_TYPE_CRITICAL_VALUE);
 
         let zero = ctx.load_constant(F::from(0));
+        let one = ctx.load_constant(F::from(1));
         let is_not_legacy_transaction =
             self.range().is_less_than(ctx, *transaction_type, tx_type_critical_value, NUM_BITS);
 
-        let mut transaction_rlp_bytes = transaction_proofs.value_bytes.to_vec();
+        let mut transaction_rlp_bytes = transaction_input.transaction_proofs.value_bytes.to_vec();
         let mut field_lens = EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN.to_vec();
         let mut join_hash_len = zero;
 
@@ -456,7 +477,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         } else {
             transaction_rlp_bytes = transaction_rlp_bytes[1..].to_vec();
             field_lens = EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN.to_vec();
-            let one = ctx.load_constant(F::from(1));
+
             join_hash_len = one;
         }
 
@@ -601,7 +622,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let hash_idx = keccak.keccak_var_len(
             ctx,
             self.range(),
-            transaction_proofs.value_bytes.to_vec(), // depends on the value of the constant TX_MAX_LEN = 789,
+            transaction_input.transaction_proofs.value_bytes.to_vec(), // depends on the value of the constant TX_MAX_LEN = 789,
             None,
             real_join_hash_len,
             0,
@@ -610,8 +631,21 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let hash_bytes = keccak.var_len_queries[hash_idx].output_assigned.clone();
         let hash: [_; 2] = bytes_be_to_u128(ctx, self.gate(), &hash_bytes).try_into().unwrap();
 
+        // ecdsa verify
+        let ecdsa_verify_result =
+            ecdsa.ecdsa_pubkey_verify(ctx, transaction_input.transaction_ecdsa_verify.clone());
+        ctx.constrain_equal(&ecdsa_verify_result, &one);
+        let from_idx = keccak.keccak_fixed_len(
+            ctx,
+            self.range().gate(),
+            transaction_input.transaction_ecdsa_verify.public_key_bytes.to_vec(),
+            None,
+        );
+        let from_bytes = keccak.fixed_len_queries[from_idx].output_assigned.clone();
+        let from_bytes = &from_bytes[12..]; // Only take the lower 160bits of the hash
+        let address_len = ctx.load_constant(F::from(20));
         // tx from
-        let tx_from = zero;
+        let tx_from = self.assigned_value_to_uint(ctx, from_bytes.to_vec(), address_len, 20);
 
         // tx nonce
         let tx_nonce = self.rlp_field_witnesses_to_uint(ctx, vec![&tx_nonce_witness], vec![32])[0];
@@ -621,7 +655,8 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let dest_transfer_token = zero;
 
         // check MPT inclusion
-        let mpt_witness = self.parse_mpt_inclusion_phase0(ctx, keccak, transaction_proofs);
+        let mpt_witness =
+            self.parse_mpt_inclusion_phase0(ctx, keccak, transaction_input.transaction_proofs);
 
         EthTransactionTraceWitness {
             transaction_witness,

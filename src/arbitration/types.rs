@@ -19,10 +19,6 @@ pub struct MerkleAndAnchorProof {
     pub merkle_proof: MerkleProof,
     #[serde(rename(deserialize = "blockNumber"))]
     pub block_number: u64,
-    #[serde(rename(deserialize = "anchorBlockHash"))]
-    pub anchor_block_hash: [H256; 2],
-    #[serde(rename(deserialize = "anchorBlockNumber"))]
-    pub anchor_block_number: [u64; 2],
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -57,18 +53,10 @@ pub struct EthereumDestProof {
     pub transaction_index: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
-pub enum RouterType {
-    // MainnetSource,
-    // MainnetDest,
-    GoerliSource,
-    GoerliDest,
-}
-
 #[derive(Clone, Debug)]
 pub struct ProofsRouter {
-    pub router_type: RouterType,
+    pub source: bool,
+    pub network: Network,
     pub ethereum_source_proof: Option<EthereumSourceProof>,
     pub ethereum_dest_proof: Option<EthereumDestProof>,
 }

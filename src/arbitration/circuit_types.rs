@@ -124,7 +124,12 @@ pub struct FinalAssemblyCircuitType {
 
 impl FinalAssemblyCircuitType {
     pub fn name(&self) -> String {
-        format!("{}_final_{}", self.aggregation_type.to_string(), self.round)
+        format!(
+            "{}_{}_final_{}",
+            self.network.to_string(),
+            self.aggregation_type.to_string(),
+            self.round
+        )
     }
 }
 
