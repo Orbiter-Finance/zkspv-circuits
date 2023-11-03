@@ -32,7 +32,6 @@ pub struct Response {
     pub status: u64,
 }
 
-// #[tokio::main]
 pub async fn init_server(tx: UnboundedSender<OriginalProof>) -> std::io::Result<()> {
     let tx = Arc::new(tx);
     let cors = CorsLayer::new()

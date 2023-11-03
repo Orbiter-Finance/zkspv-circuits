@@ -17,8 +17,7 @@ use jsonrpsee::rpc_params;
 //
 pub async fn send_to_client(task_id: H256, proof: String) -> anyhow::Result<()> {
     let url = &format!("http://{}", get_spv_client_api());
-    let mut headers = HeaderMap::new();
-    let client = HttpClientBuilder::default().set_headers(headers).build(url).unwrap();
+    let client = HttpClientBuilder::default().build(url).unwrap();
     let params = rpc_params![task_id, proof, 2, ""];
     let response: String = client.request("ReturnToProof", params).await?;
     println!("response: {:?}", response);
