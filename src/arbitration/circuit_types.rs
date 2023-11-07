@@ -76,7 +76,6 @@ impl scheduler::CircuitType for EthTransactionCircuitType {
     }
 }
 
-//Todo Replace the task_width with the appropriate parameters
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct EthStorageCircuitType {
     pub network: Network,
