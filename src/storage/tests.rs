@@ -14,7 +14,6 @@ use hex::FromHex;
 use serde::{Deserialize, Serialize};
 use test_log::test;
 
-use crate::storage::util::EbcRuleParams;
 use crate::util::helpers::{calculate_mk_address_struct, get_provider};
 use crate::{
     halo2_proofs::{
@@ -40,28 +39,6 @@ use super::*;
 pub fn get_test_circuit(network: Network, block_number: u32) -> EthBlockStorageCircuit {
     let provider = get_provider(&network);
 
-    // ebc_rule_mpt
-    let ebc_rule_key =
-        H256::from_str("0xb824d67a08c69bc4f694666c7088b5d8eb3151c09000db345a9759f46dc179be")
-            .unwrap();
-    let ebc_rule_root =
-        H256::from_str("0x407857a3d36724da1c9af7cf6cadaa4599f7c2499eda48eace754961c75fbaff")
-            .unwrap(); // should be consistent with the value corresponding to the slot
-    let ebc_rule_value = Vec::from_hex("f841058308274f010180808701c6bf52634c358809b6e64a8ecbf5e18701c6bf52634005880b1a2bc2ec503d0987038d7ea51bf30087038d7ea53d84c00102211c1b1e").unwrap();
-
-    let proof_one_bytes = Vec::from_hex("f867a120b824d67a08c69bc4f694666c7088b5d8eb3151c09000db345a9759f46dc179beb843f841058308274f010180808701c6bf52634c358809b6e64a8ecbf5e18701c6bf52634005880b1a2bc2ec503d0987038d7ea51bf30087038d7ea53d84c00102211c1b1e").unwrap();
-    let proof_one = Bytes::from(proof_one_bytes);
-
-    let ebc_rule_merkle_proof = vec![proof_one];
-
-    let ebc_rule_params = EbcRuleParams {
-        ebc_rule_key,
-        ebc_rule_root,
-        ebc_rule_value,
-        ebc_rule_merkle_proof,
-        ebc_rule_pf_max_depth: 8,
-    };
-
     // slots:
     let addr = "0x5A295a98bD9FCa8784D98c98f222B7BA52367470".parse().unwrap(); // for test
 
@@ -81,7 +58,6 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> EthBlockStorageC
         slots,
         acct_pf_max_depth: 9,
         storage_pf_max_depth: 8,
-        ebc_rule_params,
         network,
     };
     EthBlockStorageCircuit::from_provider(&provider, constructor)

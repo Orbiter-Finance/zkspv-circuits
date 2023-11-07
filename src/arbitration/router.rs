@@ -4,7 +4,10 @@ use crate::arbitration::helper::{
     ETHBlockTrackTask, FinalAssemblyConstructor, FinalAssemblyTask, MDCStateTask, TransactionTask,
 };
 use crate::arbitration::types::{EthereumSourceProof, ProofsRouter};
-use crate::storage::util::{get_mdc_storage_circuit, EbcRuleParams, StorageConstructor};
+use crate::storage::contract_storage::util::{
+    get_contracts_storage_circuit, EbcRuleParams, MultiBlocksContractsStorageConstructor,
+    SingleBlockContractStorageConstructor, SingleBlockContractsStorageConstructor,
+};
 use crate::track_block::util::{get_eth_track_block_circuit, TrackBlockConstructor};
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
 use crate::transaction::EthTransactionType;
@@ -76,95 +79,110 @@ impl ProofRouter {
                         aggregated: false,
                     };
 
-                    let mdc_storage_constructor_pre = StorageConstructor {
-                        block_number: proof.mdc_rule_proofs.mdc_pre_rule.block_number as u32,
-                        address: proof.mdc_address,
+                    let mdc_contract_storage_constructor = SingleBlockContractStorageConstructor {
+                        contract_address: proof.mdc_address,
                         slots: proof.mdc_rule_proofs.mdc_slots_hash.clone().to_vec(),
                         acct_pf_max_depth: 9,
                         storage_pf_max_depth: 8,
-                        ebc_rule_params: EbcRuleParams {
-                            ebc_rule_key: H256::from_slice(
-                                &*proof.mdc_rule_proofs.mdc_pre_rule.merkle_proof.key.clone(),
-                            ),
-                            ebc_rule_root: proof
-                                .mdc_rule_proofs
-                                .mdc_pre_rule
-                                .merkle_proof
-                                .root
-                                .unwrap(),
-                            ebc_rule_value: proof
-                                .mdc_rule_proofs
-                                .mdc_pre_rule
-                                .merkle_proof
-                                .value
-                                .clone(),
-                            ebc_rule_merkle_proof: proof
-                                .mdc_rule_proofs
-                                .mdc_pre_rule
-                                .merkle_proof
-                                .proof
-                                .clone(),
-                            ebc_rule_pf_max_depth: proof
-                                .mdc_rule_proofs
-                                .mdc_pre_rule
-                                .merkle_proof
-                                .proof
-                                .clone()
-                                .len(),
-                        },
+                    };
+
+                    let single_block_contracts_storage_constructor_pre =
+                        SingleBlockContractsStorageConstructor {
+                            block_number: proof.mdc_rule_proofs.mdc_pre_rule.block_number as u32,
+                            block_contracts_storage: vec![
+                                mdc_contract_storage_constructor.clone(),
+                                mdc_contract_storage_constructor.clone(), // this should be manage
+                            ],
+                            ebc_rule_params: EbcRuleParams {
+                                ebc_rule_key: H256::from_slice(
+                                    &*proof.mdc_rule_proofs.mdc_pre_rule.merkle_proof.key.clone(),
+                                ),
+                                ebc_rule_root: proof
+                                    .mdc_rule_proofs
+                                    .mdc_pre_rule
+                                    .merkle_proof
+                                    .root
+                                    .unwrap(),
+                                ebc_rule_value: proof
+                                    .mdc_rule_proofs
+                                    .mdc_pre_rule
+                                    .merkle_proof
+                                    .value
+                                    .clone(),
+                                ebc_rule_merkle_proof: proof
+                                    .mdc_rule_proofs
+                                    .mdc_pre_rule
+                                    .merkle_proof
+                                    .proof
+                                    .clone(),
+                                ebc_rule_pf_max_depth: proof
+                                    .mdc_rule_proofs
+                                    .mdc_pre_rule
+                                    .merkle_proof
+                                    .proof
+                                    .clone()
+                                    .len(),
+                            },
+                        };
+                    let single_block_contracts_storage_constructor_current =
+                        SingleBlockContractsStorageConstructor {
+                            block_number: proof.mdc_rule_proofs.mdc_current_rule.block_number
+                                as u32,
+                            block_contracts_storage: vec![
+                                mdc_contract_storage_constructor.clone(),
+                                mdc_contract_storage_constructor, // this should be manage
+                            ],
+                            ebc_rule_params: EbcRuleParams {
+                                ebc_rule_key: H256::from_slice(
+                                    &*proof
+                                        .mdc_rule_proofs
+                                        .mdc_current_rule
+                                        .merkle_proof
+                                        .key
+                                        .clone(),
+                                ),
+                                ebc_rule_root: proof
+                                    .mdc_rule_proofs
+                                    .mdc_current_rule
+                                    .merkle_proof
+                                    .root
+                                    .unwrap(),
+                                ebc_rule_value: proof
+                                    .mdc_rule_proofs
+                                    .mdc_current_rule
+                                    .merkle_proof
+                                    .value
+                                    .clone(),
+                                ebc_rule_merkle_proof: proof
+                                    .mdc_rule_proofs
+                                    .mdc_current_rule
+                                    .merkle_proof
+                                    .proof
+                                    .clone(),
+                                ebc_rule_pf_max_depth: proof
+                                    .mdc_rule_proofs
+                                    .mdc_current_rule
+                                    .merkle_proof
+                                    .proof
+                                    .clone()
+                                    .len(),
+                            },
+                        };
+
+                    let ob_contracts_constructor = MultiBlocksContractsStorageConstructor {
+                        blocks_contracts_storage: vec![
+                            single_block_contracts_storage_constructor_pre,
+                            single_block_contracts_storage_constructor_current,
+                        ],
                         network,
                     };
 
-                    let mdc_storage_constructor_current = StorageConstructor {
-                        block_number: proof.mdc_rule_proofs.mdc_current_rule.block_number as u32,
-                        address: proof.mdc_address,
-                        slots: proof.mdc_rule_proofs.mdc_slots_hash.clone().to_vec(),
-                        acct_pf_max_depth: 9,
-                        storage_pf_max_depth: 8,
-                        ebc_rule_params: EbcRuleParams {
-                            ebc_rule_key: H256::from_slice(
-                                &*proof.mdc_rule_proofs.mdc_current_rule.merkle_proof.key.clone(),
-                            ),
-                            ebc_rule_root: proof
-                                .mdc_rule_proofs
-                                .mdc_current_rule
-                                .merkle_proof
-                                .root
-                                .unwrap(),
-                            ebc_rule_value: proof
-                                .mdc_rule_proofs
-                                .mdc_current_rule
-                                .merkle_proof
-                                .value
-                                .clone(),
-                            ebc_rule_merkle_proof: proof
-                                .mdc_rule_proofs
-                                .mdc_current_rule
-                                .merkle_proof
-                                .proof
-                                .clone(),
-                            ebc_rule_pf_max_depth: proof
-                                .mdc_rule_proofs
-                                .mdc_current_rule
-                                .merkle_proof
-                                .proof
-                                .clone()
-                                .len(),
-                        },
-                        network,
-                    };
-
-                    let mdc_storage_pre_task = MDCStateTask {
-                        input: get_mdc_storage_circuit(mdc_storage_constructor_pre.clone()),
-                        tasks_len: 1,
-                        task_width: 1,
-                        constructor: vec![mdc_storage_constructor_pre],
-                    };
-                    let mdc_storage_current_task = MDCStateTask {
-                        input: get_mdc_storage_circuit(mdc_storage_constructor_current.clone()),
-                        tasks_len: 1,
-                        task_width: 1,
-                        constructor: vec![mdc_storage_constructor_current],
+                    let ob_contracts_storage_task = MDCStateTask {
+                        input: get_contracts_storage_circuit(ob_contracts_constructor.clone()),
+                        single_block_include_contracts: 2,
+                        multi_blocks_number: 2,
+                        constructor: vec![ob_contracts_constructor],
+                        aggregated: false,
                     };
 
                     let block_track_constructor = TrackBlockConstructor {
@@ -187,10 +205,7 @@ impl ProofRouter {
                     let constructor = FinalAssemblyConstructor {
                         transaction_task: Option::from(transaction_task),
                         eth_block_track_task: Option::from(block_track_task),
-                        mdc_state_task: Option::from(vec![
-                            mdc_storage_pre_task,
-                            mdc_storage_current_task,
-                        ]),
+                        mdc_state_task: Option::from(vec![ob_contracts_storage_task]),
                     };
 
                     let task = FinalAssemblyTask {

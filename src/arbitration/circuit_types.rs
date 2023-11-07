@@ -51,7 +51,7 @@ pub struct EthTransactionCircuitType {
 
 impl EthTransactionCircuitType {
     pub fn is_aggregated(&self) -> bool {
-        return self.aggregated;
+        self.aggregated
     }
 }
 
@@ -80,24 +80,35 @@ impl scheduler::CircuitType for EthTransactionCircuitType {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct EthStorageCircuitType {
     pub network: Network,
-    pub tasks_len: u64,
-    pub task_width: u64,
+    pub single_block_include_contracts: u64,
+    pub multi_blocks_number: u64,
+    pub aggregated: bool,
 }
 
 impl EthStorageCircuitType {
+    pub(crate) fn name(&self) -> String {
+        if self.is_aggregated() {
+            format!(
+                "storage_aggregate_single_block_include_contracts_{}_multi_blocks_number_{}",
+                self.single_block_include_contracts, self.multi_blocks_number
+            )
+        } else {
+            format!(
+                "storage_width_single_block_include_contracts_{}_multi_blocks_number_{}",
+                self.single_block_include_contracts, self.multi_blocks_number
+            )
+        }
+    }
     pub(crate) fn is_aggregated(&self) -> bool {
-        self.tasks_len != 1
+        self.aggregated
     }
 }
 
 impl scheduler::CircuitType for EthStorageCircuitType {
     fn name(&self) -> String {
-        if self.is_aggregated() {
-            format!("storage_aggregate_tasks_len_{}", self.tasks_len)
-        } else {
-            format!("storage_width_{}", self.task_width)
-        }
+        self.name()
     }
+
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
         if self.is_aggregated() {
             AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()

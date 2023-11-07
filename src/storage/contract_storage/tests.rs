@@ -14,7 +14,9 @@ use hex::FromHex;
 use serde::{Deserialize, Serialize};
 use test_log::test;
 
-use crate::storage::util::EbcRuleParams;
+use crate::storage::contract_storage::util::{
+    EbcRuleParams, SingleBlockContractStorageConstructor, SingleBlockContractsStorageConstructor,
+};
 use crate::util::helpers::{calculate_mk_address_struct, get_provider};
 use crate::util::EthConfigParams;
 use crate::{
@@ -76,13 +78,25 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
         H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000000")
             .unwrap();
     let slots = vec![root_slot, version_slot, enable_time_slot];
-    let constructor = StorageConstructor {
-        block_number,
-        address: addr,
+    let single_block_contract_storage_constructor = SingleBlockContractStorageConstructor {
+        contract_address: addr,
         slots,
         acct_pf_max_depth: 9,
         storage_pf_max_depth: 8,
+    };
+    let single_block_contracts_storage_constructor = SingleBlockContractsStorageConstructor {
+        block_number,
+        block_contracts_storage: vec![
+            single_block_contract_storage_constructor.clone(),
+            single_block_contract_storage_constructor.clone(),
+        ],
         ebc_rule_params,
+    };
+    let constructor = MultiBlocksContractsStorageConstructor {
+        blocks_contracts_storage: vec![
+            single_block_contracts_storage_constructor.clone(),
+            single_block_contracts_storage_constructor,
+        ],
         network,
     };
     ObContractsStorageCircuit::from_provider(&provider, constructor)

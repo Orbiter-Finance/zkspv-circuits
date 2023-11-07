@@ -8,8 +8,10 @@ use crate::arbitration::circuit_types::{
     EthStorageCircuitType, EthTransactionCircuitType, FinalAssemblyCircuitType,
 };
 use crate::arbitration::final_assembly::FinalAssemblyType;
-use crate::storage::util::{get_mdc_storage_circuit, StorageConstructor};
-use crate::storage::EthBlockStorageCircuit;
+use crate::storage::contract_storage::util::{
+    get_contracts_storage_circuit, MultiBlocksContractsStorageConstructor,
+};
+use crate::storage::contract_storage::ObContractsStorageCircuit;
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
 use crate::transaction::EthTransactionType;
@@ -150,10 +152,11 @@ pub enum TransactionInput {
 
 #[derive(Clone, Debug)]
 pub struct MDCStateTask {
-    pub input: EthBlockStorageCircuit,
-    pub tasks_len: u64,
-    pub task_width: u64,
-    pub constructor: Vec<StorageConstructor>,
+    pub input: ObContractsStorageCircuit,
+    pub single_block_include_contracts: u64,
+    pub multi_blocks_number: u64,
+    pub constructor: Vec<MultiBlocksContractsStorageConstructor>,
+    pub aggregated: bool,
 }
 
 impl scheduler::Task for MDCStateTask {
@@ -162,27 +165,14 @@ impl scheduler::Task for MDCStateTask {
     fn circuit_type(&self) -> Self::CircuitType {
         EthStorageCircuitType {
             network: self.constructor[0].network,
-            tasks_len: self.tasks_len,
-            task_width: self.task_width,
+            single_block_include_contracts: self.single_block_include_contracts,
+            multi_blocks_number: self.multi_blocks_number,
+            aggregated: self.aggregated,
         }
     }
 
     fn name(&self) -> String {
-        if self.circuit_type().is_aggregated() {
-            format!(
-                "storage_aggregated_with_{}_task_len_{}",
-                self.task_width,
-                self.constructor.len()
-            )
-        } else {
-            format!(
-                "storage_width_{}_address_{}_slots_{}_block_number_{}",
-                self.task_width,
-                self.constructor[0].address,
-                self.constructor[0].slots[0],
-                self.constructor[0].block_number,
-            )
-        }
+        self.circuit_type().name()
     }
 
     fn dependencies(&self) -> Vec<Self> {
@@ -191,10 +181,11 @@ impl scheduler::Task for MDCStateTask {
             let result = constructor
                 .into_iter()
                 .map(|constructor| Self {
-                    input: get_mdc_storage_circuit(constructor.clone()),
-                    tasks_len: 1u64,
-                    task_width: self.task_width,
+                    input: get_contracts_storage_circuit(constructor.clone()),
+                    single_block_include_contracts: self.single_block_include_contracts,
+                    multi_blocks_number: self.multi_blocks_number,
                     constructor: [constructor].to_vec(),
+                    aggregated: self.aggregated,
                 })
                 .collect_vec();
             result

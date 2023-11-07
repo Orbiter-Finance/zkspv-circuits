@@ -603,7 +603,6 @@ impl EthBlockStorageCircuit {
             constructor.slots,
             constructor.acct_pf_max_depth,
             constructor.storage_pf_max_depth,
-            constructor.ebc_rule_params,
         );
         let block_header_config = get_block_header_config(&constructor.network);
         Self { inputs, block_header_config }

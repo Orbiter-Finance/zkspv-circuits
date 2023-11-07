@@ -1,4 +1,5 @@
 mod tests;
+pub mod util;
 
 use crate::block_header::{get_block_header_config, BlockHeaderConfig, EthBlockHeaderChip};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
@@ -7,6 +8,7 @@ use crate::providers::get_contract_storage_input;
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{RlcContextPair, FIRST_PHASE};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
+use crate::storage::contract_storage::util::MultiBlocksContractsStorageConstructor;
 use crate::storage::util::StorageConstructor;
 use crate::storage::{
     EIP1186ResponseDigest, EthBlockAccountStorageTrace, EthBlockAccountStorageTraceWitness,
@@ -134,16 +136,11 @@ pub struct ObContractsStorageCircuit {
 
 impl ObContractsStorageCircuit {
     #[cfg(feature = "providers")]
-    pub fn from_provider(provider: &Provider<Http>, constructor: StorageConstructor) -> Self {
-        let inputs = get_contract_storage_input(
-            provider,
-            constructor.block_number,
-            constructor.address,
-            constructor.slots,
-            constructor.acct_pf_max_depth,
-            constructor.storage_pf_max_depth,
-            constructor.ebc_rule_params,
-        );
+    pub fn from_provider(
+        provider: &Provider<Http>,
+        constructor: MultiBlocksContractsStorageConstructor,
+    ) -> Self {
+        let inputs = get_contract_storage_input(provider, constructor.clone());
         let block_header_config = get_block_header_config(&constructor.network);
         Self { inputs, block_header_config }
     }
