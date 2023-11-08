@@ -6,7 +6,7 @@ use crate::arbitration::helper::{
 use crate::arbitration::types::{EthereumSourceProof, ProofsRouter};
 use crate::storage::contract_storage::util::{
     get_contracts_storage_circuit, EbcRuleParams, MultiBlocksContractsStorageConstructor,
-    SingleBlockContractStorageConstructor, SingleBlockContractsStorageConstructor,
+    ObContractStorageConstructor, SingleBlockContractsStorageConstructor,
 };
 use crate::track_block::util::{get_eth_track_block_circuit, TrackBlockConstructor};
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
@@ -79,9 +79,16 @@ impl ProofRouter {
                         aggregated: false,
                     };
 
-                    let mdc_contract_storage_constructor = SingleBlockContractStorageConstructor {
+                    let mdc_contract_storage_constructor = ObContractStorageConstructor {
                         contract_address: proof.mdc_address,
-                        slots: proof.mdc_rule_proofs.mdc_slots_hash.clone().to_vec(),
+                        slots: proof.contracts_slots_hash[..5].to_vec(),
+                        acct_pf_max_depth: 9,
+                        storage_pf_max_depth: 8,
+                    };
+
+                    let manage_contract_storage_constructor = ObContractStorageConstructor {
+                        contract_address: proof.manage_address,
+                        slots: proof.contracts_slots_hash[5..].to_vec(),
                         acct_pf_max_depth: 9,
                         storage_pf_max_depth: 8,
                     };
@@ -91,7 +98,7 @@ impl ProofRouter {
                             block_number: proof.mdc_rule_proofs.mdc_pre_rule.block_number as u32,
                             block_contracts_storage: vec![
                                 mdc_contract_storage_constructor.clone(),
-                                mdc_contract_storage_constructor.clone(), // this should be manage
+                                manage_contract_storage_constructor.clone(),
                             ],
                             ebc_rule_params: EbcRuleParams {
                                 ebc_rule_key: H256::from_slice(
@@ -129,8 +136,8 @@ impl ProofRouter {
                             block_number: proof.mdc_rule_proofs.mdc_current_rule.block_number
                                 as u32,
                             block_contracts_storage: vec![
-                                mdc_contract_storage_constructor.clone(),
-                                mdc_contract_storage_constructor, // this should be manage
+                                mdc_contract_storage_constructor,
+                                manage_contract_storage_constructor,
                             ],
                             ebc_rule_params: EbcRuleParams {
                                 ebc_rule_key: H256::from_slice(

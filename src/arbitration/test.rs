@@ -28,14 +28,12 @@ use crate::arbitration::helper::{
 };
 use crate::storage::contract_storage::util::{
     get_contracts_storage_circuit, EbcRuleParams, MultiBlocksContractsStorageConstructor,
-    SingleBlockContractStorageConstructor, SingleBlockContractsStorageConstructor,
+    ObContractStorageConstructor, SingleBlockContractsStorageConstructor,
 };
 use crate::storage::util::get_mdc_storage_circuit;
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
 use crate::transaction::EthTransactionType;
-use crate::util::helpers::calculate_mk_address_struct;
-use crate::util::scheduler::evm_wrapper::ForEvm;
 use crate::{
     rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder},
     storage::{
@@ -240,7 +238,7 @@ fn test_mdc_task(network: Network) -> MDCStateTask {
         H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000000")
             .unwrap();
     let slots = vec![root_slot, version_slot, enable_time_slot];
-    let single_block_contract_storage_constructor = SingleBlockContractStorageConstructor {
+    let single_block_contract_storage_constructor = ObContractStorageConstructor {
         contract_address: addr,
         slots,
         acct_pf_max_depth: 9,

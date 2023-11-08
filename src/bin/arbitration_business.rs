@@ -1,14 +1,13 @@
 use std::fs::File;
 use std::io::BufReader;
 
-use ethers_core::types::{H256};
+use ethers_core::types::H256;
 use serde_json::Value;
 use zkspv_circuits::arbitration::router::ProofRouter;
-use zkspv_circuits::server::OriginalProof;
 use zkspv_circuits::server::execute::parse_original_proof;
+use zkspv_circuits::server::OriginalProof;
 
 fn main() {
-
     let arbitration_data_file = File::open("test_data/arbitration_mock_data.json").unwrap();
 
     let data_reader = BufReader::new(arbitration_data_file);
@@ -23,5 +22,4 @@ fn main() {
     });
     let task = ProofRouter::new(proofs_router.unwrap(), 1);
     let proof = task.get_calldata(true);
-
 }

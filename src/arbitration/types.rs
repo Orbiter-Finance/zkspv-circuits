@@ -1,3 +1,4 @@
+use crate::storage::contract_storage::util::ObContractStorageConstructor;
 use crate::Network;
 use ethers_core::types::{Address, Bytes, H256};
 use hex::FromHex;
@@ -27,8 +28,6 @@ pub struct MdcRuleProofs {
     pub mdc_pre_rule: MerkleAndAnchorProof,
     #[serde(rename(deserialize = "mdcCurrentRule"))]
     pub mdc_current_rule: MerkleAndAnchorProof,
-    #[serde(rename(deserialize = "mdcSlotsHash"))]
-    pub mdc_slots_hash: [H256; 3],
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -43,6 +42,9 @@ pub struct EthereumSourceProof {
     pub transaction_index: u64,
     #[serde(rename(deserialize = "mdcRuleProofs"))]
     pub mdc_rule_proofs: MdcRuleProofs,
+    /// see [`ObContractStorageConstructor`]
+    #[serde(rename(deserialize = "contractsSlotsHash"))]
+    pub contracts_slots_hash: [H256; 9],
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

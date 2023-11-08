@@ -14,7 +14,7 @@ use hex::FromHex;
 use serde::{Deserialize, Serialize};
 use test_log::test;
 
-use crate::util::helpers::{calculate_mk_address_struct, get_provider};
+use crate::util::helpers::get_provider;
 use crate::{
     halo2_proofs::{
         dev::MockProver,

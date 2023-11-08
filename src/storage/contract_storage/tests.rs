@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 use test_log::test;
 
 use crate::storage::contract_storage::util::{
-    EbcRuleParams, SingleBlockContractStorageConstructor, SingleBlockContractsStorageConstructor,
+    EbcRuleParams, ObContractStorageConstructor, SingleBlockContractsStorageConstructor,
 };
-use crate::util::helpers::{calculate_mk_address_struct, get_provider};
+use crate::util::helpers::get_provider;
 use crate::util::EthConfigParams;
 use crate::{
     halo2_proofs::{
@@ -66,29 +66,69 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
     };
 
     // slots:
-    let addr = "0x5A295a98bD9FCa8784D98c98f222B7BA52367470".parse().unwrap(); // for test
+    let mdc_contract_address = "0x5A295a98bD9FCa8784D98c98f222B7BA52367470".parse().unwrap(); // for test
 
-    let root_slot =
+    let mdc_rule_root_slot =
         H256::from_str("0xbb01b056691692273b8d0c6bed43fbc90e57d25c4eb695038e7b6a6c4a7b5b4d")
             .unwrap();
-    let version_slot =
+    let mdc_rule_version_slot =
         H256::from_str("0xbb01b056691692273b8d0c6bed43fbc90e57d25c4eb695038e7b6a6c4a7b5b4e")
             .unwrap();
-    let enable_time_slot =
+    let mdc_rule_enable_time_slot =
         H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000000")
             .unwrap();
-    let slots = vec![root_slot, version_slot, enable_time_slot];
-    let single_block_contract_storage_constructor = SingleBlockContractStorageConstructor {
-        contract_address: addr,
-        slots,
+    let mdc_column_array_hash_slot =
+        H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000003")
+            .unwrap();
+    let mdc_response_makers_hash_slot =
+        H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000005")
+            .unwrap();
+    let mdc_slots = vec![
+        mdc_rule_root_slot,
+        mdc_rule_version_slot,
+        mdc_rule_enable_time_slot,
+        mdc_column_array_hash_slot,
+        mdc_response_makers_hash_slot,
+    ];
+    let mdc_contract_storage_constructor = ObContractStorageConstructor {
+        contract_address: mdc_contract_address,
+        slots: mdc_slots,
+        acct_pf_max_depth: 9,
+        storage_pf_max_depth: 8,
+    };
+
+    // manage
+    let manage_contract_address = "0x4aa86B397D9A7242cc9F5576b13e830fBC6FfFb6".parse().unwrap();
+    let manage_source_chain_info_slot =
+        H256::from_str("0xb98b78633099fa36ed8b8680c4f8092689e1e04080eb9cbb077ca38a14d7e385")
+            .unwrap();
+    let manage_source_chain_mainnet_token_info_slot =
+        H256::from_str("0x820eca3b68a924cd1c2962e3cd26e478c5e43b85c63554221c513ac78ff3a5f1")
+            .unwrap();
+    let manage_dest_chain_mainnet_token_slot =
+        H256::from_str("0xf135a9a5432bd09d6ad3673a293440942d99ccd7e7a49972f87b60577ac2246a")
+            .unwrap();
+    let manage_challenge_user_ratio_slot =
+        H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000006")
+            .unwrap();
+
+    let manage_slots = vec![
+        manage_source_chain_info_slot,
+        manage_source_chain_mainnet_token_info_slot,
+        manage_dest_chain_mainnet_token_slot,
+        manage_challenge_user_ratio_slot,
+    ];
+    let manage_contract_storage_constructor = ObContractStorageConstructor {
+        contract_address: manage_contract_address,
+        slots: manage_slots,
         acct_pf_max_depth: 9,
         storage_pf_max_depth: 8,
     };
     let single_block_contracts_storage_constructor = SingleBlockContractsStorageConstructor {
         block_number,
         block_contracts_storage: vec![
-            single_block_contract_storage_constructor.clone(),
-            single_block_contract_storage_constructor.clone(),
+            mdc_contract_storage_constructor.clone(),
+            manage_contract_storage_constructor,
         ],
         ebc_rule_params,
     };
