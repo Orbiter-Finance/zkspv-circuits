@@ -38,8 +38,11 @@ use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
 use crate::storage::contract_storage::util::MultiBlocksContractsStorageConstructor;
 use crate::storage::contract_storage::{
     BlockInput, ObContractsStorageBlockInput, ObContractsStorageInput,
+    EBC_RULE_PROOF_VALUE_MAX_BYTE_LEN,
 };
-use crate::storage::EbcRuleVersion;
+use crate::storage::{
+    EbcRuleVersion, ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN, STORAGE_PROOF_VALUE_MAX_BYTE_LEN,
+};
 use crate::track_block::util::TrackBlockConstructor;
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
@@ -52,10 +55,6 @@ use crate::{
     util::{get_merkle_mountain_range, u256_to_bytes32_be},
     Network,
 };
-
-/// RLP[nonce,balance,storageRoot,codeHash], so max len is 2(rlp prefix length) + 16 + 32 + 32 + 32
-const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 114;
-const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
 const TRANSACTION_INDEX_MAX_KEY_BYTES_LEN: usize = 3;
 const K256_MAX_KEY_BYTES_LEN: usize = 32;
 
@@ -335,7 +334,7 @@ pub fn get_contract_storage_input(
                         .map(|x| x.to_vec())
                         .collect(),
                     slot_is_empty: false,
-                    value_max_byte_len: ebc_rule_params.ebc_rule_value.len(),
+                    value_max_byte_len: EBC_RULE_PROOF_VALUE_MAX_BYTE_LEN,
                     max_depth: ebc_rule_params.ebc_rule_pf_max_depth,
                     max_key_byte_len: K256_MAX_KEY_BYTES_LEN,
                     key_byte_len: None,

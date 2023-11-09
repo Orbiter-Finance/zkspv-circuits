@@ -26,7 +26,7 @@ use crate::util::{
 use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, ETH_LOOKUP_BITS};
 use ethers_core::types::{Address, Block, H256, U256};
 use ethers_providers::{Http, Provider};
-use futures::AsyncReadExt;
+use futures::{AsyncReadExt, FutureExt};
 use halo2_base::{
     gates::{builder::GateThreadBuilder, GateInstructions, RangeChip},
     halo2_proofs::halo2curves::bn256::Fr,
@@ -35,6 +35,7 @@ use halo2_base::{
 use itertools::Itertools;
 use snark_verifier::loader::halo2::IntegerInstructions;
 use std::cell::RefCell;
+use std::io::Read;
 use tokio_stream::StreamExt;
 use zkevm_keccak::util::eth_types::Field;
 
@@ -42,6 +43,7 @@ const CACHE_BITS: usize = 10;
 const EBC_RULE_FIELDS_NUM: usize = 18;
 const EBC_RULE_FIELDS_MAX_FIELDS_LEN: [usize; EBC_RULE_FIELDS_NUM] =
     [8, 8, 1, 1, 32, 32, 16, 16, 16, 16, 16, 16, 4, 4, 4, 4, 4, 4];
+pub(crate) const EBC_RULE_PROOF_VALUE_MAX_BYTE_LEN: usize = 140;
 
 #[derive(Clone, Debug)]
 pub struct EbcRule<F: Field> {
@@ -176,16 +178,25 @@ impl EthPreCircuit for ObContractsStorageCircuit {
 
         let only_one_digest = digests[0].clone();
 
+        let all_slots = only_one_digest
+            .clone()
+            .slots_values
+            .into_iter()
+            .map(|(slot, value)| slot)
+            .collect_vec();
+
+        let all_slots_values = digests
+            .clone()
+            .into_iter()
+            .map(|d| d.slots_values.into_iter().flat_map(|(slot, value)| value.into_iter()))
+            .collect_vec();
+
         // load contract address and slots value
         let assigned_instances: Vec<_> = only_one_digest
             .contracts_address
             .into_iter()
-            .chain(
-                only_one_digest
-                    .slots_values
-                    .into_iter()
-                    .flat_map(|(slot, value)| slot.into_iter().chain(value.into_iter())),
-            )
+            .chain(all_slots.into_iter().flat_map(|slot| slot.into_iter()))
+            .chain(all_slots_values.into_iter().flat_map(|value| value))
             .chain([
                 only_one_digest.ebc_rule.source_chain_id,
                 only_one_digest.ebc_rule.source_token,
@@ -202,12 +213,13 @@ impl EthPreCircuit for ObContractsStorageCircuit {
                 only_one_digest.ebc_rule.dest_trading_fee,
                 only_one_digest.ebc_rule.dest_response_time,
             ])
-            .chain(
-                digests
-                    .clone()
-                    .into_iter()
-                    .flat_map(|d| d.block_hash.into_iter().chain([d.block_number])),
-            )
+            // Todo: At present, it is reused, which affects public input, so it is commented out here, and this parameter does not need to be exposed after the aggregation circuit is actually completed.
+            // .chain(
+            //     digests
+            //         .clone()
+            //         .into_iter()
+            //         .flat_map(|d| d.block_hash.into_iter().chain([d.block_number])),
+            // )
             .collect();
 
         // For now this circuit is going to constrain that all slots are occupied. We can also create a circuit that exposes the bitmap of slot_is_empty
@@ -351,8 +363,7 @@ pub struct ObAccountStorageTrace<F: Field> {
 #[derive(Clone, Debug)]
 pub struct ObSingleBlockContractsTrace<F: Field> {
     pub block_trace: EthBlockHeaderTrace<F>,
-    pub mdc_storages_trace: ObAccountStorageTrace<F>,
-    pub manage_storages_trace: ObAccountStorageTrace<F>,
+    pub contracts_storages_trace: Vec<ObAccountStorageTrace<F>>,
     pub ebc_trace: ObEbcRuleTrace<F>,
 }
 
@@ -370,8 +381,7 @@ pub struct ObAccountStorageTraceWitness<F: Field> {
 #[derive(Clone, Debug)]
 pub struct ObContractsStorageTraceWitness<F: Field> {
     pub block_witness: EthBlockHeaderTraceWitness<F>,
-    pub mdc_storage_trace_witness: ObAccountStorageTraceWitness<F>,
-    pub manage_storage_trace_witness: ObAccountStorageTraceWitness<F>,
+    pub contracts_storages_trace_witnesses: Vec<ObAccountStorageTraceWitness<F>>,
     pub ebc_rule_trace_witness: ObEbcRuleTraceWitness<F>,
 }
 
@@ -444,10 +454,7 @@ impl<'chip, F: Field> ObContractsStorageChip<F> for EthChip<'chip, F> {
         input: ObContractsStorageBlockInputAssigned<F>,
         block_header_config: &BlockHeaderConfig,
     ) -> (Vec<ObContractsStorageTraceWitness<F>>, Vec<ObSingleBlockContractsDigest<F>>) {
-        let (witnesses, digests): (
-            Vec<ObContractsStorageTraceWitness<F>>,
-            Vec<ObSingleBlockContractsDigest<F>>,
-        ) = input
+        let (witnesses, digests) = input
             .contract_storage_block
             .into_iter()
             .map(|(block_header, contracts_storage)| {
@@ -489,22 +496,23 @@ impl<'chip, F: Field> ObContractsStorageChip<F> for EthChip<'chip, F> {
             bytes_be_var_to_fixed(ctx, self.gate(), block_num_bytes, block_num_len, 4);
         let block_number = bytes_be_to_uint(ctx, self.gate(), &block_number, 4);
 
-        let (mdc_storage_trace_witness, mdc_digest) = self.parse_contract_storages_proofs_phase0(
-            thread_pool,
-            keccak,
-            (state_root, contracts_storage.contracts_storage[0].clone()),
-        );
-
-        let (manage_storage_trace_witness, manage_digest) = self
-            .parse_contract_storages_proofs_phase0(
-                thread_pool,
-                keccak,
-                (state_root, contracts_storage.contracts_storage[1].clone()),
-            );
+        let (contracts_storages_trace_witnesses, contracts_digests): (Vec<_>, Vec<_>) =
+            contracts_storage
+                .contracts_storage
+                .into_iter()
+                .map(|contract_storage| {
+                    self.parse_contract_storages_proofs_phase0(
+                        thread_pool,
+                        keccak,
+                        (state_root, contract_storage),
+                    )
+                })
+                .unzip();
 
         // ebc rule
         let ctx = thread_pool.main(FIRST_PHASE);
-        let ebc_rule_root_witness = mdc_storage_trace_witness.storage_witness[0].clone();
+        let ebc_rule_root_witness =
+            contracts_storages_trace_witnesses[0].storage_witness[0].clone();
         let ebc_rule_trace_witness = self.parse_ebc_rule_proof_phase0(
             ctx,
             keccak,
@@ -551,23 +559,31 @@ impl<'chip, F: Field> ObContractsStorageChip<F> for EthChip<'chip, F> {
             };
         }
 
-        let slots_values = [mdc_digest.slots_values, manage_digest.slots_values].concat();
+        let mut contracts_address = vec![];
+        let mut slots_values = vec![];
+        let mut address_is_empty = vec![];
+        let mut slots_is_empty = vec![];
+        for digest in contracts_digests {
+            contracts_address.push(digest.address);
+            slots_values.extend(digest.slots_values);
+            address_is_empty.push(digest.address_is_empty);
+            slots_is_empty.push(digest.slot_is_empty);
+        }
 
         (
             ObContractsStorageTraceWitness {
-                mdc_storage_trace_witness,
-                manage_storage_trace_witness,
+                contracts_storages_trace_witnesses,
                 ebc_rule_trace_witness,
                 block_witness,
             },
             ObSingleBlockContractsDigest {
                 block_hash: block_hash_hi_lo.try_into().unwrap(),
                 block_number,
-                contracts_address: vec![mdc_digest.address, manage_digest.address],
+                contracts_address,
                 slots_values,
                 ebc_rule: ebc_rule_digest,
-                address_is_empty: vec![mdc_digest.address_is_empty, manage_digest.address_is_empty],
-                slots_is_empty: vec![mdc_digest.slot_is_empty, manage_digest.slot_is_empty],
+                address_is_empty,
+                slots_is_empty,
             },
         )
     }
@@ -682,15 +698,16 @@ impl<'chip, F: Field> ObContractsStorageChip<F> for EthChip<'chip, F> {
         let block_trace =
             self.decompose_block_header_phase1(thread_pool.rlc_ctx_pair(), witnesses.block_witness);
 
-        let mdc_storages_trace = self.parse_contract_storages_proofs_phase1(
-            thread_pool,
-            witnesses.mdc_storage_trace_witness,
-        );
-
-        let manage_storages_trace = self.parse_contract_storages_proofs_phase1(
-            thread_pool,
-            witnesses.manage_storage_trace_witness,
-        );
+        let contracts_storages_trace = witnesses
+            .contracts_storages_trace_witnesses
+            .into_iter()
+            .map(|contract_storage_trace_witness| {
+                self.parse_contract_storages_proofs_phase1(
+                    thread_pool,
+                    contract_storage_trace_witness,
+                )
+            })
+            .collect();
 
         let (ctx_gate, ctx_rlc) = thread_pool.rlc_ctx_pair();
 
@@ -700,12 +717,7 @@ impl<'chip, F: Field> ObContractsStorageChip<F> for EthChip<'chip, F> {
         // pre-load rlc cache so later parallelization is deterministic
         self.rlc().load_rlc_cache((ctx_gate, ctx_rlc), self.gate(), CACHE_BITS);
 
-        ObSingleBlockContractsTrace {
-            block_trace,
-            mdc_storages_trace,
-            manage_storages_trace,
-            ebc_trace,
-        }
+        ObSingleBlockContractsTrace { block_trace, contracts_storages_trace, ebc_trace }
     }
 
     fn parse_contract_storages_proofs_phase1(

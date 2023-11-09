@@ -44,6 +44,22 @@ pub mod helper;
 pub mod tests;
 pub mod util;
 
+/*
+| Account State Field     | Max bytes   |
+|-------------------------|-------------|
+| nonce                   | ≤8          |
+| balance                 | ≤12         |
+| storageRoot             | 32          |
+| codeHash                | 32          |
+
+account nonce is uint64 by https://eips.ethereum.org/EIPS/eip-2681
+*/
+pub(crate) const NUM_ACCOUNT_STATE_FIELDS: usize = 4;
+pub(crate) const ACCOUNT_STATE_FIELDS_MAX_BYTES: [usize; NUM_ACCOUNT_STATE_FIELDS] =
+    [8, 12, 32, 32];
+pub(crate) const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 90;
+pub(crate) const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
+
 const CACHE_BITS: usize = 10;
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
@@ -265,8 +281,8 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         let array_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
             proof.value_bytes.clone(),
-            &[33, 13, 33, 33],
-            false,
+            &ACCOUNT_STATE_FIELDS_MAX_BYTES,
+            true,
         );
         // Check MPT inclusion for:
         // keccak(addr) => RLP([nonce, balance, storage_root, code_hash])
@@ -283,7 +299,7 @@ impl<'chip, F: Field> EthStorageChip<F> for EthChip<'chip, F> {
         self.parse_mpt_inclusion_phase1((ctx_gate, ctx_rlc), witness.mpt_witness);
         let array_trace: [_; 4] = self
             .rlp()
-            .decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.array_witness, false)
+            .decompose_rlp_array_phase1((ctx_gate, ctx_rlc), witness.array_witness, true)
             .field_trace
             .try_into()
             .unwrap();

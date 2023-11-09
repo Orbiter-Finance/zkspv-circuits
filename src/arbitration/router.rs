@@ -79,16 +79,23 @@ impl ProofRouter {
                         aggregated: false,
                     };
 
-                    let mdc_contract_storage_constructor = ObContractStorageConstructor {
+                    let mdc_contract_storage_constructor_pre = ObContractStorageConstructor {
                         contract_address: proof.mdc_address,
                         slots: proof.contracts_slots_hash[..5].to_vec(),
                         acct_pf_max_depth: 9,
                         storage_pf_max_depth: 8,
                     };
 
-                    let manage_contract_storage_constructor = ObContractStorageConstructor {
+                    let manage_contract_storage_constructor_pre = ObContractStorageConstructor {
                         contract_address: proof.manage_address,
                         slots: proof.contracts_slots_hash[5..].to_vec(),
+                        acct_pf_max_depth: 9,
+                        storage_pf_max_depth: 8,
+                    };
+
+                    let mdc_contract_storage_constructor_current = ObContractStorageConstructor {
+                        contract_address: proof.mdc_address,
+                        slots: proof.contracts_slots_hash[..3].to_vec(),
                         acct_pf_max_depth: 9,
                         storage_pf_max_depth: 8,
                     };
@@ -97,8 +104,8 @@ impl ProofRouter {
                         SingleBlockContractsStorageConstructor {
                             block_number: proof.mdc_rule_proofs.mdc_pre_rule.block_number as u32,
                             block_contracts_storage: vec![
-                                mdc_contract_storage_constructor.clone(),
-                                manage_contract_storage_constructor.clone(),
+                                mdc_contract_storage_constructor_pre,
+                                manage_contract_storage_constructor_pre,
                             ],
                             ebc_rule_params: EbcRuleParams {
                                 ebc_rule_key: H256::from_slice(
@@ -135,10 +142,7 @@ impl ProofRouter {
                         SingleBlockContractsStorageConstructor {
                             block_number: proof.mdc_rule_proofs.mdc_current_rule.block_number
                                 as u32,
-                            block_contracts_storage: vec![
-                                mdc_contract_storage_constructor,
-                                manage_contract_storage_constructor,
-                            ],
+                            block_contracts_storage: vec![mdc_contract_storage_constructor_current],
                             ebc_rule_params: EbcRuleParams {
                                 ebc_rule_key: H256::from_slice(
                                     &*proof
