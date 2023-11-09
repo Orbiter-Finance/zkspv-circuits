@@ -34,7 +34,7 @@ use crate::config::token::zksync_era_token::{
 use crate::ecdsa::util::recover_tx_info;
 use crate::ecdsa::EthEcdsaInput;
 use crate::mpt::MPTInput;
-use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
+use crate::receipt::{EthBlockReceiptInput, EthReceiptInput, RECEIPT_MAX_LEN};
 use crate::storage::contract_storage::util::MultiBlocksContractsStorageConstructor;
 use crate::storage::contract_storage::{
     BlockInput, ObContractsStorageBlockInput, ObContractsStorageInput,
@@ -105,11 +105,11 @@ pub fn get_receipt_input(
 
     let receipt_proofs = MPTInput {
         path: (&receipt_key).into(),
-        value: receipt_rlp.to_vec(),
+        value: receipt_rlp,
         root_hash: block.receipts_root,
         proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
         slot_is_empty,
-        value_max_byte_len: receipt_rlp.len(),
+        value_max_byte_len: RECEIPT_MAX_LEN,
         max_depth: receipt_pf_max_depth,
         max_key_byte_len: TRANSACTION_INDEX_MAX_KEY_BYTES_LEN,
         key_byte_len: Some(receipt_key.len()),

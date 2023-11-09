@@ -30,6 +30,8 @@ pub struct MdcRuleProofs {
     pub mdc_current_rule: MerkleAndAnchorProof,
 }
 
+// Ethereum
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EthereumSourceProof {
     #[serde(rename(deserialize = "mdcAddress"))]
@@ -53,6 +55,25 @@ pub struct EthereumDestProof {
     pub transaction_proof: MerkleAndAnchorProof,
     #[serde(rename(deserialize = "transactionIndex"))]
     pub transaction_index: u64,
+}
+
+// Arbitrum
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ArbitrumSourceProof {
+    #[serde(rename(deserialize = "mdcAddress"))]
+    pub mdc_address: Address,
+    #[serde(rename(deserialize = "manageAddress"))]
+    pub manage_address: Address,
+    #[serde(rename(deserialize = "transactionProof"))]
+    pub transaction_proof: MerkleAndAnchorProof,
+    #[serde(rename(deserialize = "transactionIndex"))]
+    pub transaction_index: u64,
+    #[serde(rename(deserialize = "mdcRuleProofs"))]
+    pub mdc_rule_proofs: MdcRuleProofs,
+    /// see [`ObContractStorageConstructor`]
+    #[serde(rename(deserialize = "contractsSlotsHash"))]
+    pub contracts_slots_hash: [H256; 9],
 }
 
 #[derive(Clone, Debug)]

@@ -31,7 +31,7 @@ const RECEIPT_LOGS_BLOOM_MAX_LEN: usize = 256;
 const RECEIPT_LOGS_MAX_LEN: usize = 128;
 const RECEIPT_FIELDS_MAX_FIELDS_LEN: [usize; RECEIPT_FIELDS_NUM] =
     [8, 8, RECEIPT_LOGS_BLOOM_MAX_LEN, RECEIPT_LOGS_MAX_LEN];
-
+pub(crate) const RECEIPT_MAX_LEN: usize = 8 * 2 + RECEIPT_LOGS_BLOOM_MAX_LEN + RECEIPT_LOGS_MAX_LEN;
 // Status of the transaction
 pub const TX_STATUS_SUCCESS: u8 = 1;
 const NUM_BITS: usize = 8;
