@@ -8,6 +8,7 @@ use crate::{
 
 use super::EthScheduler;
 use crate::arbitration::circuit_types::FinalAssemblyFinality;
+use crate::storage::contract_storage::ObContractsStorageCircuit;
 use crate::storage::util::StorageConstructor;
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::EthBlockTransactionCircuit;
@@ -31,13 +32,12 @@ pub enum CircuitRouter {
     BlockTrackInterval(EthTrackBlockCircuit),
     AggreateBlockTracks(PublicAggregationCircuit),
 
-    MdcStorage(EthBlockStorageCircuit),
+    MdcStorage(ObContractsStorageCircuit),
     AggreateMdcStorages(PublicAggregationCircuit),
 
     // FinalAssembly(FinalAssemblyCircuit),
     Passthrough(PublicAggregationCircuit),
     FinalAssemblyThroughAggregation(PublicAggregationCircuit),
-    // FinalAssemblyForEvm(PublicAggregationCircuit),
 }
 
 pub type ArbitrationScheduler = EthScheduler<ArbitrationTask>;
@@ -69,11 +69,11 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                 }
             }
             ArbitrationTask::MDCState(task) => {
-                if task.tasks_len == 1 {
-                    println!("TASK_LEN1======");
-                    CircuitRouter::MdcStorage(task.input)
-                } else {
-                    println!("MDCState AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
+                if task.circuit_type().is_aggregated() {
+                    println!(
+                        "OB Contracts Storage AGGREGATION ====== prev_snarks len {}",
+                        prev_snarks.len()
+                    );
                     return CircuitRouter::AggreateMdcStorages(PublicAggregationCircuit::new(
                         prev_snarks
                             .into_iter()
@@ -83,6 +83,9 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                             })
                             .collect(),
                     ));
+                } else {
+                    println!("OB Contracts Storage TASK_LEN1======");
+                    CircuitRouter::MdcStorage(task.input)
                 }
             }
             ArbitrationTask::ETHBlockTrack(task) => {

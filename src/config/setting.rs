@@ -3,9 +3,19 @@ use serde::Deserialize;
 use std::{fs::File, io::Read};
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct InternalApi {
+pub struct SpvClientApi {
     pub host: String,
     pub port: isize,
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct Api {
+    pub spv_host: String,
+    pub spv_port: isize,
+    pub spv_path: String,
+    pub internal_host: String,
+    pub internal_port: isize,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -40,16 +50,10 @@ pub struct Layout {
     pub zksync_eth: u64,
     pub zksync_usdc: u64,
 }
-#[derive(Clone, Debug, Deserialize)]
-pub struct MDCConfig {
-    pub mainnet: String,
-    pub goerli: String,
-}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Settings {
-    pub internal_api: InternalApi,
-    pub mdc_config: MDCConfig,
+    pub api: Api,
     pub rpcs: Rpcs,
     pub contracts: Contracts,
     pub token: Token,

@@ -1,9 +1,16 @@
 {
   "params": {
+<<<<<<< HEAD:configs/arbitration/block_track_width_20.json
+    "degree": 19,
+    "num_rlc_columns": 1,
+    "num_range_advice": [
+      4,
+=======
     "degree": 16,
     "num_rlc_columns": 1,
     "num_range_advice": [
       5,
+>>>>>>> perf_optimization:configs/arbitration/blockTrack_width_1.json
       2,
       0
     ],
@@ -20,6 +27,14 @@
   "break_points": {
     "gate": [
       [
+<<<<<<< HEAD:configs/arbitration/block_track_width_20.json
+        524176,
+        524178,
+        524176
+      ],
+      [
+        524176
+=======
         65424,
         65425,
         65426,
@@ -27,6 +42,7 @@
       ],
       [
         65424
+>>>>>>> perf_optimization:configs/arbitration/blockTrack_width_1.json
       ],
       []
     ],

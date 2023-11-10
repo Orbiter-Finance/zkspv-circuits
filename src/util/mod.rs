@@ -26,7 +26,6 @@ use std::{
 };
 pub mod concur_var;
 
-
 use concur_var::{set_var_thread_safe, var_thread_safe};
 #[cfg(feature = "aggregation")]
 pub mod circuit;
@@ -34,6 +33,9 @@ pub mod contract_abi;
 pub mod helpers;
 #[cfg(feature = "aggregation")]
 pub mod scheduler;
+
+pub mod errors;
+
 pub(crate) const NUM_BYTES_IN_U128: usize = 16;
 
 pub type AssignedH256<F> = [AssignedValue<F>; 2]; // H256 as hi-lo (u128, u128)
@@ -162,7 +164,10 @@ impl Halo2ConfigPinning for AggregationConfigPinning {
         };
         // set_var("FLEX_GATE_CONFIG_PARAMS", serde_json::to_string(&gate_params).unwrap());
         // set_var("LOOKUP_BITS", self.params.lookup_bits.to_string());
-        set_var_thread_safe("FLEX_GATE_CONFIG_PARAMS", serde_json::to_string(&gate_params).unwrap());
+        set_var_thread_safe(
+            "FLEX_GATE_CONFIG_PARAMS",
+            serde_json::to_string(&gate_params).unwrap(),
+        );
         set_var_thread_safe("LOOKUP_BITS", self.params.lookup_bits.to_string());
     }
 

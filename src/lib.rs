@@ -26,16 +26,18 @@ use snark_verifier_sdk::halo2::aggregation::AggregationCircuit;
 pub use zkevm_keccak::util::eth_types::Field;
 use zkevm_keccak::KeccakConfig;
 
+use crate::Network::{Arbitrum, Ethereum, Optimism, ZkSync};
 use keccak::{FnSynthesize, KeccakCircuitBuilder, SharedKeccakChip};
 pub use mpt::EthChip;
-use util::EthConfigParams;
 use util::concur_var::{set_var_thread_safe, var_thread_safe};
+use util::EthConfigParams;
 
 use crate::rlp::{
     builder::{RlcThreadBreakPoints, RlcThreadBuilder},
     rlc::RlcConfig,
     RlpConfig,
 };
+use crate::util::errors::ErrorType;
 
 pub mod keccak;
 pub mod mpt;
@@ -57,26 +59,28 @@ pub mod server;
 pub mod util;
 
 pub(crate) const ETH_LOOKUP_BITS: usize = 8; // always want 8 to range check bytes
+pub(crate) const ETH_LIMB_BITS: usize = 88;
+pub(crate) const ETH_NUM_LIMBS: usize = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum EthereumNetwork {
-    Mainnet,
-    Goerli,
+    Mainnet = 1,
+    Goerli = 5,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum ArbitrumNetwork {
-    Mainnet,
-    Goerli,
+    Mainnet = 42161,
+    Goerli = 421613,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum OptimismNetwork {
-    Mainnet,
-    Goerli,
+    Mainnet = 10,
+    Goerli = 420,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -95,27 +99,32 @@ pub enum Network {
     ZkSync(ZkSyncEraNetwork),
 }
 
-impl std::fmt::Display for Network {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ToString for Network {
+    fn to_string(&self) -> String {
         match self {
-            Network::Ethereum(ethereum_network) => match ethereum_network {
-                EthereumNetwork::Mainnet => write!(f, "mainnet"),
-                EthereumNetwork::Goerli => write!(f, "goerli"),
-            },
-            Network::Arbitrum(arbitrum_network) => match arbitrum_network {
-                ArbitrumNetwork::Mainnet => write!(f, "arbitrum mainnet"),
-                ArbitrumNetwork::Goerli => write!(f, "arbitrum goerli"),
-            },
-            Network::Optimism(optimism_network) => match optimism_network {
-                OptimismNetwork::Mainnet => write!(f, "optimism mainnet"),
-                OptimismNetwork::Goerli => write!(f, "optimism goerli"),
-            },
-            Network::ZkSync(optimism_network) => match optimism_network {
-                ZkSyncEraNetwork::Mainnet => write!(f, "zkSync mainnet"),
-                ZkSyncEraNetwork::Goerli => write!(f, "zkSync goerli"),
-            },
+            Ethereum(_) => String::from("ethereum"),
+            Arbitrum(_) => String::from("arbitrum"),
+            Optimism(_) => String::from("optimism"),
+            ZkSync(_) => String::from("zkSync"),
         }
     }
+}
+
+pub fn get_network_from_chain_id(chain_id: usize) -> Result<Network, ErrorType> {
+    match chain_id {
+        1 => Ok(Ethereum(EthereumNetwork::Mainnet)),
+        5 => Ok(Ethereum(EthereumNetwork::Goerli)),
+        42161 => Ok(Arbitrum(ArbitrumNetwork::Mainnet)),
+        421613 => Ok(Arbitrum(ArbitrumNetwork::Goerli)),
+        10 => Ok(Optimism(OptimismNetwork::Mainnet)),
+        420 => Ok(Optimism(OptimismNetwork::Goerli)),
+        _ => Err(ErrorType::NetworkNotSupported),
+    }
+}
+
+#[test]
+fn test_n() {
+    println!("N:{:?}", Ethereum(EthereumNetwork::Goerli).to_string());
 }
 
 #[derive(Clone, Debug)]
@@ -250,7 +259,7 @@ impl<F: Field, FnPhase1: FnSynthesize<F>> Circuit<F> for EthCircuitBuilder<F, Fn
         //     serde_json::from_str(&var("ETH_CONFIG_PARAMS").unwrap()).unwrap();
         // EthConfig::configure(meta, params)
         let params: EthConfigParams =
-        serde_json::from_str(&var_thread_safe("ETH_CONFIG_PARAMS").unwrap()).unwrap();
+            serde_json::from_str(&var_thread_safe("ETH_CONFIG_PARAMS").unwrap()).unwrap();
         EthConfig::configure(meta, params)
     }
 
@@ -321,7 +330,9 @@ pub trait EthPreCircuit: Sized {
             // .unwrap();
             // circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
             let config_params: EthConfigParams = serde_json::from_str(
-                var_thread_safe("ETH_CONFIG_PARAMS").expect("ETH_CONFIG_PARAMS is not set").as_str(),
+                var_thread_safe("ETH_CONFIG_PARAMS")
+                    .expect("ETH_CONFIG_PARAMS is not set")
+                    .as_str(),
             )
             .unwrap();
             circuit.config(config_params.degree as usize, Some(config_params.unusable_rows));
@@ -363,7 +374,8 @@ pub trait AggregationPreCircuit: Sized {
         if stage != CircuitBuilderStage::Prover {
             // let minimum_rows = var("UNUSABLE_ROWS").map(|s| s.parse().unwrap_or(10)).unwrap_or(10);
             // circuit.config(params.k(), Some(minimum_rows));
-            let minimum_rows = var_thread_safe("UNUSABLE_ROWS").map(|s| s.parse().unwrap_or(10)).unwrap_or(10);
+            let minimum_rows =
+                var_thread_safe("UNUSABLE_ROWS").map(|s| s.parse().unwrap_or(10)).unwrap_or(10);
             circuit.config(params.k(), Some(minimum_rows));
         }
         circuit

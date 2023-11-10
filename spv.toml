@@ -6,12 +6,11 @@ password = "123456789"
 name = "spv"
 
 [api]
-host = "127.0.0.1"
-port = 8100
-
-[internal_api]
-host = "0.0.0.0"
-port = 3030
+spv_host = "127.0.0.1"
+spv_port = 8100
+spv_path = "rpc"
+internal_host = "127.0.0.1"
+internal_port = 3030
 
 [mdc_config]
 mainnet = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB" # crypto punks address

@@ -53,7 +53,7 @@ impl TransactionTask {
 
 impl CircuitType for (Network, u32) {
     fn name(&self) -> String {
-        format!("{}_{}", self.0, self.1)
+        format!("{}_{}", self.0.to_string(), self.1)
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
         let pinning_path = pinning_path.as_ref();
@@ -83,7 +83,8 @@ impl SimpleTask for TransactionTask {
         let provider = get_provider(&network);
         let constructor = TransactionConstructor {
             block_number: self.block_number,
-            transaction_index: self.transaction_index,
+            transaction_index: Option::from(self.transaction_index),
+            transaction_index_bytes: None,
             transaction_rlp: self.transaction_rlp.clone(),
             merkle_proof: self.merkle_proof.clone(),
             transaction_pf_max_depth: self.transaction_pf_max_depth,

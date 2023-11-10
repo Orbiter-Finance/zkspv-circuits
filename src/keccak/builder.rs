@@ -4,7 +4,7 @@ use crate::rlp::rlc::FIRST_PHASE;
 
 use super::*;
 
-use crate::util::concur_var::{var_thread_safe, set_var_thread_safe};
+use crate::util::concur_var::{set_var_thread_safe, var_thread_safe};
 
 /// We need a more custom synthesize function to work with the outputs of keccak RLCs.
 pub trait FnSynthesize<F> =

@@ -1,19 +1,21 @@
 use ethers_core::types::{Bytes, H256};
 use ethers_core::utils::keccak256;
-use std::{fmt::format, ops::Range, path::Path};
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use snark_verifier_sdk::Snark;
 
 use crate::arbitration::circuit_types::{
     EthStorageCircuitType, EthTransactionCircuitType, FinalAssemblyCircuitType,
-    FinalAssemblyFinality,
 };
-use crate::storage::util::{get_mdc_storage_circuit, StorageConstructor};
-use crate::storage::EthBlockStorageCircuit;
+use crate::arbitration::final_assembly::FinalAssemblyType;
+use crate::storage::contract_storage::util::{
+    get_contracts_storage_circuit, MultiBlocksContractsStorageConstructor,
+};
+use crate::storage::contract_storage::ObContractsStorageCircuit;
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
+use crate::transaction::EthTransactionType;
+use crate::util::scheduler::CircuitType;
 use crate::{
     track_block::{util::get_eth_track_block_circuit, EthTrackBlockCircuit},
     transaction::ethereum::EthBlockTransactionCircuit,
@@ -26,49 +28,12 @@ use super::circuit_types::{ArbitrationCircuitType, EthTrackBlockCircuitType};
 pub type CrossChainNetwork = Network;
 
 #[derive(Clone, Debug)]
-pub struct FinalAssemblyConstructor {
-    pub transaction_task: TransactionTask,
-    pub eth_block_track_task: ETHBlockTrackTask,
-    pub mdc_state_task0: MDCStateTask,
-    pub mdc_state_task1: MDCStateTask,
-}
-
-#[derive(Clone, Debug)]
-pub struct FinalAssemblyTask {
-    pub round: usize,
-    pub network: Network,
-    pub constructor: FinalAssemblyConstructor,
-}
-
-impl scheduler::Task for FinalAssemblyTask {
-    type CircuitType = FinalAssemblyCircuitType;
-
-    fn circuit_type(&self) -> Self::CircuitType {
-        FinalAssemblyCircuitType { round: self.round, network: self.network }
-    }
-
-    fn name(&self) -> String {
-        format!("final_{}", self.round)
-    }
-
-    fn dependencies(&self) -> Vec<Self> {
-        vec![]
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct ETHBlockTrackTask {
     pub input: EthTrackBlockCircuit,
     pub network: Network,
-    pub tasks_len: u64,
-    pub task_width: u64,
+    pub tasks_len: u64,  // Group number of blocks
+    pub task_width: u64, // Length of a group of blocks
     pub constructor: Vec<TrackBlockConstructor>,
-}
-
-impl ETHBlockTrackTask {
-    pub fn is_aggregated(&self) -> bool {
-        return self.tasks_len != 1;
-    }
 }
 
 impl scheduler::Task for ETHBlockTrackTask {
@@ -83,24 +48,24 @@ impl scheduler::Task for ETHBlockTrackTask {
     }
 
     fn name(&self) -> String {
-        if self.is_aggregated() {
+        if self.circuit_type().is_aggregated() {
             format!(
-                "blockTrack_aggregated_task_width_{}_task_len_{}",
+                "block_track_aggregated_width_{}_task_len_{}",
                 self.task_width,
                 self.constructor.len()
             )
         } else {
             format!(
-                "blockTrack_width_{}_start_{}_end_{}",
+                "block_track_width_{}_start_{}_end_{}",
                 self.task_width,
-                self.constructor[0].block_number_interval.first().unwrap(),
-                self.constructor[0].block_number_interval.last().unwrap()
+                self.constructor[0].blocks_number.first().unwrap(),
+                self.constructor[0].blocks_number.last().unwrap()
             )
         }
     }
 
     fn dependencies(&self) -> Vec<Self> {
-        if self.is_aggregated() {
+        if self.circuit_type().is_aggregated() {
             let constructors = self.constructor.clone();
             let result = constructors
                 .into_iter()
@@ -119,69 +84,12 @@ impl scheduler::Task for ETHBlockTrackTask {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct MDCStateTask {
-    pub input: EthBlockStorageCircuit,
-    pub tasks_len: u64,
-    pub task_width: u64,
-    pub constructor: Vec<StorageConstructor>,
-}
-
-impl scheduler::Task for MDCStateTask {
-    type CircuitType = EthStorageCircuitType;
-
-    fn circuit_type(&self) -> Self::CircuitType {
-        EthStorageCircuitType {
-            network: self.constructor[0].network,
-            tasks_len: self.tasks_len,
-            task_width: self.task_width,
-        }
-    }
-
-    fn name(&self) -> String {
-        if self.circuit_type().is_aggregated() {
-            format!("storage_aggregated_task_len_{}", self.constructor.len())
-        } else {
-            format!(
-                "storage_width_{}_address_{}_slots_{}_block_number_{}",
-                self.task_width,
-                self.constructor[0].address,
-                self.constructor[0].slots[0],
-                self.constructor[0].block_number,
-            )
-        }
-    }
-
-    fn dependencies(&self) -> Vec<Self> {
-        if self.circuit_type().is_aggregated() {
-            let constructor = self.constructor.clone();
-            let result = constructor
-                .into_iter()
-                .map(|constructor| Self {
-                    input: get_mdc_storage_circuit(constructor.clone()),
-                    tasks_len: 1u64,
-                    task_width: self.task_width,
-                    constructor: [constructor].to_vec(),
-                })
-                .collect_vec();
-            result
-        } else {
-            vec![]
-        }
-    }
-}
-
-// #[allow(clippy::large_enum_variant)]
-// #[derive(Clone, Debug)]
-// pub enum TransactionInput {
-//     EthBlockTransactionCircuit,
-// }
-
+/// Transaction
 #[derive(Clone, Debug)]
 pub struct TransactionTask {
     pub input: EthBlockTransactionCircuit,
+    pub tx_type: EthTransactionType,
     pub tasks_len: u64,
-    pub task_width: u64,
     pub constructor: Vec<TransactionConstructor>,
     pub aggregated: bool,
 }
@@ -198,17 +106,21 @@ impl scheduler::Task for TransactionTask {
     fn circuit_type(&self) -> Self::CircuitType {
         EthTransactionCircuitType {
             network: self.constructor[0].network,
+            tx_type: self.tx_type.clone(),
             tasks_len: self.tasks_len,
-            task_width: self.task_width,
             aggregated: self.aggregated,
         }
     }
 
     fn name(&self) -> String {
         if self.circuit_type().is_aggregated() {
-            format!("transaction_aggregated_task_len_{}", self.constructor.len())
+            format!(
+                "transaction_aggregated_{}_task_len_{}",
+                self.tx_type.to_string(),
+                self.tasks_len
+            )
         } else {
-            format!("transaction_width_{}_tx_{}", self.task_width, self.hash())
+            format!("transaction_{}_tx_{}", self.tx_type.to_string(), self.hash())
         }
     }
 
@@ -219,8 +131,8 @@ impl scheduler::Task for TransactionTask {
                 .into_iter()
                 .map(|constructor| Self {
                     input: get_eth_transaction_circuit(constructor.clone()),
+                    tx_type: self.tx_type.clone(),
                     tasks_len: 1u64,
-                    task_width: self.task_width,
                     constructor: [constructor].to_vec(),
                     aggregated: false,
                 })
@@ -236,6 +148,86 @@ impl scheduler::Task for TransactionTask {
 #[derive(Clone, Debug)]
 pub enum TransactionInput {
     EthereumTx(),
+}
+
+#[derive(Clone, Debug)]
+pub struct MDCStateTask {
+    pub input: ObContractsStorageCircuit,
+    pub single_block_include_contracts: u64,
+    pub multi_blocks_number: u64,
+    pub constructor: Vec<MultiBlocksContractsStorageConstructor>,
+    pub aggregated: bool,
+}
+
+impl scheduler::Task for MDCStateTask {
+    type CircuitType = EthStorageCircuitType;
+
+    fn circuit_type(&self) -> Self::CircuitType {
+        EthStorageCircuitType {
+            network: self.constructor[0].network,
+            single_block_include_contracts: self.single_block_include_contracts,
+            multi_blocks_number: self.multi_blocks_number,
+            aggregated: self.aggregated,
+        }
+    }
+
+    fn name(&self) -> String {
+        self.circuit_type().name()
+    }
+
+    fn dependencies(&self) -> Vec<Self> {
+        if self.circuit_type().is_aggregated() {
+            let constructor = self.constructor.clone();
+            let result = constructor
+                .into_iter()
+                .map(|constructor| Self {
+                    input: get_contracts_storage_circuit(constructor.clone()),
+                    single_block_include_contracts: self.single_block_include_contracts,
+                    multi_blocks_number: self.multi_blocks_number,
+                    constructor: [constructor].to_vec(),
+                    aggregated: self.aggregated,
+                })
+                .collect_vec();
+            result
+        } else {
+            vec![]
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FinalAssemblyConstructor {
+    pub transaction_task: Option<TransactionTask>,
+    pub eth_block_track_task: Option<ETHBlockTrackTask>,
+    pub mdc_state_task: Option<Vec<MDCStateTask>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct FinalAssemblyTask {
+    pub round: usize,
+    pub aggregation_type: FinalAssemblyType,
+    pub network: Network,
+    pub constructor: FinalAssemblyConstructor,
+}
+
+impl scheduler::Task for FinalAssemblyTask {
+    type CircuitType = FinalAssemblyCircuitType;
+
+    fn circuit_type(&self) -> Self::CircuitType {
+        FinalAssemblyCircuitType {
+            round: self.round,
+            aggregation_type: self.aggregation_type.clone(),
+            network: self.network,
+        }
+    }
+
+    fn name(&self) -> String {
+        self.circuit_type().name()
+    }
+
+    fn dependencies(&self) -> Vec<Self> {
+        vec![]
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -297,13 +289,36 @@ impl scheduler::Task for ArbitrationTask {
                     })];
                 }
                 let task = task.clone();
-
-                vec![
-                    ArbitrationTask::Transaction(task.constructor.transaction_task),
-                    ArbitrationTask::ETHBlockTrack(task.constructor.eth_block_track_task),
-                    ArbitrationTask::MDCState(task.constructor.mdc_state_task0),
-                    ArbitrationTask::MDCState(task.constructor.mdc_state_task1),
-                ]
+                match task.aggregation_type {
+                    FinalAssemblyType::Source => {
+                        let mut task_array = vec![];
+                        task_array.push(ArbitrationTask::Transaction(
+                            task.constructor.transaction_task.unwrap(),
+                        ));
+                        task_array.push(ArbitrationTask::ETHBlockTrack(
+                            task.constructor.eth_block_track_task.unwrap(),
+                        ));
+                        let mut mdc_state_tasks = task
+                            .constructor
+                            .mdc_state_task
+                            .unwrap()
+                            .iter()
+                            .map(|mdc_state| ArbitrationTask::MDCState(mdc_state.clone()))
+                            .collect_vec();
+                        task_array.append(&mut mdc_state_tasks);
+                        task_array
+                    }
+                    FinalAssemblyType::Destination => {
+                        vec![
+                            ArbitrationTask::Transaction(
+                                task.constructor.transaction_task.unwrap(),
+                            ),
+                            ArbitrationTask::ETHBlockTrack(
+                                task.constructor.eth_block_track_task.unwrap(),
+                            ),
+                        ]
+                    }
+                }
             }
         }
     }

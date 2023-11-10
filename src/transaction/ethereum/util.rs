@@ -6,7 +6,8 @@ use ethers_core::types::Bytes;
 #[derive(Clone, Debug)]
 pub struct TransactionConstructor {
     pub block_number: u32,
-    pub transaction_index: u32,
+    pub transaction_index: Option<u32>,
+    pub transaction_index_bytes: Option<Vec<u8>>,
     pub transaction_rlp: Vec<u8>,
     pub merkle_proof: Vec<Bytes>,
     pub transaction_pf_max_depth: usize,

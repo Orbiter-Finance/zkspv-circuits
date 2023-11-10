@@ -1,6 +1,6 @@
 {
   "params": {
-    "degree": 20,
+    "degree": 21,
     "num_rlc_columns": 1,
     "num_range_advice": [
       24,

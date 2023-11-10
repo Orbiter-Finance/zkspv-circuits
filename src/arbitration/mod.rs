@@ -18,7 +18,9 @@ use crate::util::scheduler::{SchedulerCommon, Task};
 pub mod circuit_types;
 pub mod final_assembly;
 pub mod helper;
+pub mod router;
 pub mod test;
+pub mod types;
 
 // pub struct ArbitrationScheduler <T: Task> {
 

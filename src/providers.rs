@@ -20,7 +20,7 @@ use ethers_providers::{Http, Middleware, Provider, ProviderError, StreamExt};
 use futures::future::{join, join_all};
 use itertools::Itertools;
 use lazy_static::__Deref;
-use rlp::{decode, decode_list, Encodable, Rlp, RlpIterator, RlpStream};
+use rlp::{decode, decode_list, Decodable, Encodable, Rlp, RlpIterator, RlpStream};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use tokio::runtime::Runtime;
@@ -31,15 +31,23 @@ use crate::config::contract::zksync_era_contract::{
 use crate::config::token::zksync_era_token::{
     get_zksync_era_eth_address, get_zksync_era_token_layout_by_address,
 };
+use crate::ecdsa::util::recover_tx_info;
+use crate::ecdsa::EthEcdsaInput;
 use crate::mpt::MPTInput;
 use crate::receipt::{EthBlockReceiptInput, EthReceiptInput};
-use crate::storage::util::EbcRuleParams;
-use crate::storage::EbcRuleVersion;
+use crate::storage::contract_storage::util::MultiBlocksContractsStorageConstructor;
+use crate::storage::contract_storage::{
+    BlockInput, ObContractsStorageBlockInput, ObContractsStorageInput,
+    EBC_RULE_PROOF_VALUE_MAX_BYTE_LEN,
+};
+use crate::storage::{
+    EbcRuleVersion, ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN, STORAGE_PROOF_VALUE_MAX_BYTE_LEN,
+};
 use crate::track_block::util::TrackBlockConstructor;
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
 use crate::transaction::zksync_era::now::{ZkSyncBlockTransactionInput, ZkSyncTransactionsInput};
-use crate::transaction::{EIP_1559_TX_TYPE, EIP_2718_TX_TYPE};
+use crate::transaction::{EIP_1559_TX_TYPE, EIP_2718_TX_TYPE, TX_MAX_LEN};
 use crate::util::contract_abi::erc20::{decode_input, is_erc20_transaction};
 use crate::util::{h256_tree_root, h256_tree_root_and_proof, h256_tree_verify, h256_non_standard_tree_root_and_proof};
 use crate::util::helpers::calculate_storage_mapping_key;
@@ -48,9 +56,6 @@ use crate::{
     util::{get_merkle_mountain_range, u256_to_bytes32_be},
     Network,
 };
-
-const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 114;
-const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
 const TRANSACTION_INDEX_MAX_KEY_BYTES_LEN: usize = 3;
 const K256_MAX_KEY_BYTES_LEN: usize = 32;
 
@@ -88,14 +93,13 @@ pub fn get_block_track_input(
     provider: &Provider<Http>,
     constructor: &TrackBlockConstructor,
 ) -> EthTrackBlockInput {
-    // assert_eq!(block_number_interval,256,"block_number_interval is a fixed-length array with a length of 256");
     let rt = Runtime::new().unwrap();
-    let block_number_interval = constructor.block_number_interval.clone();
-    let mut block = Vec::with_capacity(block_number_interval.len());
-    let mut block_number = Vec::with_capacity(block_number_interval.len());
-    let mut block_hash = Vec::with_capacity(block_number_interval.len());
-    let mut block_header = Vec::with_capacity(block_number_interval.len());
-    for i in block_number_interval.clone() {
+    let blocks_number = constructor.blocks_number.clone();
+    let mut block = Vec::with_capacity(blocks_number.len());
+    let mut block_number = Vec::with_capacity(blocks_number.len());
+    let mut block_hash = Vec::with_capacity(blocks_number.len());
+    let mut block_header = Vec::with_capacity(blocks_number.len());
+    for i in blocks_number.clone() {
         let block_element = rt.block_on(provider.get_block(i)).unwrap().unwrap();
         let block_element_hash = block_element.hash.unwrap();
         let block_element_header = get_block_rlp(&block_element);
@@ -105,9 +109,7 @@ pub fn get_block_track_input(
         block_header.push(block_element_header);
     }
 
-    let target_index = constructor.block_target - block_number_interval.first().unwrap();
-
-    EthTrackBlockInput { block, block_number, block_hash, block_header, target_index }
+    EthTrackBlockInput { block, block_number, block_hash, block_header }
 }
 
 pub fn get_receipt_input(
@@ -150,7 +152,8 @@ pub fn get_receipt_input(
 pub fn get_transaction_input(
     provider: &Provider<Http>,
     block_number: u32,
-    transaction_index: u32,
+    transaction_index: Option<u32>,
+    transaction_index_bytes: Option<Vec<u8>>,
     transaction_rlp: Vec<u8>,
     merkle_proof: Vec<Bytes>,
     transaction_pf_max_depth: usize,
@@ -159,8 +162,8 @@ pub fn get_transaction_input(
     let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
     let block_hash = block.hash.unwrap();
     let block_header = get_block_rlp(&block);
-    let transaction_key_u256 = U256::from(transaction_index);
-    let transaction_key = get_buffer_rlp(transaction_key_u256.as_u32());
+    let transaction_key = transaction_index_bytes
+        .unwrap_or(get_buffer_rlp(U256::from(transaction_index.unwrap()).as_u32()));
     let slot_is_empty = false;
     let transaction_proofs = MPTInput {
         path: (&transaction_key).into(),
@@ -168,18 +171,29 @@ pub fn get_transaction_input(
         root_hash: block.transactions_root,
         proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
         slot_is_empty,
-        value_max_byte_len: transaction_rlp.len(),
+        value_max_byte_len: TX_MAX_LEN,
         max_depth: transaction_pf_max_depth,
         max_key_byte_len: TRANSACTION_INDEX_MAX_KEY_BYTES_LEN,
         key_byte_len: Some(transaction_key.len()),
     };
 
+    let transaction = Transaction::decode(&Rlp::new(&transaction_rlp)).unwrap();
+    let (signature, message, message_hash, public_key) = recover_tx_info(&transaction);
     EthBlockTransactionInput {
         block,
         block_number,
         block_hash,
         block_header,
-        transaction: EthTransactionInput { transaction_index, transaction_proofs },
+        transaction: EthTransactionInput {
+            transaction_index: transaction_index.unwrap(),
+            transaction_proofs,
+            transaction_ecdsa_verify: EthEcdsaInput {
+                signature,
+                message,
+                message_hash,
+                public_key,
+            },
+        },
     }
 }
 
@@ -190,7 +204,6 @@ pub fn get_storage_input(
     slots: Vec<H256>,
     acct_pf_max_depth: usize,
     storage_pf_max_depth: usize,
-    ebc_rule_params: EbcRuleParams,
 ) -> EthBlockStorageInput {
     let rt = Runtime::new().unwrap();
     let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
@@ -241,31 +254,129 @@ pub fn get_storage_input(
         })
         .collect();
 
-    // ebc mpt
-    let mut ebc_rule_pfs;
-    {
-        let path = ebc_rule_params.ebc_rule_key;
-        let value = ebc_rule_params.ebc_rule_value.to_vec();
-        ebc_rule_pfs = MPTInput {
-            path: path.into(),
-            value,
-            root_hash: ebc_rule_params.ebc_rule_root,
-            proof: ebc_rule_params.ebc_rule_merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
-            slot_is_empty,
-            value_max_byte_len: ebc_rule_params.ebc_rule_value.len(),
-            max_depth: ebc_rule_params.ebc_rule_pf_max_depth,
-            max_key_byte_len: K256_MAX_KEY_BYTES_LEN,
-            key_byte_len: None,
-        }
-    }
-
     EthBlockStorageInput {
         block,
         block_number,
         block_hash,
         block_header,
-        storage: EthStorageInput { addr, acct_pf, storage_pfs, ebc_rule_pfs },
+        storage: EthStorageInput { addr, acct_pf, storage_pfs },
     }
+}
+
+pub fn get_contract_storage_input(
+    provider: &Provider<Http>,
+    constructor: MultiBlocksContractsStorageConstructor,
+) -> ObContractsStorageBlockInput {
+    let rt = Runtime::new().unwrap();
+    let blocks_contracts_storage = constructor
+        .blocks_contracts_storage
+        .into_iter()
+        .map(|constructor| {
+            let block_number = constructor.block_number;
+            let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
+            let block_hash = block.hash.unwrap();
+            let block_header = get_block_rlp(&block);
+
+            let ebc_rule_params = constructor.ebc_rule_params;
+            let block_contracts_storage = constructor
+                .block_contracts_storage
+                .into_iter()
+                .map(|c| {
+                    let address = c.contract_address;
+                    let slots = c.slots;
+
+                    let pf = rt
+                        .block_on(provider.get_proof(
+                            address,
+                            slots,
+                            Some(Number(BlockNumber::from(block_number))),
+                        ))
+                        .unwrap();
+
+                    let acct_key = H256(keccak256(address));
+                    let slot_is_empty = !is_assigned_slot(&acct_key, &pf.account_proof);
+                    let acct_pf = MPTInput {
+                        path: acct_key.into(),
+                        value: get_acct_rlp(&pf),
+                        root_hash: block.state_root,
+                        proof: pf.account_proof.into_iter().map(|x| x.to_vec()).collect(),
+                        value_max_byte_len: ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN,
+                        max_depth: c.acct_pf_max_depth,
+                        max_key_byte_len: K256_MAX_KEY_BYTES_LEN,
+                        slot_is_empty,
+                        key_byte_len: None,
+                    };
+
+                    let storage_pfs = pf
+                        .storage_proof
+                        .into_iter()
+                        .map(|storage_pf| {
+                            let path = H256(keccak256(storage_pf.key));
+                            let slot_is_empty = !is_assigned_slot(&path, &storage_pf.proof);
+                            let value = if slot_is_empty {
+                                vec![0u8]
+                            } else {
+                                storage_pf.value.rlp_bytes().to_vec()
+                            };
+                            (
+                                storage_pf.key,
+                                storage_pf.value,
+                                MPTInput {
+                                    path: path.into(),
+                                    value,
+                                    root_hash: pf.storage_hash,
+                                    proof: storage_pf
+                                        .proof
+                                        .into_iter()
+                                        .map(|x| x.to_vec())
+                                        .collect(),
+                                    value_max_byte_len: STORAGE_PROOF_VALUE_MAX_BYTE_LEN,
+                                    max_depth: c.storage_pf_max_depth,
+                                    max_key_byte_len: K256_MAX_KEY_BYTES_LEN,
+                                    slot_is_empty,
+                                    key_byte_len: None,
+                                },
+                            )
+                        })
+                        .collect();
+
+                    EthStorageInput { addr: address, acct_pf, storage_pfs }
+                })
+                .collect();
+
+            // ebc mpt
+            let mut ebc_rule_pfs;
+            {
+                let path = ebc_rule_params.ebc_rule_key;
+                let value = ebc_rule_params.ebc_rule_value.to_vec();
+                ebc_rule_pfs = MPTInput {
+                    path: path.into(),
+                    value,
+                    root_hash: ebc_rule_params.ebc_rule_root,
+                    proof: ebc_rule_params
+                        .ebc_rule_merkle_proof
+                        .into_iter()
+                        .map(|x| x.to_vec())
+                        .collect(),
+                    slot_is_empty: false,
+                    value_max_byte_len: EBC_RULE_PROOF_VALUE_MAX_BYTE_LEN,
+                    max_depth: ebc_rule_params.ebc_rule_pf_max_depth,
+                    max_key_byte_len: K256_MAX_KEY_BYTES_LEN,
+                    key_byte_len: None,
+                }
+            }
+
+            let block_input = BlockInput { block, block_number, block_hash, block_header };
+
+            let ob_contracts_storage_input = ObContractsStorageInput {
+                contracts_storage: block_contracts_storage, // mdc ,manage
+                ebc_rules_pfs: ebc_rule_pfs,
+            };
+            (block_input, ob_contracts_storage_input)
+        })
+        .collect();
+
+    ObContractsStorageBlockInput { contract_storage_block: blocks_contracts_storage }
 }
 
 pub fn get_zksync_transaction_and_storage_input(

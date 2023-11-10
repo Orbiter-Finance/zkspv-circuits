@@ -35,14 +35,14 @@ use rayon::prelude::*;
 
 /// This is a tag for the type of a circuit, independent of the circuit's inputs.
 /// For example, it can be used to fetch the proving key for the circuit.
-pub trait CircuitType: Clone + Debug + Eq + Hash + Send + Sync{
+pub trait CircuitType: Clone + Debug + Eq + Hash + Send + Sync {
     fn name(&self) -> String;
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32;
 }
 
 /// This is an identifier for a specific proof request, consisting of the circuit type together with any data necessary to create the circuit inputs.
 /// It should be thought of as a node in a DAG (directed acyclic graph), where the edges specify previous SNARKs this one depends on.
-pub trait Task: Clone + Debug + Sync + Send{
+pub trait Task: Clone + Debug + Sync + Send {
     type CircuitType: CircuitType;
 
     fn circuit_type(&self) -> Self::CircuitType;
@@ -175,7 +175,9 @@ impl<T: Task> SchedulerCommon for EthScheduler<T> {
 
 /// A scheduler that can recursively generate SNARKs for a DAG of tasks. The directed acyclic graph (DAG) is implicitly
 /// defined by the `Task` implementation and `get_circuit`. For any task, either a snark or calldata + on-chain verifier can be generated.
-pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::CircuitType> + Sync{
+pub trait Scheduler:
+    SchedulerCommon<CircuitType = <Self::Task as Task>::CircuitType> + Sync
+{
     type Task: Task;
     /// The intended use is that `CircuitRouter` is an enum containing the different `PreCircuit`s that `Task` can become in the `get_circuit` function.
     // TODO: better way to do this with macros? `PreCircuit` is not object safe so cannot use `dyn`
@@ -211,13 +213,16 @@ pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::Circuit
     }
     fn cache_srs_pk_files(&self, task: Self::Task) -> Box<Snark> {
         let snark_path = self.snark_cache_path(&task);
-       
+
         let read_only = self.pkey_readonly();
 
         // Recursively generate the SNARKs for the dependencies of this task.
         #[cfg(feature = "parallel-sub-circuit")]
-        let dep_snarks: Vec<Box<Snark>> =
-            task.dependencies().par_iter().map(|dep| self.cache_srs_pk_files(dep.clone())).collect();
+        let dep_snarks: Vec<Box<Snark>> = task
+            .dependencies()
+            .par_iter()
+            .map(|dep| self.cache_srs_pk_files(dep.clone()))
+            .collect();
         #[cfg(not(feature = "parallel-sub-circuit"))]
         let dep_snarks: Vec<Box<Snark>> =
             task.dependencies().into_iter().map(|dep| self.cache_srs_pk_files(dep)).collect();
@@ -243,7 +248,8 @@ pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::Circuit
             return Box::new(snark);
         } else {
             let snark_path = Some(snark_path);
-            let snark_result = pre_circuit.gen_snark_shplonk(params, &pk, &pinning_path, snark_path);
+            let snark_result =
+                pre_circuit.gen_snark_shplonk(params, &pk, &pinning_path, snark_path);
             return Box::new(snark_result);
         }
     }
@@ -296,7 +302,7 @@ pub trait Scheduler: SchedulerCommon<CircuitType = <Self::Task as Task>::Circuit
             // calldata is serialized as a hex string
             return calldata;
         }
-        
+
         #[cfg(feature = "parallel-sub-circuit")]
         let dep_snarks: Vec<Box<Snark>> =
             task.dependencies().par_iter().map(|dep| self.get_snark(dep.clone())).collect();

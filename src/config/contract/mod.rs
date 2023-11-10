@@ -5,20 +5,6 @@ use ethers_core::types::{Address, H160, H256};
 use std::str::FromStr;
 
 #[derive(Debug)]
-pub struct MDCConfig {
-    pub mainnet: Address,
-    pub goerli: Address,
-}
-
-pub fn get_mdc_config() -> MDCConfig {
-    let setting = Settings::get();
-    MDCConfig {
-        mainnet: H160::from_str(setting.mdc_config.mainnet.as_str()).unwrap(),
-        goerli: H160::from_str(setting.mdc_config.goerli.as_str()).unwrap(),
-    }
-}
-
-#[derive(Debug)]
 pub struct ContractParams {
     pub address: Address,
     pub layout: H256,

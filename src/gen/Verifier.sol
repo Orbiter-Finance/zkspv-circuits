@@ -18,7 +18,7 @@ contract Verifier {
         bytes calldata proof
     ) public view{
        VerifierRouter verifier = VerifierRouter(verifierRouterAddr);
-      require(verifier.verify(instances, proof), "invalid proof");
+      require(verifier.verify(instance, proof), "invalid proof");
     }
 
     function parse_instance(bytes calldata _instance) public pure returns(uint256[] memory)

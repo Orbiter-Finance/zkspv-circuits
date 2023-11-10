@@ -80,3 +80,18 @@ where
         unreachable!();
     }
 }
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum FinalAssemblyType {
+    Source,
+    Destination,
+}
+
+impl ToString for FinalAssemblyType {
+    fn to_string(&self) -> String {
+        match self {
+            FinalAssemblyType::Source => String::from("source"),
+            FinalAssemblyType::Destination => String::from("destination"),
+        }
+    }
+}

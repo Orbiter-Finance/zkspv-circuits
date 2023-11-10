@@ -6,15 +6,10 @@ use crate::util::helpers::get_provider;
 use crate::util::EthConfigParams;
 use crate::{EthPreCircuit, EthereumNetwork, Network};
 use std::env::set_var;
-use std::ops::Range;
 
-fn get_test_circuit(
-    block_number_interval: Vec<u64>,
-    block_target: u64,
-    network: Network,
-) -> EthTrackBlockCircuit {
+fn get_test_circuit(blocks_number: Vec<u64>, network: Network) -> EthTrackBlockCircuit {
     let provider = get_provider(&network);
-    let constructor = TrackBlockConstructor { block_number_interval, block_target, network };
+    let constructor = TrackBlockConstructor { blocks_number, network };
     EthTrackBlockCircuit::from_provider(&provider, constructor)
 }
 
@@ -23,15 +18,9 @@ pub fn test_track_block() -> Result<(), Box<dyn std::error::Error>> {
     let params = EthConfigParams::from_path("configs/tests/track_block.json");
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let k = params.degree;
-    let mut block_number_interval = vec![17113952,17113957,17113959];
+    let blocks_number = vec![17113952, 17113957, 17113959];
 
-    let block_target = 17113953;
-
-    let input = get_test_circuit(
-        block_number_interval,
-        block_target,
-        Network::Ethereum(EthereumNetwork::Mainnet),
-    );
+    let input = get_test_circuit(blocks_number, Network::Ethereum(EthereumNetwork::Mainnet));
     let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())
