@@ -41,6 +41,7 @@ use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput
 use crate::transaction::zksync_era::now::{ZkSyncBlockTransactionInput, ZkSyncTransactionsInput};
 use crate::transaction::{EIP_1559_TX_TYPE, EIP_2718_TX_TYPE};
 use crate::util::contract_abi::erc20::{decode_input, is_erc20_transaction};
+use crate::util::{h256_tree_root, h256_tree_root_and_proof, h256_tree_verify, h256_non_standard_tree_root_and_proof};
 use crate::util::helpers::calculate_storage_mapping_key;
 use crate::{
     storage::{EthBlockStorageInput, EthStorageInput},
@@ -52,6 +53,30 @@ const ACCOUNT_PROOF_VALUE_MAX_BYTE_LEN: usize = 114;
 const STORAGE_PROOF_VALUE_MAX_BYTE_LEN: usize = 33;
 const TRANSACTION_INDEX_MAX_KEY_BYTES_LEN: usize = 3;
 const K256_MAX_KEY_BYTES_LEN: usize = 32;
+
+
+pub fn get_batch_block_merkle_root(
+    provider: &Provider<Http>,
+    start_block_num: u32,
+    end_block_num: u32,
+    block_verify_index: u32,
+) {
+
+    let rt = Runtime::new().unwrap();
+    assert!(start_block_num <= end_block_num);
+    let mut leaves = Vec::with_capacity((end_block_num - start_block_num) as usize);
+    let merkle_verify_leaf_index = block_verify_index - start_block_num;
+    for block_num in (start_block_num..=end_block_num) {
+        let block = rt.block_on(provider.get_block(block_num as u64)).unwrap().unwrap();
+        let block_hash = block.hash.unwrap();
+        leaves.push(block_hash);
+    }
+    let (proof_root, proof, path) = h256_non_standard_tree_root_and_proof(&leaves, merkle_verify_leaf_index);
+
+    h256_tree_verify(&proof_root, &leaves[merkle_verify_leaf_index as usize], &proof, &path);
+
+
+}
 
 fn get_buffer_rlp(value: u32) -> Vec<u8> {
     let mut rlp: RlpStream = RlpStream::new();

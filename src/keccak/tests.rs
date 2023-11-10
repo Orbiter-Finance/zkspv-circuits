@@ -17,8 +17,11 @@ use crate::{
         transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
     },
     rlp::rlc::RlcConfig,
+    util::{helpers::get_provider, h256_non_standard_tree_root_and_proof, h256_tree_verify}, Network, EthereumNetwork, providers::get_batch_block_merkle_root,
 };
 use ark_std::{end_timer, start_timer};
+use ethers_core::types::H256;
+use ethers_providers::{Provider, Http, Middleware};
 use halo2_base::{
     gates::{
         flex_gate::{FlexGateConfig, GateStrategy},
@@ -31,12 +34,44 @@ use itertools::{assert_equal, Itertools};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
+use tokio::runtime::Runtime;
 use std::{
     env::{set_var, var},
     fs::File,
     io::{BufRead, BufReader, Write},
 };
 use zkevm_keccak::keccak_packed_multi::get_keccak_capacity;
+
+
+#[test]
+pub fn test_merkle_root_verify() {
+    let provider = get_provider(&Network::Ethereum(EthereumNetwork::Mainnet));
+    let start_block_num = 17113953;
+    let end_block_num = 17114080;
+    let leaves = get_block_batch_hashes(&provider, start_block_num.clone(), end_block_num.clone());
+
+    for proof_index in start_block_num..end_block_num+1 {
+        let verify_index = proof_index - start_block_num;
+        let (proof_root, proof, path) = h256_non_standard_tree_root_and_proof(&leaves, verify_index.clone());
+        h256_tree_verify(&proof_root, &leaves[verify_index as usize], &proof, &path);
+    }
+}
+
+fn get_block_batch_hashes(
+    provider: &Provider<Http>,
+    start_block_num: u32,
+    end_block_num: u32,
+) -> Vec<H256> {
+    let rt = Runtime::new().unwrap();
+    assert!(start_block_num <= end_block_num);
+    let mut leaves = Vec::with_capacity((end_block_num - start_block_num) as usize);
+    for block_num in (start_block_num..=end_block_num) {
+        let block = rt.block_on(provider.get_block(block_num as u64)).unwrap().unwrap();
+        let block_hash = block.hash.unwrap();
+        leaves.push(block_hash);
+    }
+    leaves
+}
 
 fn test_keccak_circuit<F: Field>(
     k: u32,
