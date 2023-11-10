@@ -37,8 +37,8 @@ use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 use std::{
     env::{set_var, var},
-    fs::File,
-    io::{BufRead, BufReader, Write},
+    fs::{File, self},
+    io::{BufRead, BufReader, Write}, str::FromStr,
 };
 use zkevm_keccak::keccak_packed_multi::get_keccak_capacity;
 
@@ -48,13 +48,45 @@ pub fn test_merkle_root_verify() {
     let provider = get_provider(&Network::Ethereum(EthereumNetwork::Mainnet));
     let start_block_num = 17113953;
     let end_block_num = 17114080;
-    let leaves = get_block_batch_hashes(&provider, start_block_num.clone(), end_block_num.clone());
 
+    let leaves = get_block_batch_hashes(&provider, start_block_num.clone(), end_block_num.clone());
     for proof_index in start_block_num..end_block_num+1 {
         let verify_index = proof_index - start_block_num;
         let (proof_root, proof, path) = h256_non_standard_tree_root_and_proof(&leaves, verify_index.clone());
         h256_tree_verify(&proof_root, &leaves[verify_index as usize], &proof, &path);
     }
+
+    let (leaves, root) = get_block_data_hashes_from_json();
+    for(leaves, root) in leaves.into_iter().zip(root.into_iter()) {
+        for proof_index in 0..leaves.len() {
+            let verify_index = proof_index;
+            let (proof_root, proof, path) = h256_non_standard_tree_root_and_proof(&leaves, verify_index.clone().try_into().unwrap());
+            assert_eq!(root, proof_root);
+            h256_tree_verify(&proof_root, &leaves[verify_index as usize], &proof, &path);
+        }
+    }
+}
+
+fn get_block_data_hashes_from_json() -> (Vec<Vec<H256>>, Vec<H256>) {
+    #[derive(Deserialize)]
+    struct BatchData {
+        batch_1: Vec<String>,
+        batch_root_1: String,
+        batch_2: Vec<String>,
+        batch_root_2: String,
+    }
+
+    let data = fs::read_to_string("test_data/block_batch_data.json").unwrap();
+    let batch_data: BatchData = serde_json::from_str(&data).unwrap();
+    ([
+        batch_data.batch_1.into_iter().map(|s| H256::from_str(&s).unwrap()).collect_vec().into_iter().collect_vec(),
+        batch_data.batch_2.into_iter().map(|s| H256::from_str(&s).unwrap()).collect_vec().into_iter().collect_vec(),
+    ].into_iter().collect_vec(), 
+    [
+        batch_data.batch_root_1.parse().unwrap(),
+        batch_data.batch_root_2.parse().unwrap()
+    ].into_iter().collect_vec()
+    )
 }
 
 fn get_block_batch_hashes(
