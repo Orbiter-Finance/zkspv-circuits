@@ -17,8 +17,10 @@ pub struct DeployParamsJson {
 }
 #[test]
 fn test_sol() {
-    let yul: String =
-        fs::read_to_string("./data/arbitration/final_2.yul").unwrap().parse().unwrap();
+    let yul: String = fs::read_to_string("./data/arbitration/ethereum_source_final_1.yul")
+        .unwrap()
+        .parse()
+        .unwrap();
     gen_sol_verifiers(yul);
 }
 
