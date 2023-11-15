@@ -7,6 +7,4 @@
 
 rm arbitration_business
 cargo clean
-cargo build --release --bin arbitration_business
-cp target/release/arbitration_business .
-./arbitration_business
+MEASURE=1 cargo run --release --bin arbitration_business

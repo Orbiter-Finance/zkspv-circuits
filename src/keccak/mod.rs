@@ -198,6 +198,47 @@ impl<F: Field> KeccakChip<F> {
         self.var_len_queries.len() - 1
     }
 
+        /// Verify the keccak merkle proof of a target leave with index path and proof data
+    /// - path: the bit array of the merkle tree from bottom to top
+    /// - 
+    pub fn verify_merkle_proof(
+        &mut self,
+        ctx: &mut Context<F>,
+        gate: &impl GateInstructions<F>,
+        target_root : Vec<AssignedValue<F>> ,
+        proof: &[impl AsRef<[AssignedValue<F>]>],
+        target_leave: &impl AsRef<[AssignedValue<F>]>,
+        path: &[bool],
+    ) {
+        let depth = proof.len();
+        debug_assert!(path.len() == depth);
+        let mut leave_proof_data = target_leave.as_ref().to_vec();
+        let mut leave_proof_data_idx = 0;
+
+        for (sibling, path_bit)in proof
+            .chunks(1)
+            .into_iter()
+            .zip(path.iter()) {
+            if *path_bit == false {
+                let proof_concat = [sibling[0].as_ref(), leave_proof_data.as_ref()].concat();
+                leave_proof_data_idx = self.keccak_fixed_len(ctx, gate, proof_concat, None);
+            } else if *path_bit == true {
+                let proof_concat = [leave_proof_data.as_ref(), sibling[0].as_ref()].concat();
+                leave_proof_data_idx = self.keccak_fixed_len(ctx, gate, proof_concat, None);
+            } else {
+                panic!("path should be bool");
+            }
+            leave_proof_data = (&self.fixed_len_queries[leave_proof_data_idx].output_assigned[..]).to_vec();
+        }
+
+        // the final `leave_proof_data` should be the same as `root`
+        for (compute_root_byte, target_root_byte) in leave_proof_data.iter()
+                                                    .zip(target_root.iter()) {
+                                                        ctx.constrain_equal(compute_root_byte, target_root_byte);
+                                                    }
+
+    }
+
     /// Computes the keccak merkle root of a tree with leaves `leaves`.
     ///
     /// Returns the merkle tree root as a byte array.
