@@ -43,37 +43,17 @@ use super::*;
 pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStorageCircuit {
     let provider = get_provider(&network);
 
-    let ebc_pre_rule_key =
-        H256::from_str("0xb824d67a08c69bc4f694666c7088b5d8eb3151c09000db345a9759f46dc179be")
-            .unwrap();
-    let ebc_pre_rule_root =
-        H256::from_str("0x407857a3d36724da1c9af7cf6cadaa4599f7c2499eda48eace754961c75fbaff")
-            .unwrap(); // should be consistent with the value corresponding to the slot
-    let ebc_pre_rule_value = Vec::from_hex("f841058308274f010180808701c6bf52634c358809b6e64a8ecbf5e18701c6bf52634005880b1a2bc2ec503d0987038d7ea51bf30087038d7ea53d84c00102211c1b1e").unwrap();
-
-    let pre_proof_one_bytes = Vec::from_hex("f867a120b824d67a08c69bc4f694666c7088b5d8eb3151c09000db345a9759f46dc179beb843f841058308274f010180808701c6bf52634c358809b6e64a8ecbf5e18701c6bf52634005880b1a2bc2ec503d0987038d7ea51bf30087038d7ea53d84c00102211c1b1e").unwrap();
-
-    let ebc_pre_rule_merkle_proof = vec![Bytes::from(pre_proof_one_bytes)];
-
-    let ebc_pre_rule_params = EbcRuleParams {
-        ebc_rule_key: ebc_pre_rule_key,
-        ebc_rule_root: ebc_pre_rule_root,
-        ebc_rule_value: ebc_pre_rule_value,
-        ebc_rule_merkle_proof: ebc_pre_rule_merkle_proof,
-        ebc_rule_pf_max_depth: 8,
-    };
-
     let ebc_current_rule_key =
         H256::from_str("0xb824d67a08c69bc4f694666c7088b5d8eb3151c09000db345a9759f46dc179be")
             .unwrap();
     let ebc_current_rule_root =
-        H256::from_str("0x4dae4edf563500faf871d1f6ad71644346b7658869a93ac0423d4256a2affb1e")
+        H256::from_str("0x407857a3d36724da1c9af7cf6cadaa4599f7c2499eda48eace754961c75fbaff")
             .unwrap(); // should be consistent with the value corresponding to the slot
-    let ebc_current_rule_value = Vec::from_hex("f841058308274f010180808701c6bf52634c358809b6e64a8ecbf5e18701c6bf52634005880b1a2bc2ec503d0987038d7ea51bf30087038d7ea53d84c001023f4e1b1e").unwrap();
+    let ebc_current_rule_value = Vec::from_hex("f841058308274f010180808701c6bf52634c358809b6e64a8ecbf5e18701c6bf52634005880b1a2bc2ec503d0987038d7ea51bf30087038d7ea53d84c00102211c1b1e").unwrap();
 
-    let current_proof_one_bytes = Vec::from_hex("f867a120b824d67a08c69bc4f694666c7088b5d8eb3151c09000db345a9759f46dc179beb843f841058308274f010180808701c6bf52634c358809b6e64a8ecbf5e18701c6bf52634005880b1a2bc2ec503d0987038d7ea51bf30087038d7ea53d84c001023f4e1b1e").unwrap();
+    let pre_proof_one_bytes = Vec::from_hex("f867a120b824d67a08c69bc4f694666c7088b5d8eb3151c09000db345a9759f46dc179beb843f841058308274f010180808701c6bf52634c358809b6e64a8ecbf5e18701c6bf52634005880b1a2bc2ec503d0987038d7ea51bf30087038d7ea53d84c00102211c1b1e").unwrap();
 
-    let ebc_current_rule_merkle_proof = vec![Bytes::from(current_proof_one_bytes)];
+    let ebc_current_rule_merkle_proof = vec![Bytes::from(pre_proof_one_bytes)];
 
     let ebc_current_rule_params = EbcRuleParams {
         ebc_rule_key: ebc_current_rule_key,
@@ -101,7 +81,7 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
     let mdc_response_makers_hash_slot =
         H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000005")
             .unwrap();
-    let pre_mdc_slots = vec![
+    let current_mdc_slots = vec![
         mdc_rule_root_slot,
         mdc_rule_version_slot,
         mdc_rule_enable_time_slot,
@@ -109,9 +89,9 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
         mdc_response_makers_hash_slot,
     ];
 
-    let pre_mdc_contract_storage_constructor = ObContractStorageConstructor {
+    let current_mdc_contract_storage_constructor = ObContractStorageConstructor {
         contract_address: mdc_contract_address,
-        slots: pre_mdc_slots,
+        slots: current_mdc_slots,
         acct_pf_max_depth: 9,
         storage_pf_max_depth: 8,
     };
@@ -129,47 +109,45 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
         H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000006")
             .unwrap();
 
-    let pre_manage_slots = vec![
+    let current_manage_slots = vec![
         manage_source_chain_info_slot,
         manage_source_chain_mainnet_token_info_slot,
         manage_dest_chain_mainnet_token_slot,
         manage_challenge_user_ratio_slot,
     ];
-    let pre_manage_contract_storage_constructor = ObContractStorageConstructor {
+    let current_manage_contract_storage_constructor = ObContractStorageConstructor {
         contract_address: manage_contract_address,
-        slots: pre_manage_slots,
-        acct_pf_max_depth: 9,
-        storage_pf_max_depth: 8,
-    };
-    let pre_single_block_contracts_storage_constructor = SingleBlockContractsStorageConstructor {
-        block_number: 9927633,
-        block_contracts_storage: vec![
-            pre_mdc_contract_storage_constructor,
-            pre_manage_contract_storage_constructor,
-        ],
-        ebc_rule_params: ebc_pre_rule_params,
-    };
-
-    let current_mdc_slots =
-        vec![mdc_rule_root_slot, mdc_rule_version_slot, mdc_rule_enable_time_slot];
-    let current_mdc_contract_storage_constructor = ObContractStorageConstructor {
-        contract_address: mdc_contract_address,
-        slots: current_mdc_slots,
+        slots: current_manage_slots,
         acct_pf_max_depth: 9,
         storage_pf_max_depth: 8,
     };
     let current_single_block_contracts_storage_constructor =
         SingleBlockContractsStorageConstructor {
-            block_number: 9927758,
-            block_contracts_storage: vec![current_mdc_contract_storage_constructor],
-            ebc_rule_params: ebc_current_rule_params,
+            block_number: 9927633,
+            block_contracts_storage: vec![
+                current_mdc_contract_storage_constructor,
+                current_manage_contract_storage_constructor,
+            ],
         };
+
+    let next_mdc_slots = vec![mdc_rule_version_slot, mdc_rule_enable_time_slot];
+    let next_mdc_contract_storage_constructor = ObContractStorageConstructor {
+        contract_address: mdc_contract_address,
+        slots: next_mdc_slots,
+        acct_pf_max_depth: 9,
+        storage_pf_max_depth: 8,
+    };
+    let next_single_block_contracts_storage_constructor = SingleBlockContractsStorageConstructor {
+        block_number: 9927758,
+        block_contracts_storage: vec![next_mdc_contract_storage_constructor],
+    };
 
     let constructor = MultiBlocksContractsStorageConstructor {
         blocks_contracts_storage: vec![
-            pre_single_block_contracts_storage_constructor,
             current_single_block_contracts_storage_constructor,
+            next_single_block_contracts_storage_constructor,
         ],
+        ebc_rule_params: ebc_current_rule_params,
         network,
     };
     ObContractsStorageCircuit::from_provider(&provider, constructor)

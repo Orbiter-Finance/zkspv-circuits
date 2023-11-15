@@ -35,6 +35,7 @@ pub mod helpers;
 pub mod scheduler;
 
 pub mod errors;
+pub mod zk_provider;
 
 pub(crate) const NUM_BYTES_IN_U128: usize = 16;
 

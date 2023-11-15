@@ -95,7 +95,7 @@ impl ProofRouter {
 
                     let mdc_contract_storage_constructor_current = ObContractStorageConstructor {
                         contract_address: proof.mdc_address,
-                        slots: proof.contracts_slots_hash[..3].to_vec(),
+                        slots: proof.contracts_slots_hash[1..3].to_vec(),
                         acct_pf_max_depth: 9,
                         storage_pf_max_depth: 8,
                     };
@@ -107,77 +107,12 @@ impl ProofRouter {
                                 mdc_contract_storage_constructor_pre,
                                 manage_contract_storage_constructor_pre,
                             ],
-                            ebc_rule_params: EbcRuleParams {
-                                ebc_rule_key: H256::from_slice(
-                                    &*proof.mdc_rule_proofs.mdc_pre_rule.merkle_proof.key.clone(),
-                                ),
-                                ebc_rule_root: proof
-                                    .mdc_rule_proofs
-                                    .mdc_pre_rule
-                                    .merkle_proof
-                                    .root
-                                    .unwrap(),
-                                ebc_rule_value: proof
-                                    .mdc_rule_proofs
-                                    .mdc_pre_rule
-                                    .merkle_proof
-                                    .value
-                                    .clone(),
-                                ebc_rule_merkle_proof: proof
-                                    .mdc_rule_proofs
-                                    .mdc_pre_rule
-                                    .merkle_proof
-                                    .proof
-                                    .clone(),
-                                ebc_rule_pf_max_depth: proof
-                                    .mdc_rule_proofs
-                                    .mdc_pre_rule
-                                    .merkle_proof
-                                    .proof
-                                    .clone()
-                                    .len(),
-                            },
                         };
                     let single_block_contracts_storage_constructor_current =
                         SingleBlockContractsStorageConstructor {
                             block_number: proof.mdc_rule_proofs.mdc_current_rule.block_number
                                 as u32,
                             block_contracts_storage: vec![mdc_contract_storage_constructor_current],
-                            ebc_rule_params: EbcRuleParams {
-                                ebc_rule_key: H256::from_slice(
-                                    &*proof
-                                        .mdc_rule_proofs
-                                        .mdc_current_rule
-                                        .merkle_proof
-                                        .key
-                                        .clone(),
-                                ),
-                                ebc_rule_root: proof
-                                    .mdc_rule_proofs
-                                    .mdc_current_rule
-                                    .merkle_proof
-                                    .root
-                                    .unwrap(),
-                                ebc_rule_value: proof
-                                    .mdc_rule_proofs
-                                    .mdc_current_rule
-                                    .merkle_proof
-                                    .value
-                                    .clone(),
-                                ebc_rule_merkle_proof: proof
-                                    .mdc_rule_proofs
-                                    .mdc_current_rule
-                                    .merkle_proof
-                                    .proof
-                                    .clone(),
-                                ebc_rule_pf_max_depth: proof
-                                    .mdc_rule_proofs
-                                    .mdc_current_rule
-                                    .merkle_proof
-                                    .proof
-                                    .clone()
-                                    .len(),
-                            },
                         };
 
                     let ob_contracts_constructor = MultiBlocksContractsStorageConstructor {
@@ -185,6 +120,36 @@ impl ProofRouter {
                             single_block_contracts_storage_constructor_pre,
                             single_block_contracts_storage_constructor_current,
                         ],
+                        ebc_rule_params: EbcRuleParams {
+                            ebc_rule_key: H256::from_slice(
+                                &*proof.mdc_rule_proofs.mdc_pre_rule.merkle_proof.key.clone(),
+                            ),
+                            ebc_rule_root: proof
+                                .mdc_rule_proofs
+                                .mdc_pre_rule
+                                .merkle_proof
+                                .root
+                                .unwrap(),
+                            ebc_rule_value: proof
+                                .mdc_rule_proofs
+                                .mdc_pre_rule
+                                .merkle_proof
+                                .value
+                                .clone(),
+                            ebc_rule_merkle_proof: proof
+                                .mdc_rule_proofs
+                                .mdc_pre_rule
+                                .merkle_proof
+                                .proof
+                                .clone(),
+                            ebc_rule_pf_max_depth: proof
+                                .mdc_rule_proofs
+                                .mdc_pre_rule
+                                .merkle_proof
+                                .proof
+                                .clone()
+                                .len(),
+                        },
                         network,
                     };
 

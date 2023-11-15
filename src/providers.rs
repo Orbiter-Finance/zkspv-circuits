@@ -252,7 +252,6 @@ pub fn get_contract_storage_input(
             let block_hash = block.hash.unwrap();
             let block_header = get_block_rlp(&block);
 
-            let ebc_rule_params = constructor.ebc_rule_params;
             let block_contracts_storage = constructor
                 .block_contracts_storage
                 .into_iter()
@@ -319,39 +318,45 @@ pub fn get_contract_storage_input(
                 })
                 .collect();
 
-            // ebc mpt
-            let mut ebc_rule_pfs;
-            {
-                let path = ebc_rule_params.ebc_rule_key;
-                let value = ebc_rule_params.ebc_rule_value.to_vec();
-                ebc_rule_pfs = MPTInput {
-                    path: path.into(),
-                    value,
-                    root_hash: ebc_rule_params.ebc_rule_root,
-                    proof: ebc_rule_params
-                        .ebc_rule_merkle_proof
-                        .into_iter()
-                        .map(|x| x.to_vec())
-                        .collect(),
-                    slot_is_empty: false,
-                    value_max_byte_len: EBC_RULE_PROOF_VALUE_MAX_BYTE_LEN,
-                    max_depth: ebc_rule_params.ebc_rule_pf_max_depth,
-                    max_key_byte_len: K256_MAX_KEY_BYTES_LEN,
-                    key_byte_len: None,
-                }
-            }
-
             let block_input = BlockInput { block, block_number, block_hash, block_header };
 
             let ob_contracts_storage_input = ObContractsStorageInput {
                 contracts_storage: block_contracts_storage, // mdc ,manage
-                ebc_rules_pfs: ebc_rule_pfs,
             };
             (block_input, ob_contracts_storage_input)
         })
         .collect();
+    let ebc_rule_params = constructor.ebc_rule_params;
 
-    ObContractsStorageBlockInput { contract_storage_block: blocks_contracts_storage }
+    // ebc mpt
+    let mut ebc_rule_pfs;
+    {
+        let path = ebc_rule_params.ebc_rule_key;
+        let value = ebc_rule_params.ebc_rule_value.to_vec();
+        ebc_rule_pfs = MPTInput {
+            path: path.into(),
+            value,
+            root_hash: ebc_rule_params.ebc_rule_root,
+            proof: ebc_rule_params.ebc_rule_merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
+            slot_is_empty: false,
+            value_max_byte_len: EBC_RULE_PROOF_VALUE_MAX_BYTE_LEN,
+            max_depth: ebc_rule_params.ebc_rule_pf_max_depth,
+            max_key_byte_len: K256_MAX_KEY_BYTES_LEN,
+            key_byte_len: None,
+        }
+    }
+
+    ObContractsStorageBlockInput {
+        contract_storage_block: blocks_contracts_storage,
+        ebc_rules_pfs: ebc_rule_pfs,
+    }
+}
+
+pub fn get_zksync_era_block_input(provider: &Provider<Http>, blocks_number: Vec<u64>) {
+    let rt = Runtime::new().unwrap();
+    let block = rt.block_on(provider.get_block(blocks_number[0])).unwrap().unwrap();
+    let block_hash = block.hash.unwrap();
+    let block_header = get_block_rlp(&block);
 }
 
 pub fn get_zksync_transaction_and_storage_input(
@@ -699,6 +704,18 @@ pub fn get_block_rlp(block: &Block<H256>) -> Vec<u8> {
     encoding
 }
 
+pub fn get_zksync_era_block_rlp(block: &Block<H256>) -> Vec<u8> {
+    let mut rlp = RlpStream::new_list(4);
+
+    rlp.append(&block.number.unwrap());
+    rlp.append(&block.timestamp);
+    rlp.append(&block.parent_hash);
+    rlp.append(&block.hash.unwrap());
+
+    let encoding: Vec<u8> = rlp.out().into();
+    encoding
+}
+
 serde_with::serde_conv!(
     BytesBase64,
     Vec<u8>,
@@ -773,17 +790,6 @@ pub fn get_blocks_input(
     // pad to correct length with dummies
     let dummy_block_rlp = block_rlps[0].clone();
     block_rlps.resize(1 << max_depth, dummy_block_rlp);
-
-    /*let end_hash = *block_hashes.last().unwrap();
-    let mmr = get_merkle_mountain_range(&block_hashes, max_depth);
-
-    let instance = EthBlockHeaderChainInstance::new(
-        prev_hash,
-        end_hash,
-        start_block_number,
-        end_block_number,
-        mmr,
-    );*/
     block_rlps
 }
 
