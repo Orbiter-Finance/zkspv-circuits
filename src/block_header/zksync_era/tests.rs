@@ -16,13 +16,13 @@ pub fn get_test_circuit(
     let provider = get_provider(&network);
     ZkSyncEraBlockHeaderChainCircuit::from_provider(&provider, network, blocks_number)
 }
-// 0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000c9b14f83c434b860168ed4081f7b2a65f432f68bfea86ddf3351c02bc855dd72167506e289f13aee79b8de3bfd99f460f46135028b85eee9da760a17a4453fb64
+
 #[test]
 pub fn test_mainnet_block_header() -> Result<(), Box<dyn std::error::Error>> {
     let params = EthConfigPinning::from_path("configs/tests/zksync_era_block.json").params;
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
-    let k = params.degree;
-    let input = get_test_circuit(vec![0x11be9fe], Network::ZkSync(ZkSyncEraNetwork::Mainnet));
+    let k = params.degree; //0x123b8cc 0x11be9fe
+    let input = get_test_circuit(vec![0x11be9ff], Network::ZkSync(ZkSyncEraNetwork::Mainnet));
     let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())
@@ -85,6 +85,7 @@ fn test_hash() {
         txs_rolling_hash =
             H256::from(keccak256([txs_rolling_hash.as_bytes(), current_tx.as_bytes()].concat()))
     }
+    println!("txs_rolling_hash:{:?}", txs_rolling_hash);
     let r = miniblock_hash(0x11be9fe, 0x654ddede, prev_miniblock_hash, txs_rolling_hash);
     println!("r:{:?}", r);
 }

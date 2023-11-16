@@ -388,11 +388,10 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
 
         let transactions_root = &block_witness.get_transactions_root().field_cells;
 
-        // timestamp
         let time_stamp =
-            self.rlp_field_witnesses_to_uint(ctx, vec![&block_witness.get_timestamp()], vec![8])[0];
+            self.rlp_field_witnesses_to_uint(ctx, vec![&block_witness.get_timestamp()], vec![8])[0]
+                .clone();
 
-        // drop ctx
         let transaction_witness = self.parse_eip1186_proof_phase0(
             thread_pool,
             keccak,

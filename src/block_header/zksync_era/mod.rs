@@ -9,22 +9,25 @@ use crate::rlp::builder::{parallelize_phase1, RlcThreadBreakPoints, RlcThreadBui
 use crate::rlp::rlc::{RlcContextPair, RlcFixedTrace, RlcTrace, FIRST_PHASE};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
 use crate::util::helpers::load_bytes;
+use crate::util::{
+    bytes_be_to_u128, bytes_be_var_to_fixed, get_hash_bytes_inner_product, is_zero_vec,
+};
 use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS};
 use ethers_core::types::H256;
 use ethers_providers::{Http, Provider};
 use halo2_base::gates::builder::GateThreadBuilder;
-use halo2_base::gates::RangeChip;
+use halo2_base::gates::{GateInstructions, RangeChip};
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use halo2_base::utils::bit_length;
 use halo2_base::{AssignedValue, Context};
 use itertools::Itertools;
 use std::cell::RefCell;
-use std::marker::PhantomData;
+use std::iter::repeat;
 use zkevm_keccak::util::eth_types::Field;
-
-const BLOCK_HEADER_MAX_FIELD_LENS: [usize; 4] = [4, 8, 32, 32];
-pub(crate) const BLOCK_HEADER_RLP_MAX_BYTES: usize = 5 + 9 + 33 * 2;
-const NUM_BLOCK_HEADER_FIELDS: usize = 4;
+const NUM_BLOCK_HEADER_FIELDS: usize = 3;
+const BLOCK_HEADER_MAX_FIELD_LENS: [usize; NUM_BLOCK_HEADER_FIELDS] = [4, 8, 32];
+pub(crate) const BLOCK_HEADER_RLP_MAX_BYTES: usize = 5 + 9 + 33;
+pub(crate) const BLOCK_INCLUDE_TXS_MAX_NUMBER: u64 = 50;
 
 #[derive(Clone, Debug)]
 pub struct ZkSyncEraBlockHeaderInput {
@@ -45,8 +48,14 @@ impl ZkSyncEraBlockHeaderInput {
         let mut block_header = self.block_header;
         block_header.resize(BLOCK_HEADER_RLP_MAX_BYTES, 0u8);
         let block_header = load_bytes(ctx, block_header.as_slice());
-        let txs_hash = self.txs_hash.into_iter().map(|tx| load_bytes(ctx, tx.as_bytes())).collect();
+        let mut txs_hash =
+            self.txs_hash.iter().map(|tx| load_bytes(ctx, tx.as_bytes())).collect_vec();
+        for _ in 0..self.max_txs_len as usize - self.txs_hash.len() {
+            txs_hash.push(load_bytes(ctx, H256::zero().as_bytes()));
+        }
+        assert_eq!(txs_hash.len() as u64, self.max_txs_len);
         let max_txs_len = ctx.load_witness(F::from(self.max_txs_len));
+
         ZkSyncEraBlockHeaderInputAssigned { block_header, txs_hash, max_txs_len }
     }
 }
@@ -128,7 +137,6 @@ see https://github.com/matter-labs/zksync-era/blob/main/core/lib/types/src/block
 | number                       | big int scalar  | variable        | <= 5             | <= 40           |
 | timestamp                    | big int scalar  | variable        | <= 9             | <= 72           |
 | parentHash                   | 256 bits        | 32              | 33               | 264             |
-| blockHash                    | 256 bits        | 32              | 33               | 264             |
  */
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
@@ -136,30 +144,30 @@ pub struct ZkSyncEraBlockHeaderTrace<F: Field> {
     pub number: RlpFieldTrace<F>,
     pub timestamp: RlpFieldTrace<F>,
     pub parent_hash: RlpFieldTrace<F>,
-    pub block_hash: RlpFieldTrace<F>,
+    pub block_hash: RlcFixedTrace<F>,
 
     pub len_trace: RlcTrace<F>,
 }
 
+type BlockHeaderFieldWitness<F> = RlpArrayTraceWitness<F>;
+
 #[derive(Clone, Debug)]
 pub struct ZkSyncEraBlockHeaderTraceWitness<F: Field> {
-    pub rlp_witness: RlpArrayTraceWitness<F>,
-    // pub block_hash: Vec<AssignedValue<F>>,
-    // pub block_hash_query_idx: usize,
+    pub rlp_witness: BlockHeaderFieldWitness<F>,
+    pub block_hash: Vec<AssignedValue<F>>,
+    pub block_hash_query_idx: usize,
+    pub txs_hash: Vec<AssignedBytes<F>>,
 }
 
-impl<F: Field> ZkSyncEraBlockHeaderTraceWitness<F> {
+impl<F: Field> BlockHeaderFieldWitness<F> {
     pub fn get_number(&self) -> &RlpFieldWitness<F> {
-        &self.rlp_witness.field_witness[0]
+        &self.field_witness[0]
     }
     pub fn get_timestamp(&self) -> &RlpFieldWitness<F> {
-        &self.rlp_witness.field_witness[1]
+        &self.field_witness[1]
     }
     pub fn get_parent_hash(&self) -> &RlpFieldWitness<F> {
-        &self.rlp_witness.field_witness[2]
-    }
-    pub fn get_block_hash(&self) -> &RlpFieldWitness<F> {
-        &self.rlp_witness.field_witness[3]
+        &self.field_witness[2]
     }
 }
 
@@ -244,22 +252,93 @@ impl<'chip, F: Field> ZkSyncEraBlockHeaderChip<F> for EthChip<'chip, F> {
         header: ZkSyncEraBlockHeaderInputAssigned<F>,
     ) -> ZkSyncEraBlockHeaderTraceWitness<F> {
         assert_eq!(header.block_header.len(), BLOCK_HEADER_RLP_MAX_BYTES);
-        let rlp_witness = self.rlp().decompose_rlp_array_phase0(
+
+        let rlp_witness: BlockHeaderFieldWitness<F> = self.rlp().decompose_rlp_array_phase0(
             ctx,
             header.block_header,
             &BLOCK_HEADER_MAX_FIELD_LENS,
             true,
         );
 
-        // Todo: Add hash chain proof for `block hash`
         // The first tx is a virtual tx, which is only used to generate txs_rolling_hash.
-        let mut txs_rolling_hash = header.txs_hash.get(0).unwrap().to_vec();
+        let mut left_leaf = load_bytes(ctx, H256::zero().as_bytes());
 
-        // 0 left copy;1 keccak(concat[left,right])
-        // for tx in header.txs_hash.into_iter().skip(1) {
-        //     let hash_idx = keccak.keccak_fixed_len(ctx, self.gate(), tx, None);
-        // }
-        ZkSyncEraBlockHeaderTraceWitness { rlp_witness }
+        for right_leaf in header.txs_hash.clone().into_iter() {
+            // splice left leaf and right leaf
+            let left_node_concat = [left_leaf.to_vec(), right_leaf.to_vec()].concat();
+            // keccak hash of left node concat and get idx
+            let left_node_hash_idx =
+                keccak.keccak_fixed_len(ctx, self.gate(), left_node_concat, None);
+            let left_node_hash_bytes =
+                keccak.fixed_len_queries[left_node_hash_idx].output_assigned.clone();
+            let left_node_product =
+                get_hash_bytes_inner_product(ctx, self.gate(), &left_node_hash_bytes);
+
+            // If right leaf is empty, the value of left node is consistent with the value of left leaf.
+            let left_node_consistent_left_leaf_product =
+                get_hash_bytes_inner_product(ctx, self.gate(), &left_leaf);
+
+            let right_leaf_is_empty = is_zero_vec(ctx, self.gate(), &right_leaf);
+
+            let left_node_product = self.gate().select(
+                ctx,
+                left_node_consistent_left_leaf_product,
+                left_node_product,
+                right_leaf_is_empty,
+            );
+
+            left_leaf = if right_leaf_is_empty.value
+                == halo2_base::halo2_proofs::plonk::Assigned::Trivial(F::zero())
+            {
+                // left leaf will be updated to left node hash
+                left_node_hash_bytes
+            } else {
+                // left leaf will be consistent with the value of the original left leaf
+                left_leaf
+            };
+
+            let left_leaf_product = get_hash_bytes_inner_product(ctx, self.gate(), &left_leaf);
+
+            ctx.constrain_equal(&left_node_product, &left_leaf_product);
+        }
+
+        let block_num_bytes = &rlp_witness.get_number().field_cells;
+        let block_num_len = rlp_witness.get_number().field_len;
+        let block_number =
+            bytes_be_var_to_fixed(ctx, self.gate(), block_num_bytes, block_num_len, 32);
+
+        let block_time_stamp_bytes = &rlp_witness.get_timestamp().field_cells;
+        let block_time_stamp_len = rlp_witness.get_timestamp().field_len;
+        let block_time_stamp = bytes_be_var_to_fixed(
+            ctx,
+            self.gate(),
+            block_time_stamp_bytes,
+            block_time_stamp_len,
+            32,
+        );
+
+        let parent_hash = &rlp_witness.get_parent_hash().field_cells;
+
+        let block_hash_query_idx = keccak.keccak_fixed_len(
+            ctx,
+            self.gate(),
+            [
+                block_number.clone(),
+                block_time_stamp.clone(),
+                parent_hash.clone(),
+                left_leaf.clone(),
+            ]
+            .concat(),
+            None,
+        );
+
+        let block_hash = keccak.fixed_len_queries[block_hash_query_idx].output_assigned.clone();
+        ZkSyncEraBlockHeaderTraceWitness {
+            rlp_witness,
+            block_hash,
+            block_hash_query_idx,
+            txs_hash: header.txs_hash,
+        }
     }
 
     fn decompose_block_header_phase1(
@@ -268,8 +347,9 @@ impl<'chip, F: Field> ZkSyncEraBlockHeaderChip<F> for EthChip<'chip, F> {
         witness: ZkSyncEraBlockHeaderTraceWitness<F>,
     ) -> ZkSyncEraBlockHeaderTrace<F> {
         let trace = self.rlp().decompose_rlp_array_phase1(ctx, witness.rlp_witness, true);
-        let [number, timestamp, parent_hash, block_hash]: [RlpFieldTrace<F>;
-            NUM_BLOCK_HEADER_FIELDS] = trace.field_trace.try_into().unwrap();
+        let block_hash = self.keccak_fixed_len_rlcs()[witness.block_hash_query_idx].1.clone();
+        let [number, timestamp, parent_hash]: [RlpFieldTrace<F>; NUM_BLOCK_HEADER_FIELDS] =
+            trace.field_trace.try_into().unwrap();
         ZkSyncEraBlockHeaderTrace {
             number,
             timestamp,

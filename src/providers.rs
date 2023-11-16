@@ -25,7 +25,9 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use tokio::runtime::Runtime;
 
-use crate::block_header::zksync_era::{ZkSyncEraBlockHeaderInput, ZkSyncEraBlockHeadersInput};
+use crate::block_header::zksync_era::{
+    ZkSyncEraBlockHeaderInput, ZkSyncEraBlockHeadersInput, BLOCK_INCLUDE_TXS_MAX_NUMBER,
+};
 use crate::ecdsa::util::recover_tx_info;
 use crate::ecdsa::EthEcdsaInput;
 use crate::mpt::MPTInput;
@@ -385,7 +387,7 @@ pub fn get_zksync_era_block_with_txs_input(
             ZkSyncEraBlockHeaderInput {
                 block_header: get_zksync_era_block_rlp(&block),
                 txs_hash: block.transactions,
-                max_txs_len: 50,
+                max_txs_len: BLOCK_INCLUDE_TXS_MAX_NUMBER,
             }
         })
         .collect_vec();
@@ -397,18 +399,19 @@ pub fn get_zksync_era_transaction_input(
     tx_hash: H256,
 ) -> ZkSyncEraBlockTransactionInput {
     let rt = Runtime::new().unwrap();
-    let tx_hash = rt.block_on(provider.get_transaction(tx_hash)).unwrap().unwrap();
+    let tx = rt.block_on(provider.get_transaction(tx_hash)).unwrap().unwrap();
+    let tx_status = rt.block_on(provider.get_transaction_receipt(tx_hash)).unwrap().unwrap();
     let block_headers_input =
-        get_zksync_era_block_with_txs_input(provider, vec![tx_hash.block_number.unwrap().as_u64()]);
+        get_zksync_era_block_with_txs_input(provider, vec![tx.block_number.unwrap().as_u64()]);
     let block_header = block_headers_input.headers.get(0).unwrap().clone();
-    let transaction = Transaction::decode(&Rlp::new(&tx_hash.rlp().to_vec())).unwrap();
+    let transaction = Transaction::decode(&Rlp::new(&tx.rlp().to_vec())).unwrap();
     let (signature, message, message_hash, public_key) = recover_tx_info(&transaction);
     ZkSyncEraBlockTransactionInput {
         block_header,
         transaction: ZkSyncEraTransactionInput {
-            transaction_index: tx_hash.transaction_index.unwrap().as_u64(),
-            transaction_status: 0,
-            transaction_value: tx_hash.rlp().to_vec(),
+            transaction_index: tx.transaction_index.unwrap().as_u64(),
+            transaction_status: tx_status.status.unwrap().as_u64(),
+            transaction_value: tx.rlp().to_vec(),
             transaction_ecdsa_verify: EthEcdsaInput {
                 signature,
                 message,
@@ -497,12 +500,11 @@ pub fn get_block_rlp(block: &Block<H256>) -> Vec<u8> {
 }
 
 pub fn get_zksync_era_block_rlp(block: &Block<H256>) -> Vec<u8> {
-    let mut rlp = RlpStream::new_list(4);
+    let mut rlp = RlpStream::new_list(3);
 
     rlp.append(&block.number.unwrap());
     rlp.append(&block.timestamp);
     rlp.append(&block.parent_hash);
-    rlp.append(&block.hash.unwrap());
 
     let encoding: Vec<u8> = rlp.out().into();
     encoding

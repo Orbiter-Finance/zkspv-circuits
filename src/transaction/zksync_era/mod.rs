@@ -10,11 +10,16 @@ use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{RlcContextPair, FIRST_PHASE};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace};
 use crate::storage::EthStorageChip;
-use crate::transaction::ethereum::{EthBlockTransactionChip, EthTransactionExtraWitness};
+use crate::transaction::ethereum::{
+    EthBlockTransactionChip, EthTransactionExtraWitness, EthTransactionField,
+};
 use crate::transaction::zksync_era::util::ZkSyncEraTransactionConstructor;
 
-use crate::util::helpers::load_bytes;
-use crate::util::{bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, AssignedH256};
+use crate::receipt::TX_STATUS_SUCCESS;
+use crate::util::helpers::{bytes_to_u8, load_bytes};
+use crate::util::{
+    bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, u128s_to_bytes_be, AssignedH256,
+};
 use crate::{
     EthChip, EthCircuitBuilder, EthPreCircuit, ETH_LIMB_BITS, ETH_LOOKUP_BITS, ETH_NUM_LIMBS,
 };
@@ -179,25 +184,11 @@ impl EthPreCircuit for ZkSyncEraBlockTransactionCircuit {
 }
 
 #[derive(Clone, Debug)]
-pub struct ZkSyncEraTransactionField<F: Field> {
-    pub hash: AssignedH256<F>,
-    pub chain_id: AssignedValue<F>,
-    pub from: AssignedValue<F>,
-    pub to: AssignedValue<F>, // ETH:is the to field of tx;Erc20:Erc20 to address
-    pub token: AssignedValue<F>, // ETH:0x00...;Erc20:Erc20 token address (is the to field of tx)
-    pub amount: AssignedValue<F>,
-    pub nonce: AssignedValue<F>,
-    pub time_stamp: AssignedValue<F>,
-    pub dest_transfer_address: AssignedValue<F>, // Cross-address transfer is not currently supported.
-    pub dest_transfer_token: AssignedValue<F>, // Cross-address transfer is not currently supported.
-}
-
-#[derive(Clone, Debug)]
 pub struct ZkSyncEraTransactionDigest<F: Field> {
     pub index: AssignedValue<F>,
     pub block_hash: AssignedH256<F>,
     // the value U256 is interpreted as H256 (padded with 0s on left)
-    pub transaction_field: ZkSyncEraTransactionField<F>,
+    pub transaction_field: EthTransactionField<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -240,6 +231,7 @@ pub trait ZkSyncEraBlockTransactionChip<F: Field> {
         keccak: &mut KeccakChip<F>,
         ecdsa: &EcdsaChip<F>,
         transaction_input: ZkSyncEraTransactionInputAssigned<F>,
+        block_txs: Vec<AssignedBytes<F>>,
     ) -> ZkSyncEraTransactionTraceWitness<F>
     where
         Self: EthBlockTransactionChip<F>;
@@ -277,25 +269,27 @@ impl<'chip, F: Field> ZkSyncEraBlockTransactionChip<F> for EthChip<'chip, F> {
             self.decompose_block_header_phase0(ctx, keccak, input.block_header)
         };
         let ctx = thread_pool.main(FIRST_PHASE);
-        let block_hash =
-            bytes_be_to_u128(ctx, self.gate(), &block_witness.get_block_hash().field_cells);
+        let block_hash = bytes_be_to_u128(ctx, self.gate(), &block_witness.block_hash);
 
-        // timestamp
-        let time_stamp =
-            self.rlp_field_witnesses_to_uint(ctx, vec![&block_witness.get_timestamp()], vec![8])[0];
+        let time_stamp = self.rlp_field_witnesses_to_uint(
+            ctx,
+            vec![&block_witness.rlp_witness.get_timestamp()],
+            vec![8],
+        )[0]
+        .clone();
 
-        // drop ctx
         let transaction_witness = self.parse_zksync_era_transaction_proof_phase0(
             thread_pool,
             keccak,
             ecdsa,
             input.transaction.clone(),
+            block_witness.txs_hash.clone(),
         );
 
         let digest = ZkSyncEraTransactionDigest {
             index: transaction_index,
             block_hash: block_hash.try_into().unwrap(),
-            transaction_field: ZkSyncEraTransactionField {
+            transaction_field: EthTransactionField {
                 hash: transaction_witness.extra_witness.hash,
                 chain_id: transaction_witness.extra_witness.chain_id,
                 from: transaction_witness.extra_witness.from,
@@ -317,13 +311,12 @@ impl<'chip, F: Field> ZkSyncEraBlockTransactionChip<F> for EthChip<'chip, F> {
         keccak: &mut KeccakChip<F>,
         ecdsa: &EcdsaChip<F>,
         transaction_input: ZkSyncEraTransactionInputAssigned<F>,
+        block_txs: Vec<AssignedBytes<F>>,
     ) -> ZkSyncEraTransactionTraceWitness<F>
     where
         Self: EthBlockTransactionChip<F>,
     {
         let ctx = thread_pool.main(FIRST_PHASE);
-        //  disable mpt
-        // ctx.constrain_equal(&transaction_proofs.key_bytes,transaction_index); key_bytes in transaction_proofs is constructed by transaction_index itself, which seems unnecessary to verify.
 
         let (transaction_witness, transaction_extra_witness) = self.parse_transaction_extra_proof(
             ctx,
@@ -332,6 +325,18 @@ impl<'chip, F: Field> ZkSyncEraBlockTransactionChip<F> for EthChip<'chip, F> {
             transaction_input.transaction_value,
             transaction_input.transaction_ecdsa_verify,
         );
+
+        let block_include_hash_with_index =
+            block_txs.get(bytes_to_u8(&transaction_input.transaction_index) as usize).unwrap();
+
+        let hash = u128s_to_bytes_be(ctx, self.range(), &transaction_extra_witness.hash);
+        for (block_tx_hash, hash) in block_include_hash_with_index.iter().zip(hash.iter()) {
+            ctx.constrain_equal(block_tx_hash, hash);
+        }
+
+        let tx_status_success = ctx.load_witness(F::from(TX_STATUS_SUCCESS as u64));
+
+        ctx.constrain_equal(&transaction_input.transaction_status, &tx_status_success);
 
         ZkSyncEraTransactionTraceWitness {
             transaction_witness,
