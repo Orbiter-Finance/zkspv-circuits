@@ -237,7 +237,7 @@ fn test_mdc_task(network: Network) -> MDCStateTask {
     let enable_time_slot =
         H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000000")
             .unwrap();
-    let slots = vec![root_slot, version_slot, enable_time_slot];
+    let slots = vec![version_slot, enable_time_slot];
     let single_block_contract_storage_constructor = ObContractStorageConstructor {
         contract_address: addr,
         slots,
@@ -250,13 +250,13 @@ fn test_mdc_task(network: Network) -> MDCStateTask {
             single_block_contract_storage_constructor.clone(),
             single_block_contract_storage_constructor,
         ],
-        ebc_rule_params,
     };
     let constructor = MultiBlocksContractsStorageConstructor {
         blocks_contracts_storage: vec![
             single_block_contracts_storage_constructor.clone(),
             single_block_contracts_storage_constructor,
         ],
+        ebc_rule_params,
         network,
     };
 

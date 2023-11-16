@@ -44,12 +44,12 @@ pub struct ObContractStorageConstructor {
 pub struct SingleBlockContractsStorageConstructor {
     pub block_number: u32,
     pub block_contracts_storage: Vec<ObContractStorageConstructor>,
-    pub ebc_rule_params: EbcRuleParams,
 }
 
 #[derive(Clone, Debug)]
 pub struct MultiBlocksContractsStorageConstructor {
     pub blocks_contracts_storage: Vec<SingleBlockContractsStorageConstructor>,
+    pub ebc_rule_params: EbcRuleParams,
     pub network: Network,
 }
 

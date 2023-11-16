@@ -21,10 +21,11 @@ use crate::keccak::{
 use crate::rlp::builder::{parallelize_phase1, RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{RlcContextPair, RlcFixedTrace, RlcTrace, FIRST_PHASE, RLC_PHASE};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
+use crate::util::errors::ErrorType;
 use crate::util::{bytes_be_to_u128, bytes_be_var_to_fixed};
 use crate::{
     ArbitrumNetwork, EthChip, EthCircuitBuilder, EthPreCircuit, EthereumNetwork, Network,
-    OptimismNetwork, ZkSyncEraNetwork, ETH_LOOKUP_BITS,
+    OptimismNetwork, ETH_LOOKUP_BITS,
 };
 
 #[cfg(feature = "aggregation")]
@@ -32,6 +33,7 @@ pub mod aggregation;
 #[cfg(all(feature = "aggregation", feature = "providers"))]
 pub mod helper;
 mod tests;
+pub mod zksync_era;
 
 const NUM_BLOCK_HEADER_FIELDS: usize = 17;
 const BLOCK_NUMBER_MAX_BYTES: usize = 4;
@@ -122,11 +124,11 @@ pub fn get_block_header_config(network: &Network) -> BlockHeaderConfig {
                     6,
                     32,
                 ];
-                BlockHeaderConfig::new(
+                Ok(BlockHeaderConfig::new(
                     extra_data_max_bytes,
                     block_header_rlp_min_bytes,
                     header_fields_max_bytes,
-                )
+                ))
             }
             EthereumNetwork::Goerli => {
                 let extra_data_max_bytes = 32;
@@ -149,11 +151,11 @@ pub fn get_block_header_config(network: &Network) -> BlockHeaderConfig {
                     6,
                     32,
                 ];
-                BlockHeaderConfig::new(
+                Ok(BlockHeaderConfig::new(
                     extra_data_max_bytes,
                     block_header_rlp_min_bytes,
                     header_fields_max_bytes,
-                )
+                ))
             }
         },
         Network::Arbitrum(network) => match network {
@@ -178,11 +180,11 @@ pub fn get_block_header_config(network: &Network) -> BlockHeaderConfig {
                     6,
                     32,
                 ];
-                BlockHeaderConfig::new(
+                Ok(BlockHeaderConfig::new(
                     extra_data_max_bytes,
                     block_header_rlp_min_bytes,
                     header_fields_max_bytes,
-                )
+                ))
             }
             ArbitrumNetwork::Goerli => {
                 let extra_data_max_bytes = 32;
@@ -205,11 +207,11 @@ pub fn get_block_header_config(network: &Network) -> BlockHeaderConfig {
                     6,
                     32,
                 ];
-                BlockHeaderConfig::new(
+                Ok(BlockHeaderConfig::new(
                     extra_data_max_bytes,
                     block_header_rlp_min_bytes,
                     header_fields_max_bytes,
-                )
+                ))
             }
         },
         Network::Optimism(network) => match network {
@@ -234,11 +236,11 @@ pub fn get_block_header_config(network: &Network) -> BlockHeaderConfig {
                     6,
                     32,
                 ];
-                BlockHeaderConfig::new(
+                Ok(BlockHeaderConfig::new(
                     extra_data_max_bytes,
                     block_header_rlp_min_bytes,
                     header_fields_max_bytes,
-                )
+                ))
             }
             OptimismNetwork::Goerli => {
                 let extra_data_max_bytes = 32;
@@ -261,74 +263,19 @@ pub fn get_block_header_config(network: &Network) -> BlockHeaderConfig {
                     6,
                     32,
                 ];
-                BlockHeaderConfig::new(
+                Ok(BlockHeaderConfig::new(
                     extra_data_max_bytes,
                     block_header_rlp_min_bytes,
                     header_fields_max_bytes,
-                )
+                ))
             }
         },
-        Network::ZkSync(network) => match network {
-            ZkSyncEraNetwork::Mainnet => {
-                let extra_data_max_bytes = 97;
-                let header_fields_max_bytes = vec![
-                    32,
-                    32,
-                    20,
-                    32,
-                    32,
-                    32,
-                    256,
-                    7,
-                    4,
-                    4,
-                    4,
-                    4,
-                    extra_data_max_bytes,
-                    32,
-                    8,
-                    6,
-                    32,
-                ];
-                BlockHeaderConfig::new(
-                    extra_data_max_bytes,
-                    block_header_rlp_min_bytes,
-                    header_fields_max_bytes,
-                )
-            }
-            ZkSyncEraNetwork::Goerli => {
-                let extra_data_max_bytes = 32;
-                let header_fields_max_bytes = vec![
-                    32,
-                    32,
-                    20,
-                    32,
-                    32,
-                    32,
-                    256,
-                    7,
-                    4,
-                    4,
-                    4,
-                    4,
-                    extra_data_max_bytes,
-                    32,
-                    8,
-                    6,
-                    32,
-                ];
-                BlockHeaderConfig::new(
-                    extra_data_max_bytes,
-                    block_header_rlp_min_bytes,
-                    header_fields_max_bytes,
-                )
-            }
-        },
+        _ => Err(ErrorType::NetworkNotSupported),
     };
-    block_header_config
+    block_header_config.unwrap()
 }
 
-/// Body
+/// Block Body
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct EthBlockHeaderTrace<F: Field> {
