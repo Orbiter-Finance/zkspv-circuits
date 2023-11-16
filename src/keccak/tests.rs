@@ -17,7 +17,7 @@ use crate::{
         transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
     },
     rlp::rlc::RlcConfig,
-    util::{helpers::get_provider, h256_non_standard_tree_root_and_proof, h256_tree_verify}, Network, EthereumNetwork, providers::get_batch_block_merkle_root,
+    util::{helpers::get_provider, h256_non_standard_tree_root_and_proof, h256_tree_verify, encode_h256_to_bytes_field, encode_merkle_path_to_field}, Network, EthereumNetwork, providers::get_batch_block_merkle_root,
 };
 use ark_std::{end_timer, start_timer};
 use ethers_core::types::H256;
@@ -65,6 +65,45 @@ pub fn test_merkle_root_verify() {
             h256_tree_verify(&proof_root, &leaves[verify_index as usize], &proof, &path);
         }
     }
+}
+
+fn test_keccak_non_standard_merkle_verify_circuit<F: Field>(
+    k: u32,
+    mut builder: RlcThreadBuilder<F>,
+) -> KeccakCircuitBuilder<F, impl FnSynthesize<F>> {
+    let prover = builder.witness_gen_only();
+    let range = RangeChip::default(8);
+    let gate = GateChip::default();
+    let keccak = SharedKeccakChip::default();
+    let ctx = builder.gate_builder.main(0);
+
+    let (leaves_batch, root_batch) = get_block_data_hashes_from_json();
+    let taget_index = leaves_batch[0].len() - 1;
+    // let taget_index = 0;
+    let ((proof_root, proof, path), target_leaf) = (h256_non_standard_tree_root_and_proof(&leaves_batch[0], taget_index.try_into().unwrap()), leaves_batch[0][taget_index as usize].clone());
+    // println!("root: {:?} \n target_leaf: {:?} \n proof: {:?} \n path: {:?}", proof_root,target_leaf, proof, path);
+    h256_tree_verify(&proof_root, &target_leaf, &proof, &path);
+    assert_eq!(proof_root,root_batch[0]);
+    let target_root = ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(proof_root));
+    let proof = proof.iter().map(|p| {
+        ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(p.clone()))
+    }).collect_vec();
+    let target_leaf = ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(target_leaf.clone()));
+    let path = ctx.assign_witnesses(encode_merkle_path_to_field::<F>(&path));
+    keccak.borrow_mut().verify_merkle_proof(ctx, &gate, &target_root, &proof, &target_leaf, &path);
+    let circuit = KeccakCircuitBuilder::new(
+        builder,
+        keccak,
+        range,
+        None,
+        |_: &mut RlcThreadBuilder<F>, _: RlpChip<F>, _: (FixedLenRLCs<F>, VarLenRLCs<F>)| {},
+    );
+    if !prover {
+        let unusable_rows =
+            var("UNUSABLE_ROWS").unwrap_or_else(|_| "109".to_string()).parse().unwrap();
+        circuit.config(k as usize, Some(unusable_rows));
+    }
+    circuit
 }
 
 fn get_block_data_hashes_from_json() -> (Vec<Vec<H256>>, Vec<H256>) {
@@ -171,6 +210,14 @@ pub fn test_keccak() {
     println!("Var len keccak passed");
 }
 
+
+#[test]
+pub fn test_keccak_non_standard_merkle_verify() {
+    let k: u32 = var("KECCAK_DEGREE").unwrap_or_else(|_| "14".to_string()).parse().unwrap();
+    let circuit = test_keccak_non_standard_merkle_verify_circuit(k, RlcThreadBuilder::mock());
+    MockProver::<Fr>::run(k, &circuit, vec![]).unwrap().assert_satisfied();
+    println!("Keccak Non Standard Merkle Verify passed!");
+}
 #[derive(Serialize, Deserialize)]
 pub struct KeccakBenchConfig {
     degree: usize,

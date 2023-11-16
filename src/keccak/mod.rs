@@ -21,9 +21,11 @@ use crate::{
         rlc::{RlcChip, RlcFixedTrace, RlcTrace, RLC_PHASE},
         RlpChip,
     },
-    util::EthConfigParams,
+    util::{EthConfigParams, h256_tree_verify, decode_bytes_field_to_h256},
     MPTConfig,
 };
+use crate::util::get_hash_bytes_inner_product;
+use crate::util::is_zero_vec;
 use core::iter::once;
 use ethers_core::utils::keccak256;
 use halo2_base::{
@@ -34,12 +36,12 @@ use halo2_base::{
     },
     utils::{bit_length, value_to_option, ScalarField},
     AssignedValue, Context, ContextCell,
-    QuantumCell::Constant,
+    QuantumCell::{Constant, Existing},
     SKIP_FIRST_PASS,
 };
 use itertools::Itertools;
 use rayon::prelude::*;
-use std::{cell::RefCell, collections::HashMap, env::set_var, iter, mem};
+use std::{cell::RefCell, collections::HashMap, env::set_var, iter, mem, borrow::BorrowMut};
 pub(crate) use zkevm_keccak::KeccakConfig;
 use zkevm_keccak::{
     keccak_packed_multi::{
@@ -198,42 +200,80 @@ impl<F: Field> KeccakChip<F> {
         self.var_len_queries.len() - 1
     }
 
-        /// Verify the keccak merkle proof of a target leave with index path and proof data
+    /// Verify the keccak merkle proof of a target leave with index path and proof data
     /// - path: the bit array of the merkle tree from bottom to top
     /// - 
     pub fn verify_merkle_proof(
         &mut self,
         ctx: &mut Context<F>,
         gate: &impl GateInstructions<F>,
-        target_root : Vec<AssignedValue<F>> ,
+        target_root :&impl AsRef<[AssignedValue<F>]> ,
         proof: &[impl AsRef<[AssignedValue<F>]>],
         target_leave: &impl AsRef<[AssignedValue<F>]>,
-        path: &[bool],
+        path: &impl AsRef<[AssignedValue<F>]>,
     ) {
-        let depth = proof.len();
-        debug_assert!(path.len() == depth);
-        let mut leave_proof_data = target_leave.as_ref().to_vec();
+        // let depth = proof.len();
+        // debug_assert!(path.len() == depth);
+        let mut target_leaf_data = target_leave.as_ref().to_vec();
         let mut leave_proof_data_idx = 0;
+        let mut path_data = path.as_ref().to_vec();
+        // let pows = gate.pow_of_two().iter().step_by(8).take(32).map(|x| Constant(*x));
+        // let mut leave_proof_data_product = gate.inner_product(ctx, leave_proof_data, pows);
+        let mut leave_proof_data_product = get_hash_bytes_inner_product(ctx, gate , &target_leaf_data);
+        // h256_tree_verify();
+        //constraints every path node in path should be BIT type
+        for path_bit in path_data.iter() {
+            gate.assert_bit(ctx, *path_bit);
+        }
 
-        for (sibling, path_bit)in proof
-            .chunks(1)
+        // TODO:constraints the path len should be equal to depth
+        for(sibling, path_bit) in proof
             .into_iter()
-            .zip(path.iter()) {
-            if *path_bit == false {
-                let proof_concat = [sibling[0].as_ref(), leave_proof_data.as_ref()].concat();
-                leave_proof_data_idx = self.keccak_fixed_len(ctx, gate, proof_concat, None);
-            } else if *path_bit == true {
-                let proof_concat = [leave_proof_data.as_ref(), sibling[0].as_ref()].concat();
-                leave_proof_data_idx = self.keccak_fixed_len(ctx, gate, proof_concat, None);
-            } else {
-                panic!("path should be bool");
-            }
-            leave_proof_data = (&self.fixed_len_queries[leave_proof_data_idx].output_assigned[..]).to_vec();
+            .zip(path.as_ref().into_iter()) {
+                // println!("target leave {:?}", decode_bytes_field_to_h256(&target_leaf_data.iter().map(|x| *x.value()).collect_vec()));
+                // println!("Sibling {:?}", decode_bytes_field_to_h256(&sibling.as_ref().to_vec().into_iter().map(|x| *x.value()).collect_vec()));
+                let proof_left_concat = [target_leaf_data.as_ref(), sibling.as_ref()].concat();
+                let proof_left_concact_hash_idx = self.keccak_fixed_len(ctx, gate, proof_left_concat, None);
+                let proof_left_hash_prodcut = get_hash_bytes_inner_product(ctx, gate, &(&self.fixed_len_queries[proof_left_concact_hash_idx].output_assigned[..]).to_vec());
+                
+                let proof_right_concat = [sibling.as_ref(), target_leaf_data.clone().as_ref()].concat();
+                let proof_right_concact_hash_idx = self.keccak_fixed_len(ctx, gate, proof_right_concat, None);
+                let proof_right_hash_product = get_hash_bytes_inner_product(ctx, gate, &(&self.fixed_len_queries[proof_right_concact_hash_idx].output_assigned[..]).to_vec());
+                // println!("proof_right_hash_product {:?}", proof_right_hash_product);
+                let copy_hash = target_leaf_data.into_iter().map(|x| x).collect_vec();
+                // transfer copy_hash QuantumCell to AssignedValue
+                let copy_hash_product = get_hash_bytes_inner_product(ctx, gate, &copy_hash);
+                // println!("copy_hash_product {:?}", copy_hash_product);
+                let is_sibling_zero = is_zero_vec(ctx, gate, sibling.as_ref());
+
+                // next_target_leaf = if path_bit { if is_sibling_zero { copy target_leaf } else { hash(target_leaf, sibling )} } else { hash(sibling, target_leaf)}
+                let real_left_hash_product = gate.select(ctx, copy_hash_product , proof_left_hash_prodcut, is_sibling_zero);
+                // println!("real_right_hash_product {:?}", real_left_hash_product);
+                leave_proof_data_product = gate.select(ctx, proof_right_hash_product, real_left_hash_product, *path_bit);
+                
+                target_leaf_data = if *path_bit.value() == F::zero() {
+                    // println!("path_bit is false");
+                    if is_sibling_zero.value == halo2_base::halo2_proofs::plonk::Assigned::Trivial(F::zero()) {
+                        (&self.fixed_len_queries[proof_left_concact_hash_idx].output_assigned[..]).to_vec() 
+                    } else {
+                        // println!("path copy");
+                        copy_hash
+                    }
+                } else {
+                    // println!("path_bit is true");
+                    (&self.fixed_len_queries[proof_right_concact_hash_idx].output_assigned[..]).to_vec()
+                };
+
+                let target_leaf_data_product = get_hash_bytes_inner_product(ctx, gate, &target_leaf_data);
+                // println!("target_leaf_data_product {:?} leave_proof_data_product {:?}", target_leaf_data_product, leave_proof_data_product);
+
+                ctx.constrain_equal(&target_leaf_data_product, &leave_proof_data_product);
+
         }
 
         // the final `leave_proof_data` should be the same as `root`
-        for (compute_root_byte, target_root_byte) in leave_proof_data.iter()
-                                                    .zip(target_root.iter()) {
+        for (compute_root_byte, target_root_byte) in target_leaf_data.iter()
+                                                    .zip(target_root.as_ref().into_iter()) {
                                                         ctx.constrain_equal(compute_root_byte, target_root_byte);
                                                     }
 

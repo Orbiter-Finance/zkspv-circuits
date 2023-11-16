@@ -4,7 +4,7 @@ use ethers_core::{
     types::{Address, H256, U256},
     utils::keccak256,
 };
-use halo2_base::QuantumCell::Existing;
+use halo2_base::QuantumCell::{Existing, self};
 use halo2_base::{
     gates::{
         builder::{FlexGateConfigParams, MultiPhaseThreadBreakPoints},
@@ -310,31 +310,12 @@ pub fn keccak_non_standard_merkle_tree_root_and_proof(mut leaves: Vec<Vec<u8>>, 
     (leaves[0].clone(), proof, proof_path)
 }
 
-//      - proof_path: Vec<bool> from bottom to top
-pub fn keccak_tree_verify(root_hash: Vec<u8>,leaf: Vec<u8>, proof: Vec<Vec<u8>>, proof_path: Vec<bool>) {
-    let mut computed_root = leaf;
-    let pad_leaf = vec![0u8; 32];
-    assert_eq!(proof.len(), proof_path.len());
-    for (proof, path) in proof.into_iter().zip(proof_path.into_iter()) {
-        if path == false {
-            if pad_leaf != proof {
-                computed_root = keccak256([computed_root, proof].concat()).to_vec();
-            }
-            // if proof is not zero, then copy that to the next level
-        } else {
-            computed_root = keccak256([proof, computed_root].concat()).to_vec();
-        }
-    }
-    assert_eq!(root_hash, computed_root)
-}
-
 pub fn h256_tree_verify(root_hash: &H256, leaf: &H256, proof: &[H256], proof_path: &Vec<bool>) {
     // let mut bytes = hash.as_bytes().to_vec();
     let root_hash = root_hash.as_bytes().to_vec();
     let leaf = leaf.as_bytes().to_vec();
     let proof: Vec<Vec<u8>> = proof.iter().map(|p| p.as_bytes().to_vec()).collect();
     // let proof = vec![vec![0u8; 32]; proof.len()];
-    // keccak_tree_verify(root_hash, leaf,proof , proof_path.as_ref())
 
     let mut computed_root = leaf;
     assert_eq!(proof.len(), proof_path.len());
@@ -435,6 +416,18 @@ pub fn encode_u8_vec_to_h256(bytes: &Vec<u8>) -> H256 {
     H256(repr)
 }
 
+
+// every leave containts 32 Fields, 
+pub fn encode_merkle_tree_leaves_field_to_h256<F: Field>(fe: &[F]) -> H256 {
+    assert_eq!(fe.len(), 32);
+    let mut bytes = [0u8; 32];
+    bytes[..16].copy_from_slice(&fe[0].to_bytes_le()[..16]);
+    bytes[16..].copy_from_slice(&fe[1].to_bytes_le()[..16]);
+    bytes.reverse();
+    H256(bytes)
+
+}
+ 
 pub fn decode_field_to_h256<F: Field>(fe: &[F]) -> H256 {
     assert_eq!(fe.len(), 2);
     let mut bytes = [0u8; 32];
@@ -442,6 +435,29 @@ pub fn decode_field_to_h256<F: Field>(fe: &[F]) -> H256 {
     bytes[16..].copy_from_slice(&fe[0].to_bytes_le()[..16]);
     bytes.reverse();
     H256(bytes)
+}
+
+pub fn decode_bytes_field_to_h256<F: Field>(fe: &Vec<F>) -> H256 {
+    assert_eq!(fe.len(), 32);
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&fe.into_iter().map(|f| f.to_bytes_le()[0]).collect_vec());
+    H256(bytes)
+}
+
+pub fn encode_h256_to_bytes_field<F: Field>(input: H256) -> Vec<F> {
+    let mut bytes = input.as_bytes().to_vec();
+    let mut repr = [0u8; 32];
+    repr.copy_from_slice(&bytes);
+    bytes.into_iter().map(|b| {
+        let mut repr = [0u8; 32];
+        repr[0] = b;
+        F::from_bytes_le(&repr)
+    }).collect()
+   
+}
+
+pub fn encode_merkle_path_to_field<F: Field>(input: &[bool]) -> Vec<F> {
+    input.iter().map(|b| F::from(*b as u64)).collect_vec()
 }
 
 /// Takes U256, converts to bytes32 (big endian) and returns (hash[..16], hash[16..]) represented as big endian numbers in the prime field
@@ -707,4 +723,36 @@ pub fn is_zero_vec<F: ScalarField>(
     let sum = gate.sum(ctx, is_zeros);
     let total_len = gate.get_field_element(input.len() as u64);
     gate.is_equal(ctx, sum, Constant(total_len))
+}
+
+// may integer overflow
+pub fn get_hash_bytes_inner_product<F: ScalarField>(
+    ctx: &mut Context<F>,
+    gate: &impl GateInstructions<F>,
+    leave_proof_data: &Vec<AssignedValue<F>>,
+) -> AssignedValue<F> {
+    let pows = gate.pow_of_two().iter().step_by(8).take(32).map(|x| Constant(*x));
+    // let leave_proof = leave_proof_data.iter().map(|x| Existing(*x)).collect_vec();
+    gate.inner_product(ctx, leave_proof_data.iter().map(|x| *x).collect_vec(), pows)
+}
+
+// Assumptions: bytes_a.len() == bytes_b.len() == 32
+// TODO: Not finished yet!
+pub fn concat_two_hash_bytes_string_to_one<F: ScalarField>(
+    ctx: &mut Context<F>,
+    // range: &RangeChip<F>,
+    bytes_a: &[AssignedValue<F>],
+    bytes_b: &[AssignedValue<F>],
+) -> Vec<AssignedValue<F>>{
+    // let total_len = bytes_a.len() + bytes_b.len();
+    // let a_len = bytes_a.len();
+    // let b_len = bytes_a.len();
+    // let mut concats_bytes_witness = [bytes_a, bytes_b].concat().to_vec().into_iter().map(|x| Existing(x));
+    // let mut concats_bytes = Vec::with_capacity(bytes_a.len() + bytes_b.len());
+
+    // let pows = range.gate.pow_of_two().iter().step_by(8).take(total_len).map(|x| Constant(*x));
+    // let pows_sub = range.gate.pow_of_two().iter().step_by(8).take(total_len).map(|x| Constant(*x));
+
+    // let acc = range.gate.inner_product(ctx, byte_vals, pows);
+    return [bytes_a, bytes_b].concat();
 }
