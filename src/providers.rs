@@ -25,12 +25,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use tokio::runtime::Runtime;
 
-use crate::config::contract::zksync_era_contract::{
-    get_zksync_era_nonce_holder_contract_address, get_zksync_era_nonce_holder_contract_layout,
-};
-use crate::config::token::zksync_era_token::{
-    get_zksync_era_eth_address, get_zksync_era_token_layout_by_address,
-};
+use crate::block_header::zksync_era::{ZkSyncEraBlockHeaderInput, ZkSyncEraBlockHeadersInput};
 use crate::ecdsa::util::recover_tx_info;
 use crate::ecdsa::EthEcdsaInput;
 use crate::mpt::MPTInput;
@@ -46,19 +41,22 @@ use crate::storage::{
 use crate::track_block::util::TrackBlockConstructor;
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
-use crate::transaction::zksync_era::now::{ZkSyncBlockTransactionInput, ZkSyncTransactionsInput};
-use crate::transaction::{EIP_1559_TX_TYPE, EIP_2718_TX_TYPE, TX_MAX_LEN};
+use crate::transaction::zksync_era::{ZkSyncEraBlockTransactionInput, ZkSyncEraTransactionInput};
+use crate::transaction::TX_MAX_LEN;
 use crate::util::contract_abi::erc20::{decode_input, is_erc20_transaction};
-use crate::util::{h256_tree_root, h256_tree_root_and_proof, h256_tree_verify, h256_non_standard_tree_root_and_proof};
 use crate::util::helpers::calculate_storage_mapping_key;
+use crate::util::{
+    h256_non_standard_tree_root_and_proof, h256_tree_root, h256_tree_root_and_proof,
+    h256_tree_verify,
+};
 use crate::{
     storage::{EthBlockStorageInput, EthStorageInput},
     util::{get_merkle_mountain_range, u256_to_bytes32_be},
     Network,
 };
+
 const TRANSACTION_INDEX_MAX_KEY_BYTES_LEN: usize = 3;
 const K256_MAX_KEY_BYTES_LEN: usize = 32;
-
 
 pub fn get_batch_block_merkle_root(
     provider: &Provider<Http>,
@@ -66,21 +64,19 @@ pub fn get_batch_block_merkle_root(
     end_block_num: u32,
     block_verify_index: u32,
 ) {
-
     let rt = Runtime::new().unwrap();
     assert!(start_block_num <= end_block_num);
     let mut leaves = Vec::with_capacity((end_block_num - start_block_num) as usize);
     let merkle_verify_leaf_index = block_verify_index - start_block_num;
-    for block_num in (start_block_num..=end_block_num) {
+    for block_num in start_block_num..=end_block_num {
         let block = rt.block_on(provider.get_block(block_num as u64)).unwrap().unwrap();
         let block_hash = block.hash.unwrap();
         leaves.push(block_hash);
     }
-    let (proof_root, proof, path) = h256_non_standard_tree_root_and_proof(&leaves, merkle_verify_leaf_index);
+    let (proof_root, proof, path) =
+        h256_non_standard_tree_root_and_proof(&leaves, merkle_verify_leaf_index);
 
     h256_tree_verify(&proof_root, &leaves[merkle_verify_leaf_index as usize], &proof, &path);
-
-
 }
 
 fn get_buffer_rlp(value: u32) -> Vec<u8> {
@@ -377,161 +373,48 @@ pub fn get_contract_storage_input(
     }
 }
 
-pub fn get_zksync_era_block_input(provider: &Provider<Http>, blocks_number: Vec<u64>) {
+pub fn get_zksync_era_block_with_txs_input(
+    provider: &Provider<Http>,
+    blocks_number: Vec<u64>,
+) -> ZkSyncEraBlockHeadersInput {
     let rt = Runtime::new().unwrap();
-    let block = rt.block_on(provider.get_block(blocks_number[0])).unwrap().unwrap();
-    let block_hash = block.hash.unwrap();
-    let block_header = get_block_rlp(&block);
+    let headers = blocks_number
+        .into_iter()
+        .map(|block_number| {
+            let block = rt.block_on(provider.get_block(block_number)).unwrap().unwrap();
+            ZkSyncEraBlockHeaderInput {
+                block_header: get_zksync_era_block_rlp(&block),
+                txs_hash: block.transactions,
+                max_txs_len: 50,
+            }
+        })
+        .collect_vec();
+    ZkSyncEraBlockHeadersInput { headers }
 }
 
-pub fn get_zksync_transaction_and_storage_input(
+pub fn get_zksync_era_transaction_input(
     provider: &Provider<Http>,
     tx_hash: H256,
-) -> ZkSyncBlockTransactionInput {
+) -> ZkSyncEraBlockTransactionInput {
     let rt = Runtime::new().unwrap();
-    let valid_tx = rt.block_on(provider.get_transaction(tx_hash)).unwrap().unwrap();
-    let valid_tx_block_number = valid_tx.block_number.unwrap();
-    let block_with_txs =
-        rt.block_on(provider.get_block_with_txs(valid_tx.block_number.unwrap())).unwrap().unwrap();
-    let mut valid_tx_from = Address::default();
-    let mut valid_tx_to = Address::default();
-    // from:valid_tx.from to:valid_tx.to
-    if !valid_tx.value.is_zero() {
-        // ETH
-        valid_tx_from = valid_tx.from;
-        valid_tx_to = valid_tx.to.unwrap();
-    } else if is_erc20_transaction(valid_tx.input.clone()) {
-        // from:valid_tx.from
-        // to:valid_tx.input.to
-        let valid_tx_erc20 = decode_input(valid_tx.input.clone()).unwrap();
-        valid_tx_from = valid_tx.from;
-        valid_tx_to = valid_tx_erc20.get(0).unwrap().clone().into_address().unwrap();
-    }
-
-    let mut from_txs: Vec<Bytes> = vec![];
-    let mut to_txs: Vec<Bytes> = vec![];
-    let mut from_tokens: Vec<Address> = vec![];
-    let mut to_tokens: Vec<Address> = vec![];
-
-    for transaction in block_with_txs.transactions {
-        let transaction_from = transaction.from;
-        let transaction_to = transaction.to.unwrap();
-        let transaction_value = transaction.value;
-
-        // ETH
-        if !transaction_value.is_zero() {
-            // out \ in
-            if transaction_from == valid_tx_from || transaction_to == valid_tx_from {
-                from_txs.push(transaction.rlp());
-                if !from_tokens.contains(&get_zksync_era_eth_address()) {
-                    from_tokens.push(get_zksync_era_eth_address());
-                }
-            }
-            if transaction_from == valid_tx_to || transaction_to == valid_tx_to {
-                // out \ in
-                to_txs.push(transaction.rlp());
-                if !to_tokens.contains(&get_zksync_era_eth_address()) {
-                    to_tokens.push(get_zksync_era_eth_address());
-                }
-            }
-        } else if is_erc20_transaction(transaction.input.clone()) {
-            //
-            let erc20_address = transaction.to.unwrap();
-            let transaction_erc20 = decode_input(transaction.input.clone()).unwrap();
-            let transaction_erc20_to =
-                transaction_erc20.get(0).unwrap().clone().into_address().unwrap();
-            // out \ in
-            if transaction_from == valid_tx_from || transaction_erc20_to == valid_tx_from {
-                from_txs.push(transaction.rlp());
-                if !from_tokens.contains(&erc20_address) {
-                    from_tokens.push(erc20_address);
-                }
-            }
-            if transaction_from == valid_tx_to || transaction_erc20_to == valid_tx_to {
-                to_txs.push(transaction.rlp());
-                if !to_tokens.contains(&erc20_address) {
-                    to_tokens.push(erc20_address);
-                }
-            }
-        }
-    }
-
-    let from_validate_index =
-        from_txs.iter().position(|tx_rlp| tx_rlp.clone() == valid_tx.rlp()).unwrap();
-    let to_validate_index =
-        to_txs.iter().position(|tx_rlp| tx_rlp.clone() == valid_tx.rlp()).unwrap();
-
-    let pre_block_id = Option::from(BlockId::from(valid_tx_block_number.sub(1)));
-    let now_block_id = Option::from(BlockId::from(valid_tx_block_number));
-
-    let from_nonce_location =
-        calculate_storage_mapping_key(get_zksync_era_nonce_holder_contract_layout(), valid_tx_from);
-    let to_nonce_location =
-        calculate_storage_mapping_key(get_zksync_era_nonce_holder_contract_layout(), valid_tx_to);
-
-    let from_nonce_slots = (
-        rt.block_on(provider.get_storage_at(
-            get_zksync_era_nonce_holder_contract_address(),
-            from_nonce_location,
-            pre_block_id,
-        ))
-        .unwrap(),
-        rt.block_on(provider.get_storage_at(
-            get_zksync_era_nonce_holder_contract_address(),
-            from_nonce_location,
-            now_block_id,
-        ))
-        .unwrap(),
-    );
-
-    let to_nonce_slots = (
-        rt.block_on(provider.get_storage_at(
-            get_zksync_era_nonce_holder_contract_address(),
-            to_nonce_location,
-            pre_block_id,
-        ))
-        .unwrap(),
-        rt.block_on(provider.get_storage_at(
-            get_zksync_era_nonce_holder_contract_address(),
-            to_nonce_location,
-            now_block_id,
-        ))
-        .unwrap(),
-    );
-
-    let mut get_amount_slots = |tokens: Vec<Address>, storage_key: Address| {
-        let amount_slots: Vec<(Address, H256, H256)> = tokens
-            .into_iter()
-            .map(|token_address| {
-                let token_layout = get_zksync_era_token_layout_by_address(token_address).unwrap();
-                let token_location = calculate_storage_mapping_key(token_layout, storage_key);
-                let to_amount_pre_block_slot = rt
-                    .block_on(provider.get_storage_at(token_address, token_location, pre_block_id))
-                    .unwrap();
-                let to_amount_now_block_slot = rt
-                    .block_on(provider.get_storage_at(token_address, token_location, now_block_id))
-                    .unwrap();
-                (token_address, to_amount_pre_block_slot, to_amount_now_block_slot)
-            })
-            .collect();
-        amount_slots
-    };
-
-    let from_amount_slots = get_amount_slots(from_tokens, valid_tx_from);
-    let to_amount_slots = get_amount_slots(to_tokens, valid_tx_to);
-
-    ZkSyncBlockTransactionInput {
-        from_input: ZkSyncTransactionsInput {
-            validate_index: from_validate_index as u64,
-            txs: from_txs,
-            nonce_slots: from_nonce_slots,
-            amount_slots: from_amount_slots,
-        },
-        to_input: ZkSyncTransactionsInput {
-            validate_index: to_validate_index as u64,
-            txs: to_txs,
-            nonce_slots: to_nonce_slots,
-            amount_slots: to_amount_slots,
+    let tx_hash = rt.block_on(provider.get_transaction(tx_hash)).unwrap().unwrap();
+    let block_headers_input =
+        get_zksync_era_block_with_txs_input(provider, vec![tx_hash.block_number.unwrap().as_u64()]);
+    let block_header = block_headers_input.headers.get(0).unwrap().clone();
+    let transaction = Transaction::decode(&Rlp::new(&tx_hash.rlp().to_vec())).unwrap();
+    let (signature, message, message_hash, public_key) = recover_tx_info(&transaction);
+    ZkSyncEraBlockTransactionInput {
+        block_header,
+        transaction: ZkSyncEraTransactionInput {
+            transaction_index: tx_hash.transaction_index.unwrap().as_u64(),
+            transaction_status: 0,
+            transaction_value: tx_hash.rlp().to_vec(),
+            transaction_ecdsa_verify: EthEcdsaInput {
+                signature,
+                message,
+                message_hash,
+                public_key,
+            },
         },
     }
 }
@@ -575,122 +458,6 @@ pub fn is_assigned_slot(key: &H256, proof: &[Bytes]) -> bool {
         return false;
     }
     true
-}
-
-// EIP_2718 [nonce,gasPrice,gasLimit,to,value,data,v,r,s]
-// 1: EIP_2930 [chainId,nonce,gasPrice,gasLimit,to,value,data,accessList,v,r,s]
-// 2: EIP_1559 [chainId,nonce,maxPriorityFeePerGas,maxFeePerGas,gasLimit,to,value,data,accessList,v,r,s]
-pub fn get_transaction_field_rlp(
-    tx_type: u8,
-    source: &Vec<u8>,
-    item_count: usize,
-    new_item: [u8; 9],
-) -> (Vec<u8>, Vec<u8>) {
-    let mut source_rlp = RlpStream::new();
-    source_rlp.append_raw(source, item_count);
-    let source_bytes = source_rlp.as_raw().to_vec();
-    let rlp = Rlp::new(&source_bytes);
-    let mut dest_rlp = RlpStream::new_list(new_item.len());
-    let mut data = vec![];
-    for field_item in new_item {
-        let field_rlp = rlp.at_with_offset(field_item as usize).unwrap();
-        let field = field_rlp.0.data().unwrap();
-        match tx_type {
-            EIP_2718_TX_TYPE => match field_item {
-                0 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                1 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                2 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                3 => {
-                    let dest_field = NameOrAddress::Address(Address::from_slice(field));
-                    dest_rlp.append(&dest_field);
-                }
-                4 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                5 => {
-                    let dest_field = Bytes::from(field.to_vec()).clone();
-                    let a = dest_field.0.to_vec();
-                    dest_rlp.append(&a);
-                    data = a.to_vec();
-                }
-                6 => {
-                    let dest_field = U64::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                7 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                8 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                _ => println!("error"),
-            },
-            EIP_1559_TX_TYPE => match field_item {
-                0 => {
-                    let dest_field = U64::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                1 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                2 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                3 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                4 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                5 => {
-                    let dest_field = NameOrAddress::Address(Address::from_slice(field));
-                    dest_rlp.append(&dest_field);
-                }
-                6 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                7 => {
-                    let dest_field = Bytes::from(field.to_vec()).clone();
-                    let a = dest_field.0.to_vec();
-                    dest_rlp.append(&a);
-                    data = a.to_vec();
-                }
-                9 => {
-                    let dest_field = U64::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                10 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                11 => {
-                    let dest_field = U256::from_big_endian(field);
-                    dest_rlp.append(&dest_field);
-                }
-                _ => println!("error"),
-            },
-            _ => println!("error"),
-        }
-    }
-
-    (dest_rlp.out().into(), data)
 }
 
 pub fn get_acct_rlp(pf: &EIP1186ProofResponse) -> Vec<u8> {
