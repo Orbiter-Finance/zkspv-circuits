@@ -140,18 +140,19 @@ impl EthPreCircuit for BlockMerkleInclusionCircuit {
         let range = RangeChip::default(ETH_LOOKUP_BITS);
         let chip = EthChip::new(RlpChip::new(&range, None), None);
         let mut keccak = KeccakChip::default();
-
+ 
         // ================= FIRST PHASE ================
         let ctx = builder.gate_builder.main(FIRST_PHASE);
         let assigned_input = chip.parse_merkle_proof_phase0(ctx, self.inclusion_proof);
-        assigned_input.input.iter().for_each(|input| {
-            keccak.verify_merkle_proof(ctx, &range.gate, &input.merkle_root, &input.proof, &input.target_leaf, &input.path);
-        });
+        let result = assigned_input.input.iter().map(|input| {
+            keccak.verify_merkle_proof(ctx, &range.gate, &input.merkle_root, &input.proof, &input.target_leaf, &input.path)
+        }).collect_vec();
 
-        let assigned_instances = assigned_input.input.into_iter().map(|input| {
-            input.merkle_root.into_iter().chain(input.target_leaf.into_iter()).collect_vec()
-        }).flatten().collect_vec();
+        let assigned_instances = result.iter().map(|r|r.0.iter().chain(r.1.iter()).cloned()).flatten().collect_vec();
         println!("BlockMerkleInclusionCircuit pis cnt {}", assigned_instances.len());
+        for i in 0..result.len() {
+            println!("result {} {:?}", i, result[i]);
+        }
 
         EthCircuitBuilder::new(
             assigned_instances.clone(),

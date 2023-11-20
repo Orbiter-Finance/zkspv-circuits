@@ -21,7 +21,7 @@ use crate::{
         rlc::{RlcChip, RlcFixedTrace, RlcTrace, RLC_PHASE},
         RlpChip,
     },
-    util::{EthConfigParams, h256_tree_verify, decode_bytes_field_to_h256},
+    util::{EthConfigParams, h256_tree_verify, decode_bytes_field_to_h256, bytes_be_to_u128},
     MPTConfig,
 };
 use crate::util::get_hash_bytes_inner_product;
@@ -213,7 +213,7 @@ impl<F: Field> KeccakChip<F> {
         proof: &[impl AsRef<[AssignedValue<F>]>],
         target_leave: &impl AsRef<[AssignedValue<F>]>,
         path: &impl AsRef<[AssignedValue<F>]>,
-    ) {
+    ) -> (Vec<AssignedValue<F>>, Vec<AssignedValue<F>> ){
         let mut target_leaf_data = target_leave.as_ref().to_vec();
         let path_data = path.as_ref().to_vec();
         let mut leave_proof_data_product = get_hash_bytes_inner_product(ctx, gate , &target_leaf_data);
@@ -282,6 +282,11 @@ impl<F: Field> KeccakChip<F> {
                                                         ctx.constrain_equal(compute_root_byte, target_root_byte);
                                                         assert_eq!((compute_root_byte.value() == target_root_byte.value()), true);
                                                     }
+        let root_hash = bytes_be_to_u128(ctx, gate, &target_leaf_data);
+        let target_leaf = bytes_be_to_u128(ctx, gate, &target_leave.as_ref().to_vec());
+
+        return (root_hash, target_leaf)
+        
 
     }
 
