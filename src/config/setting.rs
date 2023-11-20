@@ -32,32 +32,10 @@ pub struct Rpcs {
     pub zksync_mainnet: String,
     pub zksync_goerli: String,
 }
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct Contracts {
-    pub zksync_nonce_holder: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct Token {
-    pub zksync_eth: String,
-    pub zksync_usdc: String,
-    pub zksync_weth: String,
-}
-#[derive(Clone, Debug, Deserialize)]
-pub struct Layout {
-    pub zksync_nonce_holder: u64,
-    pub zksync_eth: u64,
-    pub zksync_usdc: u64,
-}
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct Settings {
     pub api: Api,
     pub rpcs: Rpcs,
-    pub contracts: Contracts,
-    pub token: Token,
-    pub layout: Layout,
 }
 
 impl Default for Settings {
