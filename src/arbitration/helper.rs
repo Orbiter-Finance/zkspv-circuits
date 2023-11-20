@@ -3,6 +3,8 @@ use ethers_core::utils::keccak256;
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use syn::Block;
+use tracing_subscriber::fmt::format;
 
 use crate::arbitration::circuit_types::{
     EthStorageCircuitType, EthTransactionCircuitType, FinalAssemblyCircuitType,
@@ -12,6 +14,7 @@ use crate::storage::contract_storage::util::{
     get_contracts_storage_circuit, MultiBlocksContractsStorageConstructor,
 };
 use crate::storage::contract_storage::ObContractsStorageCircuit;
+use crate::track_block::BlockMerkleInclusionCircuit;
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
 use crate::transaction::EthTransactionType;
@@ -23,9 +26,45 @@ use crate::{
     EthereumNetwork, Network,
 };
 
-use super::circuit_types::{ArbitrationCircuitType, EthTrackBlockCircuitType};
+use super::circuit_types::{ArbitrationCircuitType, EthTrackBlockCircuitType, BlockMerkleInclusionCircuitType};
 
 pub type CrossChainNetwork = Network;
+
+#[derive(Clone, Debug)]
+pub struct BlockMerkleInclusionTask {
+    pub input: BlockMerkleInclusionCircuit,
+    pub network: Network,
+    pub block_batch_num: u64,
+    pub tree_depth: u64,
+    pub block_range_length: u64,
+}
+
+impl BlockMerkleInclusionTask {
+    pub fn digest(&self) -> H256 {
+        H256(keccak256(bincode::serialize(&self.input.inclusion_proof.input).unwrap()))
+    }
+}
+
+impl scheduler::Task for BlockMerkleInclusionTask {
+    type CircuitType = BlockMerkleInclusionCircuitType;
+
+    fn circuit_type(&self) -> Self::CircuitType {
+        BlockMerkleInclusionCircuitType {
+            network: self.network,
+            tree_depth: self.tree_depth,
+            block_range_length: self.block_range_length,
+        }
+    }
+
+    fn name(&self) -> String {
+        format!("block_merkle_inclusion_tree_depth_{}_block_range_length_{}_block_batch_num_{}_{}",
+                self.tree_depth, self.block_range_length, self.block_batch_num, self.digest())
+    }
+
+    fn dependencies(&self) -> Vec<Self> {
+        vec![]
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ETHBlockTrackTask {
@@ -199,6 +238,7 @@ impl scheduler::Task for MDCStateTask {
 pub struct FinalAssemblyConstructor {
     pub transaction_task: Option<TransactionTask>,
     pub eth_block_track_task: Option<ETHBlockTrackTask>,
+    pub block_merkle_inclusion_task: Option<BlockMerkleInclusionTask>,
     pub mdc_state_task: Option<Vec<MDCStateTask>>,
 }
 
@@ -233,6 +273,7 @@ impl scheduler::Task for FinalAssemblyTask {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum ArbitrationTask {
+    BlockMerkleInclusion(BlockMerkleInclusionTask),
     Transaction(TransactionTask),
     MDCState(MDCStateTask),
     ETHBlockTrack(ETHBlockTrackTask),
@@ -244,6 +285,9 @@ impl scheduler::Task for ArbitrationTask {
 
     fn circuit_type(&self) -> Self::CircuitType {
         match self {
+            ArbitrationTask::BlockMerkleInclusion(task) => {
+                ArbitrationCircuitType::BlockMerkleInclusion(task.circuit_type())
+            }
             ArbitrationTask::ETHBlockTrack(task) => {
                 ArbitrationCircuitType::TrackBlock(task.circuit_type())
             }
@@ -261,6 +305,7 @@ impl scheduler::Task for ArbitrationTask {
 
     fn name(&self) -> String {
         match self {
+            ArbitrationTask::BlockMerkleInclusion(task) => task.name(),
             ArbitrationTask::ETHBlockTrack(task) => task.name(),
             ArbitrationTask::Transaction(task) => task.name(),
             ArbitrationTask::MDCState(task) => task.name(),
@@ -270,6 +315,9 @@ impl scheduler::Task for ArbitrationTask {
 
     fn dependencies(&self) -> Vec<Self> {
         match self {
+            ArbitrationTask::BlockMerkleInclusion(task) => {
+                task.dependencies().into_iter().map(ArbitrationTask::BlockMerkleInclusion).collect()
+            }
             ArbitrationTask::Transaction(task) => {
                 task.dependencies().into_iter().map(ArbitrationTask::Transaction).collect()
             }
@@ -295,8 +343,11 @@ impl scheduler::Task for ArbitrationTask {
                         task_array.push(ArbitrationTask::Transaction(
                             task.constructor.transaction_task.unwrap(),
                         ));
-                        task_array.push(ArbitrationTask::ETHBlockTrack(
-                            task.constructor.eth_block_track_task.unwrap(),
+                        // task_array.push(ArbitrationTask::ETHBlockTrack(
+                        //     task.constructor.eth_block_track_task.unwrap(),
+                        // ));
+                        task_array.push(ArbitrationTask::BlockMerkleInclusion(
+                            task.constructor.block_merkle_inclusion_task.unwrap(),
                         ));
                         let mut mdc_state_tasks = task
                             .constructor

@@ -8,7 +8,8 @@ use crate::storage::contract_storage::util::{
     get_contracts_storage_circuit, EbcRuleParams, MultiBlocksContractsStorageConstructor,
     ObContractStorageConstructor, SingleBlockContractsStorageConstructor,
 };
-use crate::track_block::util::{get_eth_track_block_circuit, TrackBlockConstructor};
+use crate::track_block::BlockMerkleInclusionConstructor;
+use crate::track_block::util::{get_eth_track_block_circuit, TrackBlockConstructor, get_merkle_inclusion_circuit};
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
 use crate::transaction::EthTransactionType;
 use crate::util::scheduler::arbitration_scheduler::ArbitrationScheduler;
@@ -19,6 +20,8 @@ use ark_std::{end_timer, start_timer};
 use ethers_core::types::H256;
 use itertools::Itertools;
 use std::path::PathBuf;
+
+use super::helper::BlockMerkleInclusionTask;
 
 fn init_scheduler(network: Network) -> ArbitrationScheduler {
     ArbitrationScheduler::new(
@@ -178,9 +181,19 @@ impl ProofRouter {
                         constructor: vec![block_track_constructor],
                     };
 
+                    let input = get_merkle_inclusion_circuit(false, Some(1),None, None);
+                    let block_merkle_inclusion_task = BlockMerkleInclusionTask {
+                        input: input.clone(),
+                        network,
+                        tree_depth: 8,
+                        block_batch_num: input.block_batch_num,
+                        block_range_length: input.block_range_length,
+                    };
+
                     let constructor = FinalAssemblyConstructor {
                         transaction_task: Option::from(transaction_task),
                         eth_block_track_task: Option::from(block_track_task),
+                        block_merkle_inclusion_task: Option::from(block_merkle_inclusion_task),
                         mdc_state_task: Option::from(vec![ob_contracts_storage_task]),
                     };
 
@@ -235,9 +248,20 @@ impl ProofRouter {
                         constructor: vec![block_track_constructor],
                     };
 
+                    let input = get_merkle_inclusion_circuit(false, Some(1), None, None);
+                    let block_merkle_inclusion_task = BlockMerkleInclusionTask {
+                        input: input.clone(),
+                        network,
+                        tree_depth: 8,
+                        block_batch_num: input.block_batch_num,
+                        block_range_length: input.block_range_length,
+                    };
+
+
                     let constructor = FinalAssemblyConstructor {
                         transaction_task: Option::from(transaction_task),
                         eth_block_track_task: Option::from(block_track_task),
+                        block_merkle_inclusion_task: Option::from(block_merkle_inclusion_task),
                         mdc_state_task: None,
                     };
 

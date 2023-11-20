@@ -31,7 +31,7 @@ use crate::storage::contract_storage::util::{
     ObContractStorageConstructor, SingleBlockContractsStorageConstructor,
 };
 use crate::storage::util::get_mdc_storage_circuit;
-use crate::track_block::util::TrackBlockConstructor;
+use crate::track_block::util::{TrackBlockConstructor, get_merkle_inclusion_circuit};
 use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
 use crate::transaction::EthTransactionType;
 use crate::{
@@ -52,7 +52,7 @@ use crate::{
     EthPreCircuit, EthereumNetwork, Network,
 };
 
-use super::helper::{ArbitrationTask, ETHBlockTrackTask};
+use super::helper::{ArbitrationTask, ETHBlockTrackTask, BlockMerkleInclusionTask};
 
 fn test_get_storage_circuit(network: Network, block_number: u32) -> EthBlockStorageCircuit {
     get_test_storage_circuit(network, block_number)
@@ -143,6 +143,17 @@ fn test_dest_transaction_task(network: Network) -> TransactionTask {
     }
 }
 
+fn test_merkle_inclusion_task(network: Network, target_index: i32) -> BlockMerkleInclusionTask {
+    let input = get_merkle_inclusion_circuit(false, Some(target_index),None, None);
+    BlockMerkleInclusionTask {
+        input: input.clone(),
+        network,
+        block_batch_num: input.block_batch_num,
+        tree_depth: 8,
+        block_range_length: input.block_range_length,
+    }
+}
+
 fn test_transaction_task(network: Network) -> TransactionTask {
     let block_number = 0x977bfd;
     let transaction_index = 149u32;
@@ -198,6 +209,16 @@ pub fn test_arbitration_scheduler_dest_transaction_task() {
     let scheduler = test_scheduler(network);
     let _task = test_transaction_task(network);
     scheduler.get_snark(ArbitrationTask::Transaction(_task));
+}
+
+#[test]
+pub fn test_arbitration_merkle_inclusion_task() {
+    let network = Network::Ethereum(EthereumNetwork::Goerli);
+    let scheduler = test_scheduler(network);
+    let _task = test_merkle_inclusion_task(network, 1);
+    scheduler.get_snark(ArbitrationTask::BlockMerkleInclusion(_task));
+    let _task = test_merkle_inclusion_task(network, 191);
+    scheduler.get_snark(ArbitrationTask::BlockMerkleInclusion(_task));
 }
 
 fn test_mdc_task(network: Network) -> MDCStateTask {

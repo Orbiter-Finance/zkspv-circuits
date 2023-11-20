@@ -1,7 +1,7 @@
 use crate::{
     arbitration::helper::ArbitrationTask,
     storage::{util::get_mdc_storage_circuit, EthBlockStorageCircuit},
-    track_block::{util::get_eth_track_block_circuit, EthTrackBlockCircuit},
+    track_block::{util::get_eth_track_block_circuit, EthTrackBlockCircuit, BlockMerkleInclusionCircuit},
     util::circuit::PublicAggregationCircuit,
     Network,
 };
@@ -26,6 +26,7 @@ use std::path::Path;
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, AnyCircuit)]
 pub enum CircuitRouter {
+    BlockerMerkleInclusion(BlockMerkleInclusionCircuit),
     Transaction(EthBlockTransactionCircuit),
     AggreateTransactions(PublicAggregationCircuit),
 
@@ -108,6 +109,9 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                         prev_snarks,
                     ));
                 }
+            }
+            ArbitrationTask::BlockMerkleInclusion(task) => {
+                CircuitRouter::BlockerMerkleInclusion(task.input)
             }
             ArbitrationTask::Final(final_task) => {
                 println!("FINAL ====== prev_snarks len {}", prev_snarks.len());
