@@ -1,5 +1,4 @@
 pub mod client;
-pub mod execute;
 pub mod server;
 
 use crate::config::api::get_internal_api;
@@ -22,8 +21,6 @@ use tower_http::cors::{Any, CorsLayer};
 #[derive(Clone, Debug, Deserialize)]
 pub struct OriginalProof {
     pub task_id: H256,
-    pub chain_id: u64,
-    pub source: bool,
     pub proof: String,
 }
 

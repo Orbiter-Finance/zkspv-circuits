@@ -265,7 +265,12 @@ impl<'chip, F: Field> ZkSyncEraBlockHeaderChip<F> for EthChip<'chip, F> {
 
         for right_leaf in header.txs_hash.clone().into_iter() {
             // splice left leaf and right leaf
-            let left_node_concat = [left_leaf.to_vec(), right_leaf.to_vec()].concat();
+            let left_node_concat: Vec<AssignedValue<F>> =
+                [left_leaf.to_vec(), right_leaf.to_vec()].concat();
+            let left_node_concat =
+                ctx.assign_witnesses(left_node_concat.into_iter().map(|x| *x.value()));
+            assert_eq!(left_node_concat.len(), 64);
+
             // keccak hash of left node concat and get idx
             let left_node_hash_idx =
                 keccak.keccak_fixed_len(ctx, self.gate(), left_node_concat, None);
@@ -296,6 +301,9 @@ impl<'chip, F: Field> ZkSyncEraBlockHeaderChip<F> for EthChip<'chip, F> {
                 // left leaf will be consistent with the value of the original left leaf
                 left_leaf
             };
+
+            left_leaf = ctx.assign_witnesses(left_leaf.into_iter().map(|x| *x.value()));
+            assert_eq!(left_leaf.len(), 32);
 
             let left_leaf_product = get_hash_bytes_inner_product(ctx, self.gate(), &left_leaf);
 

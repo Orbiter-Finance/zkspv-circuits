@@ -86,8 +86,8 @@ pub enum OptimismNetwork {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum ZkSyncEraNetwork {
-    Mainnet,
-    Goerli,
+    Mainnet = 324,
+    Goerli = 280,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -105,12 +105,12 @@ impl ToString for Network {
             Ethereum(_) => String::from("ethereum"),
             Arbitrum(_) => String::from("arbitrum"),
             Optimism(_) => String::from("optimism"),
-            ZkSync(_) => String::from("zkSync"),
+            ZkSync(_) => String::from("zksync_era"),
         }
     }
 }
 
-pub fn get_network_from_chain_id(chain_id: usize) -> Result<Network, ErrorType> {
+pub fn get_network_from_chain_id(chain_id: u64) -> Result<Network, ErrorType> {
     match chain_id {
         1 => Ok(Ethereum(EthereumNetwork::Mainnet)),
         5 => Ok(Ethereum(EthereumNetwork::Goerli)),
@@ -118,6 +118,8 @@ pub fn get_network_from_chain_id(chain_id: usize) -> Result<Network, ErrorType> 
         421613 => Ok(Arbitrum(ArbitrumNetwork::Goerli)),
         10 => Ok(Optimism(OptimismNetwork::Mainnet)),
         420 => Ok(Optimism(OptimismNetwork::Goerli)),
+        324 => Ok(ZkSync(ZkSyncEraNetwork::Mainnet)),
+        280 => Ok(ZkSync(ZkSyncEraNetwork::Goerli)),
         _ => Err(ErrorType::NetworkNotSupported),
     }
 }

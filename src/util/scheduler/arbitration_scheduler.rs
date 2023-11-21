@@ -12,6 +12,7 @@ use crate::storage::contract_storage::ObContractsStorageCircuit;
 use crate::storage::util::StorageConstructor;
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::EthBlockTransactionCircuit;
+use crate::transaction::zksync_era::ZkSyncEraBlockTransactionCircuit;
 use crate::util::scheduler::{self, AnyCircuit, Task};
 use circuit_derive::AnyCircuit;
 use halo2_base::halo2_proofs::{
@@ -26,8 +27,11 @@ use std::path::Path;
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, AnyCircuit)]
 pub enum CircuitRouter {
-    Transaction(EthBlockTransactionCircuit),
-    AggreateTransactions(PublicAggregationCircuit),
+    EthTransaction(EthBlockTransactionCircuit),
+    AggreateEthTransactions(PublicAggregationCircuit),
+
+    ZkSyncTransaction(ZkSyncEraBlockTransactionCircuit),
+    AggreateZkSyncTransactions(PublicAggregationCircuit),
 
     BlockTrackInterval(EthTrackBlockCircuit),
     AggreateBlockTracks(PublicAggregationCircuit),
@@ -49,10 +53,10 @@ impl scheduler::Scheduler for ArbitrationScheduler {
 
     fn get_circuit(&self, task: Self::Task, prev_snarks: Vec<Snark>) -> Self::CircuitRouter {
         match task {
-            ArbitrationTask::Transaction(task) => {
+            ArbitrationTask::EthTransaction(task) => {
                 if task.circuit_type().is_aggregated() {
                     println!(
-                        "Transaction AGGREGATION ====== prev_snarks len {}",
+                        "EthTransaction AGGREGATION ====== prev_snarks len {}",
                         prev_snarks.len()
                     );
                     let prev_snarks = prev_snarks
@@ -62,10 +66,33 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                             (snark, false)
                         })
                         .collect_vec();
-                    CircuitRouter::AggreateTransactions(PublicAggregationCircuit::new(prev_snarks))
+                    CircuitRouter::AggreateEthTransactions(PublicAggregationCircuit::new(
+                        prev_snarks,
+                    ))
                 } else {
                     println!("TASK_LEN1======");
-                    CircuitRouter::Transaction(task.input)
+                    CircuitRouter::EthTransaction(task.input)
+                }
+            }
+            ArbitrationTask::ZkSyncTransaction(task) => {
+                if task.circuit_type().is_aggregated() {
+                    println!(
+                        "ZkSyncTransaction AGGREGATION ====== prev_snarks len {}",
+                        prev_snarks.len()
+                    );
+                    let prev_snarks = prev_snarks
+                        .into_iter()
+                        .map(|snark| {
+                            println!("instances num {}", snark.instances.len());
+                            (snark, false)
+                        })
+                        .collect_vec();
+                    CircuitRouter::AggreateZkSyncTransactions(PublicAggregationCircuit::new(
+                        prev_snarks,
+                    ))
+                } else {
+                    println!("TASK_LEN1======");
+                    CircuitRouter::ZkSyncTransaction(task.input)
                 }
             }
             ArbitrationTask::MDCState(task) => {

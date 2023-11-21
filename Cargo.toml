@@ -9,10 +9,6 @@ name = "header_chain"
 required-features = ["aggregation", "clap"]
 
 [[bin]]
-name = "transaction"
-required-features = ["aggregation", "clap", "evm"]
-
-[[bin]]
 name = "services"
 required-features = ["aggregation", "clap", "evm"]
 

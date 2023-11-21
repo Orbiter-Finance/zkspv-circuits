@@ -1,5 +1,6 @@
 use ethers_core::types::{Bytes, H256};
 use ethers_core::utils::keccak256;
+use std::fmt::{Debug, Formatter};
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,10 @@ use crate::storage::contract_storage::util::{
 };
 use crate::storage::contract_storage::ObContractsStorageCircuit;
 use crate::track_block::util::TrackBlockConstructor;
-use crate::transaction::ethereum::util::{get_eth_transaction_circuit, TransactionConstructor};
+use crate::transaction::util::{
+    get_eth_transaction_circuit, get_zksync_transaction_circuit, TransactionConstructor,
+};
+use crate::transaction::zksync_era::ZkSyncEraBlockTransactionCircuit;
 use crate::transaction::EthTransactionType;
 use crate::util::scheduler::CircuitType;
 use crate::{
@@ -86,26 +90,27 @@ impl scheduler::Task for ETHBlockTrackTask {
 
 /// Transaction
 #[derive(Clone, Debug)]
-pub struct TransactionTask {
+pub struct EthTransactionTask {
     pub input: EthBlockTransactionCircuit,
     pub tx_type: EthTransactionType,
     pub tasks_len: u64,
     pub constructor: Vec<TransactionConstructor>,
     pub aggregated: bool,
+    pub network: Network,
 }
 
-impl TransactionTask {
+impl EthTransactionTask {
     fn hash(&self) -> H256 {
         H256(keccak256(bincode::serialize(&self.constructor[0].transaction_rlp).unwrap()))
     }
 }
 
-impl scheduler::Task for TransactionTask {
+impl scheduler::Task for EthTransactionTask {
     type CircuitType = EthTransactionCircuitType;
 
     fn circuit_type(&self) -> Self::CircuitType {
         EthTransactionCircuitType {
-            network: self.constructor[0].network,
+            network: self.network,
             tx_type: self.tx_type.clone(),
             tasks_len: self.tasks_len,
             aggregated: self.aggregated,
@@ -135,6 +140,68 @@ impl scheduler::Task for TransactionTask {
                     tasks_len: 1u64,
                     constructor: [constructor].to_vec(),
                     aggregated: false,
+                    network: self.network,
+                })
+                .collect_vec();
+            result
+        } else {
+            vec![]
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ZkSyncTransactionTask {
+    pub input: ZkSyncEraBlockTransactionCircuit,
+    pub tx_type: EthTransactionType,
+    pub tasks_len: u64,
+    pub constructor: Vec<TransactionConstructor>,
+    pub aggregated: bool,
+    pub network: Network,
+}
+
+impl ZkSyncTransactionTask {
+    fn hash(&self) -> H256 {
+        self.constructor[0].transaction_hash
+    }
+}
+
+impl scheduler::Task for ZkSyncTransactionTask {
+    type CircuitType = EthTransactionCircuitType;
+
+    fn circuit_type(&self) -> Self::CircuitType {
+        EthTransactionCircuitType {
+            network: self.network,
+            tx_type: self.tx_type.clone(),
+            tasks_len: self.tasks_len,
+            aggregated: self.aggregated,
+        }
+    }
+
+    fn name(&self) -> String {
+        if self.circuit_type().is_aggregated() {
+            format!(
+                "zksync_era_transaction_aggregated_{}_task_len_{}",
+                self.tx_type.to_string(),
+                self.tasks_len
+            )
+        } else {
+            format!("zksync_era_transaction_{}_tx_{}", self.tx_type.to_string(), self.hash())
+        }
+    }
+
+    fn dependencies(&self) -> Vec<Self> {
+        if self.circuit_type().is_aggregated() {
+            let constructor = self.constructor.clone();
+            let result = constructor
+                .into_iter()
+                .map(|constructor| Self {
+                    input: get_zksync_transaction_circuit(constructor.clone()),
+                    tx_type: self.tx_type.clone(),
+                    tasks_len: 1u64,
+                    constructor: [constructor].to_vec(),
+                    aggregated: false,
+                    network: self.network,
                 })
                 .collect_vec();
             result
@@ -197,17 +264,31 @@ impl scheduler::Task for MDCStateTask {
 
 #[derive(Clone, Debug)]
 pub struct FinalAssemblyConstructor {
-    pub transaction_task: Option<TransactionTask>,
+    pub eth_transaction_task: Option<EthTransactionTask>,
+    pub zksync_transaction_task: Option<ZkSyncTransactionTask>,
     pub eth_block_track_task: Option<ETHBlockTrackTask>,
-    pub mdc_state_task: Option<Vec<MDCStateTask>>,
+    pub mdc_state_task: Option<MDCStateTask>,
 }
 
 #[derive(Clone, Debug)]
 pub struct FinalAssemblyTask {
     pub round: usize,
-    pub aggregation_type: FinalAssemblyType,
-    pub network: Network,
+    pub final_assembly_type: FinalAssemblyType,
+    pub l1_network: Network,
+    pub l2_network: Option<Network>,
     pub constructor: FinalAssemblyConstructor,
+}
+
+impl FinalAssemblyTask {
+    pub fn new(
+        round: usize,
+        final_assembly_type: FinalAssemblyType,
+        l1_network: Network,
+        l2_network: Option<Network>,
+        constructor: FinalAssemblyConstructor,
+    ) -> Self {
+        Self { round, final_assembly_type, l1_network, l2_network, constructor }
+    }
 }
 
 impl scheduler::Task for FinalAssemblyTask {
@@ -216,8 +297,9 @@ impl scheduler::Task for FinalAssemblyTask {
     fn circuit_type(&self) -> Self::CircuitType {
         FinalAssemblyCircuitType {
             round: self.round,
-            aggregation_type: self.aggregation_type.clone(),
-            network: self.network,
+            aggregation_type: self.final_assembly_type.clone(),
+            l1_network: self.l1_network,
+            l2_network: self.l2_network,
         }
     }
 
@@ -233,7 +315,8 @@ impl scheduler::Task for FinalAssemblyTask {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum ArbitrationTask {
-    Transaction(TransactionTask),
+    EthTransaction(EthTransactionTask),
+    ZkSyncTransaction(ZkSyncTransactionTask),
     MDCState(MDCStateTask),
     ETHBlockTrack(ETHBlockTrackTask),
     Final(FinalAssemblyTask),
@@ -247,7 +330,10 @@ impl scheduler::Task for ArbitrationTask {
             ArbitrationTask::ETHBlockTrack(task) => {
                 ArbitrationCircuitType::TrackBlock(task.circuit_type())
             }
-            ArbitrationTask::Transaction(task) => {
+            ArbitrationTask::EthTransaction(task) => {
+                ArbitrationCircuitType::Transaction(task.circuit_type())
+            }
+            ArbitrationTask::ZkSyncTransaction(task) => {
                 ArbitrationCircuitType::Transaction(task.circuit_type())
             }
             ArbitrationTask::MDCState(task) => {
@@ -262,7 +348,8 @@ impl scheduler::Task for ArbitrationTask {
     fn name(&self) -> String {
         match self {
             ArbitrationTask::ETHBlockTrack(task) => task.name(),
-            ArbitrationTask::Transaction(task) => task.name(),
+            ArbitrationTask::EthTransaction(task) => task.name(),
+            ArbitrationTask::ZkSyncTransaction(task) => task.name(),
             ArbitrationTask::MDCState(task) => task.name(),
             ArbitrationTask::Final(task) => task.name(),
         }
@@ -270,8 +357,11 @@ impl scheduler::Task for ArbitrationTask {
 
     fn dependencies(&self) -> Vec<Self> {
         match self {
-            ArbitrationTask::Transaction(task) => {
-                task.dependencies().into_iter().map(ArbitrationTask::Transaction).collect()
+            ArbitrationTask::EthTransaction(task) => {
+                task.dependencies().into_iter().map(ArbitrationTask::EthTransaction).collect()
+            }
+            ArbitrationTask::ZkSyncTransaction(task) => {
+                task.dependencies().into_iter().map(ArbitrationTask::ZkSyncTransaction).collect()
             }
             ArbitrationTask::MDCState(task) => {
                 task.dependencies().into_iter().map(ArbitrationTask::MDCState).collect()
@@ -289,36 +379,29 @@ impl scheduler::Task for ArbitrationTask {
                     })];
                 }
                 let task = task.clone();
-                match task.aggregation_type {
-                    FinalAssemblyType::Source => {
-                        let mut task_array = vec![];
-                        task_array.push(ArbitrationTask::Transaction(
-                            task.constructor.transaction_task.unwrap(),
-                        ));
-                        task_array.push(ArbitrationTask::ETHBlockTrack(
-                            task.constructor.eth_block_track_task.unwrap(),
-                        ));
-                        let mut mdc_state_tasks = task
-                            .constructor
-                            .mdc_state_task
-                            .unwrap()
-                            .iter()
-                            .map(|mdc_state| ArbitrationTask::MDCState(mdc_state.clone()))
-                            .collect_vec();
-                        task_array.append(&mut mdc_state_tasks);
-                        task_array
-                    }
-                    FinalAssemblyType::Destination => {
-                        vec![
-                            ArbitrationTask::Transaction(
-                                task.constructor.transaction_task.unwrap(),
-                            ),
-                            ArbitrationTask::ETHBlockTrack(
-                                task.constructor.eth_block_track_task.unwrap(),
-                            ),
-                        ]
-                    }
+                let mut task_array = vec![];
+                // source 1.eth (eth_transaction_task,eth_block_track_task,mdc_state_task) 2.zkSync (zksync_transaction_task,eth_block_track_task,mdc_state_task)
+                // dest   1.eth (eth_transaction_task,eth_block_track_task)                2.zkSync (zksync_transaction_task,eth_block_track_task)
+                if task.constructor.eth_transaction_task.is_some() {
+                    task_array.push(ArbitrationTask::EthTransaction(
+                        task.constructor.eth_transaction_task.unwrap(),
+                    ));
                 }
+                if task.constructor.zksync_transaction_task.is_some() {
+                    task_array.push(ArbitrationTask::ZkSyncTransaction(
+                        task.constructor.zksync_transaction_task.unwrap(),
+                    ));
+                }
+                if task.constructor.eth_block_track_task.is_some() {
+                    task_array.push(ArbitrationTask::ETHBlockTrack(
+                        task.constructor.eth_block_track_task.unwrap(),
+                    ));
+                }
+                if task.constructor.mdc_state_task.is_some() {
+                    task_array
+                        .push(ArbitrationTask::MDCState(task.constructor.mdc_state_task.unwrap()));
+                }
+                task_array
             }
         }
     }

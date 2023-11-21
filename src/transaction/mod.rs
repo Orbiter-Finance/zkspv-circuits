@@ -1,7 +1,15 @@
+use crate::transaction::ethereum::EthBlockTransactionCircuit;
+use crate::transaction::zksync_era::ZkSyncEraBlockTransactionCircuit;
+use crate::Network;
+use ethers_core::types::{Bytes, H256};
+use ethers_providers::Provider;
 use halo2_base::{AssignedValue, Context};
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 use zkevm_keccak::util::eth_types::Field;
+
 pub mod ethereum;
+pub mod util;
 pub mod zksync_era;
 
 /// The theoretical maximum value of Ethereum transaction type is 7f (Except for Legacy transactions:f8) https://ethereum.org/zh/developers/docs/transactions/#typed-transaction-envelope

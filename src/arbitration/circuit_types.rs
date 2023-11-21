@@ -64,7 +64,7 @@ impl scheduler::CircuitType for EthTransactionCircuitType {
                 self.tasks_len
             )
         } else {
-            format!("transaction_{}", self.tx_type.to_string())
+            format!("{}_transaction_{}", self.network.to_string(), self.tx_type.to_string())
         }
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
@@ -129,14 +129,21 @@ pub struct FinalAssemblyCircuitType {
     /// This is used to reduce circuit size and final EVM verification gas costs.
     pub round: usize,
     pub aggregation_type: FinalAssemblyType,
-    pub network: Network,
+    pub l1_network: Network,
+    pub l2_network: Option<Network>,
 }
 
 impl FinalAssemblyCircuitType {
     pub fn name(&self) -> String {
+        let l2_network = if self.l2_network.is_some() {
+            self.l2_network.unwrap().to_string()
+        } else {
+            "null".to_string()
+        };
         format!(
-            "{}_{}_final_{}",
-            self.network.to_string(),
+            "l1_{}_l2_{}_{}_final_{}",
+            self.l1_network.to_string(),
+            l2_network,
             self.aggregation_type.to_string(),
             self.round
         )

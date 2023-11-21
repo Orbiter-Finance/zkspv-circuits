@@ -1,6 +1,6 @@
 use crate::block_header::zksync_era::{
     ZkSyncEraBlockHeaderChip, ZkSyncEraBlockHeaderInput, ZkSyncEraBlockHeaderInputAssigned,
-    ZkSyncEraBlockHeaderTrace, ZkSyncEraBlockHeaderTraceWitness, BLOCK_HEADER_RLP_MAX_BYTES,
+    ZkSyncEraBlockHeaderTrace, ZkSyncEraBlockHeaderTraceWitness,
 };
 use crate::ecdsa::{EcdsaChip, EthEcdsaInput, EthEcdsaInputAssigned};
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
@@ -13,9 +13,9 @@ use crate::storage::EthStorageChip;
 use crate::transaction::ethereum::{
     EthBlockTransactionChip, EthTransactionExtraWitness, EthTransactionField,
 };
-use crate::transaction::zksync_era::util::ZkSyncEraTransactionConstructor;
 
 use crate::receipt::TX_STATUS_SUCCESS;
+use crate::transaction::util::TransactionConstructor;
 use crate::util::helpers::{bytes_to_u8, load_bytes};
 use crate::util::{
     bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, u128s_to_bytes_be, AssignedH256,
@@ -36,7 +36,6 @@ use zkevm_keccak::util::eth_types::Field;
 use zksync_web3_rs::zks_provider::types::BlockDetails;
 
 mod tests;
-pub mod util;
 
 const CACHE_BITS: usize = 12;
 
@@ -45,6 +44,7 @@ pub struct ZkSyncEraTransactionInput {
     pub transaction_index: u64,
     pub transaction_status: u64,
     pub transaction_value: Vec<u8>,
+    pub transaction_value_max_bytes: usize,
     pub transaction_ecdsa_verify: EthEcdsaInput,
 }
 
@@ -53,19 +53,25 @@ pub struct ZkSyncEraTransactionInputAssigned<F: Field> {
     pub transaction_index: AssignedValue<F>,
     pub transaction_status: AssignedValue<F>,
     pub transaction_value: AssignedBytes<F>,
+    pub transaction_value_max_bytes: AssignedValue<F>,
     pub transaction_ecdsa_verify: EthEcdsaInputAssigned<F>,
 }
 
 impl ZkSyncEraTransactionInput {
     pub fn assign<F: Field>(self, ctx: &mut Context<F>) -> ZkSyncEraTransactionInputAssigned<F> {
+        let Self { mut transaction_value, .. } = self;
         let transaction_index = ctx.load_witness(F::from(self.transaction_index));
         let transaction_status = ctx.load_witness(F::from(self.transaction_status));
-        let transaction_value = load_bytes(ctx, self.transaction_value.as_slice());
+        let transaction_value_max_bytes =
+            ctx.load_witness(F::from(self.transaction_value_max_bytes as u64));
+        transaction_value.resize(self.transaction_value_max_bytes, 0);
+        let transaction_value = load_bytes(ctx, transaction_value.as_slice());
         let transaction_ecdsa_verify = self.transaction_ecdsa_verify.assign(ctx);
         ZkSyncEraTransactionInputAssigned {
             transaction_index,
             transaction_status,
             transaction_value,
+            transaction_value_max_bytes,
             transaction_ecdsa_verify,
         }
     }
@@ -100,10 +106,7 @@ pub struct ZkSyncEraBlockTransactionCircuit {
 }
 
 impl ZkSyncEraBlockTransactionCircuit {
-    pub fn from_provider(
-        provider: &Provider<Http>,
-        constructor: ZkSyncEraTransactionConstructor,
-    ) -> Self {
+    pub fn from_provider(provider: &Provider<Http>, constructor: TransactionConstructor) -> Self {
         let inputs = get_zksync_era_transaction_input(provider, constructor.transaction_hash);
         Self { inputs }
     }

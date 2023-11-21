@@ -28,6 +28,17 @@ pub fn test_mainnet_block_header() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[test]
+pub fn test_zksync_goerli_block_header() -> Result<(), Box<dyn std::error::Error>> {
+    let params = EthConfigPinning::from_path("configs/tests/zksync_era_block.json").params;
+    set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
+    let k = params.degree; //0xd20633 0xd2064f
+    let input = get_test_circuit(vec![0xd2064f], Network::ZkSync(ZkSyncEraNetwork::Goerli));
+    let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
+    MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
+    Ok(())
+}
+
 pub fn miniblock_hash(
     miniblock_number: u64,
     miniblock_timestamp: u64,

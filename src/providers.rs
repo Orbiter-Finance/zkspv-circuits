@@ -149,19 +149,21 @@ pub fn get_receipt_input(
 
 pub fn get_transaction_input(
     provider: &Provider<Http>,
-    block_number: u32,
-    transaction_index: Option<u32>,
+    transaction_hash: H256,
     transaction_index_bytes: Option<Vec<u8>>,
     transaction_rlp: Vec<u8>,
     merkle_proof: Vec<Bytes>,
     transaction_pf_max_depth: usize,
 ) -> EthBlockTransactionInput {
     let rt = Runtime::new().unwrap();
-    let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
+    let tx = rt.block_on(provider.get_transaction(transaction_hash)).unwrap().unwrap();
+    let transaction_index = tx.transaction_index.unwrap().as_u64();
+    let block_number = tx.block_number.unwrap().as_u64();
+    let block = rt.block_on(provider.get_block(block_number)).unwrap().unwrap();
     let block_hash = block.hash.unwrap();
     let block_header = get_block_rlp(&block);
-    let transaction_key = transaction_index_bytes
-        .unwrap_or(get_buffer_rlp(U256::from(transaction_index.unwrap()).as_u32()));
+    let transaction_key =
+        transaction_index_bytes.unwrap_or(get_buffer_rlp(U256::from(transaction_index).as_u32()));
     let slot_is_empty = false;
     let transaction_proofs = MPTInput {
         path: (&transaction_key).into(),
@@ -183,7 +185,7 @@ pub fn get_transaction_input(
         block_hash,
         block_header,
         transaction: EthTransactionInput {
-            transaction_index: transaction_index.unwrap(),
+            transaction_index: transaction_index as u32,
             transaction_proofs,
             transaction_ecdsa_verify: EthEcdsaInput {
                 signature,
@@ -412,6 +414,7 @@ pub fn get_zksync_era_transaction_input(
             transaction_index: tx.transaction_index.unwrap().as_u64(),
             transaction_status: tx_status.status.unwrap().as_u64(),
             transaction_value: tx.rlp().to_vec(),
+            transaction_value_max_bytes: TX_MAX_LEN,
             transaction_ecdsa_verify: EthEcdsaInput {
                 signature,
                 message,
