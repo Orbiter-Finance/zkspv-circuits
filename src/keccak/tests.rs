@@ -17,7 +17,7 @@ use crate::{
         transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
     },
     rlp::rlc::RlcConfig,
-    util::{helpers::get_provider, h256_non_standard_tree_root_and_proof, h256_tree_verify, encode_h256_to_bytes_field, encode_merkle_path_to_field}, Network, EthereumNetwork, providers::get_batch_block_merkle_root,
+    util::{helpers::{get_provider, get_block_batch_hashes}, h256_non_standard_tree_root_and_proof, h256_tree_verify, encode_h256_to_bytes_field, encode_merkle_path_to_field}, Network, EthereumNetwork, providers::get_batch_block_merkle_root,
 };
 use ark_std::{end_timer, start_timer};
 use ethers_core::types::H256;
@@ -70,6 +70,10 @@ pub fn test_merkle_root_verify() {
 fn test_keccak_non_standard_merkle_verify_circuit<F: Field>(
     k: u32,
     mut builder: RlcThreadBuilder<F>,
+    target_root: H256,
+    target_leaf: H256,
+    proof: Vec<H256>,
+    path: Vec<bool>,
 ) -> KeccakCircuitBuilder<F, impl FnSynthesize<F>> {
     let prover = builder.witness_gen_only();
     let range = RangeChip::default(8);
@@ -77,17 +81,13 @@ fn test_keccak_non_standard_merkle_verify_circuit<F: Field>(
     let keccak = SharedKeccakChip::default();
     let ctx = builder.gate_builder.main(0);
 
-    let (leaves_batch, root_batch) = get_block_data_hashes_from_json();
-    let taget_index = leaves_batch[0].len() - 1;
-    // let taget_index = 0;
-    let ((proof_root, proof, path), target_leaf) = (h256_non_standard_tree_root_and_proof(&leaves_batch[0], taget_index.try_into().unwrap()), leaves_batch[0][taget_index as usize].clone());
-    // println!("root: {:?} \n target_leaf: {:?} \n proof: {:?} \n path: {:?}", proof_root,target_leaf, proof, path);
-    h256_tree_verify(&proof_root, &target_leaf, &proof, &path);
-    assert_eq!(proof_root,root_batch[0]);
-    let target_root = ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(proof_root));
+    h256_tree_verify(&target_root, &target_leaf, &proof, &path);
+
+    let target_root = ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(target_root));
     let proof = proof.iter().map(|p| {
         ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(p.clone()))
     }).collect_vec();
+    println!("proof len {}", proof.len());
     let target_leaf = ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(target_leaf.clone()));
     let path = ctx.assign_witnesses(encode_merkle_path_to_field::<F>(&path));
     keccak.borrow_mut().verify_merkle_proof(ctx, &gate, &target_root, &proof, &target_leaf, &path);
@@ -106,13 +106,15 @@ fn test_keccak_non_standard_merkle_verify_circuit<F: Field>(
     circuit
 }
 
-fn get_block_data_hashes_from_json() -> (Vec<Vec<H256>>, Vec<H256>) {
+pub fn get_block_data_hashes_from_json() -> (Vec<Vec<H256>>, Vec<H256>) {
     #[derive(Deserialize)]
     struct BatchData {
         batch_1: Vec<String>,
         batch_root_1: String,
         batch_2: Vec<String>,
         batch_root_2: String,
+        batch_3: Vec<String>,
+        batch_root_3: String,
     }
 
     let data = fs::read_to_string("test_data/block_batch_data.json").unwrap();
@@ -120,29 +122,18 @@ fn get_block_data_hashes_from_json() -> (Vec<Vec<H256>>, Vec<H256>) {
     ([
         batch_data.batch_1.into_iter().map(|s| H256::from_str(&s).unwrap()).collect_vec().into_iter().collect_vec(),
         batch_data.batch_2.into_iter().map(|s| H256::from_str(&s).unwrap()).collect_vec().into_iter().collect_vec(),
-    ].into_iter().collect_vec(), 
+        batch_data.batch_3.into_iter().map(|s| H256::from_str(&s).unwrap()).collect_vec().into_iter().collect_vec(),
+    ].into_iter().collect_vec()
+    , 
     [
         batch_data.batch_root_1.parse().unwrap(),
-        batch_data.batch_root_2.parse().unwrap()
+        batch_data.batch_root_2.parse().unwrap(),
+        batch_data.batch_root_3.parse().unwrap()
     ].into_iter().collect_vec()
     )
 }
 
-fn get_block_batch_hashes(
-    provider: &Provider<Http>,
-    start_block_num: u32,
-    end_block_num: u32,
-) -> Vec<H256> {
-    let rt = Runtime::new().unwrap();
-    assert!(start_block_num <= end_block_num);
-    let mut leaves = Vec::with_capacity((end_block_num - start_block_num) as usize);
-    for block_num in (start_block_num..=end_block_num) {
-        let block = rt.block_on(provider.get_block(block_num as u64)).unwrap().unwrap();
-        let block_hash = block.hash.unwrap();
-        leaves.push(block_hash);
-    }
-    leaves
-}
+
 
 fn test_keccak_circuit<F: Field>(
     k: u32,
@@ -214,9 +205,56 @@ pub fn test_keccak() {
 #[test]
 pub fn test_keccak_non_standard_merkle_verify() {
     let k: u32 = var("KECCAK_DEGREE").unwrap_or_else(|_| "14".to_string()).parse().unwrap();
-    let circuit = test_keccak_non_standard_merkle_verify_circuit(k, RlcThreadBuilder::mock());
-    MockProver::<Fr>::run(k, &circuit, vec![]).unwrap().assert_satisfied();
-    println!("Keccak Non Standard Merkle Verify passed!");
+    let (leaves_batch, root_batch) = get_block_data_hashes_from_json();
+    let (leaves, root) = (leaves_batch[0].clone(), root_batch[0].clone());
+    let taget_index = 1;
+    // let taget_index = 0;
+    let ((proof_root, proof, path), target_leaf) = (h256_non_standard_tree_root_and_proof(&leaves, taget_index.try_into().unwrap()), leaves[taget_index as usize].clone());
+    let circuit = test_keccak_non_standard_merkle_verify_circuit(k, RlcThreadBuilder::keygen(), proof_root, target_leaf, proof.clone(), path.clone());
+    // MockProver::<Fr>::run(k, &circuit, vec![]).unwrap().assert_satisfied();
+
+    let params = gen_srs(k);
+    let vk = keygen_vk(&params, &circuit).unwrap();
+    let pk = keygen_pk(&params, vk, &circuit).unwrap();
+    let break_points = circuit.break_points.take();
+
+
+    for index in vec![0, 1, 2, 191] {
+        let proof_time = start_timer!(|| "Create proof SHPLONK");
+        let ((proof_root, proof, path), target_leaf) = (h256_non_standard_tree_root_and_proof(&leaves, index.try_into().unwrap()), leaves[index as usize].clone());
+        assert_eq!(root, proof_root);
+        println!("proof index {} path {:?}",index, path);
+        let circuit = test_keccak_non_standard_merkle_verify_circuit(k, RlcThreadBuilder::prover(), proof_root, target_leaf, proof, path);
+        *circuit.break_points.borrow_mut() = break_points.clone();
+        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        create_proof::<
+            KZGCommitmentScheme<Bn256>,
+            ProverSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            _,
+            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
+            _,
+        >(&params, &pk, &[circuit], &[&[]], OsRng, &mut transcript)
+        .unwrap();
+        let proof = transcript.finalize();
+        end_timer!(proof_time);
+    
+        let verify_time = start_timer!(|| "Verify time");
+        let verifier_params = params.verifier_params();
+        let strategy = SingleStrategy::new(&params);
+        let mut transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
+        verify_proof::<
+            KZGCommitmentScheme<Bn256>,
+            VerifierSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
+            SingleStrategy<'_, Bn256>,
+        >(verifier_params, pk.get_vk(), strategy, &[&[]], &mut transcript)
+        .unwrap();
+        end_timer!(verify_time);
+        println!("Keccak Non Standard Merkle Verify passed!");
+    }
+   
 }
 #[derive(Serialize, Deserialize)]
 pub struct KeccakBenchConfig {

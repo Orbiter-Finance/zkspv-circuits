@@ -1,4 +1,7 @@
 use ark_std::{end_timer, start_timer};
+use halo2_base::QuantumCell::Constant;
+use halo2_base::safe_types::RangeInstructions;
+use serde::Serialize;
 use std::cell::RefCell;
 
 use ethers_core::types::{Block, H256};
@@ -16,6 +19,7 @@ use crate::block_header::{
     get_block_header_config, BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace,
     EthBlockHeaderTraceWitness,
 };
+use crate::keccak::tests::get_block_data_hashes_from_json;
 use crate::keccak::{
     parallelize_keccak_phase0, FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs,
 };
@@ -26,12 +30,146 @@ use crate::rlp::rlc::FIRST_PHASE;
 use crate::rlp::RlpChip;
 use crate::storage::EthStorageChip;
 use crate::track_block::util::TrackBlockConstructor;
-use crate::util::helpers::bytes_to_u8;
-use crate::util::{bytes_be_to_u128, AssignedH256};
+use crate::util::helpers::{bytes_to_u8, get_provider, get_block_batch_hashes};
+use crate::util::{bytes_be_to_u128, AssignedH256, encode_h256_to_bytes_field, encode_merkle_path_to_field, h256_non_standard_tree_root_and_proof};
 use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS};
 
 mod tests;
 pub mod util;
+
+#[derive(Clone, Debug, Serialize)]
+pub struct BlockMerkleInclusionInputSingle {
+    pub merkle_root: H256,
+    pub proof: Vec<H256>,
+    pub target_leaf: H256,
+    pub path: Vec<bool>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct BlockMerkleInclusionInput {
+    pub input: Vec<BlockMerkleInclusionInputSingle>,
+}
+
+
+#[derive(Clone, Debug)]
+pub struct BlockMerkleInclusionInputAssigned<F: Field> {
+    pub merkle_root: Vec<AssignedValue<F>>,
+    pub proof:Vec<Vec<AssignedValue<F>>>,
+    pub target_leaf: Vec<AssignedValue<F>>,
+    pub path: Vec<AssignedValue<F>>,
+}
+#[derive(Clone, Debug)]
+pub struct BLockMerkleInclusionWitness<F: Field> {
+    pub input: Vec<BlockMerkleInclusionInputAssigned<F>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct BlockMerkleInclusionCircuit {
+    pub inclusion_proof: BlockMerkleInclusionInput,
+    pub block_range_length: u64,
+    pub block_batch_num: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct BlockMerkleInclusionConstructor {
+    pub start_block_num: u32,
+    pub end_block_num: u32,
+    pub target_block_num: u32,
+}
+
+impl BlockMerkleInclusionCircuit {
+
+    pub fn from_json(taget_index: i32) -> Self {
+        let (leaves_batch, root_batch) = get_block_data_hashes_from_json();
+        let input = leaves_batch.iter().zip(root_batch.iter()).map(|(leave, root)| {
+            let ((proof_root, proof, path), target_leaf) = (h256_non_standard_tree_root_and_proof(leave, taget_index.try_into().unwrap()), leave[taget_index as usize].clone());
+            assert_eq!(proof_root, *root);
+            BlockMerkleInclusionInputSingle {
+                merkle_root: proof_root,
+                proof,
+                target_leaf,
+                path,
+            }
+        }).collect_vec();
+
+        Self { 
+            inclusion_proof: BlockMerkleInclusionInput { input }, 
+            block_range_length: leaves_batch[0].len() as u64, 
+            block_batch_num: leaves_batch.len() as u64,
+        }
+    }
+
+    pub fn from_provider(network: &Network, constructors: &Vec<BlockMerkleInclusionConstructor>) -> Self {
+        let provider = get_provider(network);
+
+        for constructor in constructors {
+            let start_block_num = constructor.start_block_num;
+            let end_block_num = constructor.end_block_num;
+            let leaves = get_block_batch_hashes(&provider, start_block_num.clone(), end_block_num.clone());
+        }
+
+        Self {
+            inclusion_proof: BlockMerkleInclusionInput { 
+                input: constructors.iter().map(|c| {
+                    (get_block_batch_hashes(&provider, c.start_block_num, c.end_block_num), (c.target_block_num - c.start_block_num))
+                })
+                .collect_vec()
+                .iter()
+                .map(|(leaves, target_index)| {
+                    let ((proof_root, proof, path), target_leaf) = (h256_non_standard_tree_root_and_proof(leaves, *target_index), leaves[*target_index as usize].clone());
+                    BlockMerkleInclusionInputSingle {
+                        merkle_root: proof_root,
+                        proof,
+                        target_leaf,
+                        path,
+                    }
+                }).collect_vec()
+        },
+            block_range_length: (constructors[0].end_block_num - constructors[0].start_block_num + 1) as u64,
+            block_batch_num: constructors.len() as u64,
+        }
+    }
+}
+
+impl EthPreCircuit for BlockMerkleInclusionCircuit {
+    fn create(
+        self,
+        mut builder: RlcThreadBuilder<Fr>,
+        break_points: Option<RlcThreadBreakPoints>,
+    ) -> EthCircuitBuilder<Fr, impl FnSynthesize<Fr>> {
+        let range = RangeChip::default(ETH_LOOKUP_BITS);
+        let chip = EthChip::new(RlpChip::new(&range, None), None);
+        let mut keccak = KeccakChip::default();
+ 
+        // ================= FIRST PHASE ================
+        let ctx = builder.gate_builder.main(FIRST_PHASE);
+        let assigned_input = chip.parse_merkle_proof_phase0(ctx, self.inclusion_proof);
+        let result = assigned_input.input.iter().map(|input| {
+            keccak.verify_merkle_proof(ctx, &range.gate, &input.merkle_root, &input.proof, &input.target_leaf, &input.path)
+        }).collect_vec();
+
+        let assigned_instances = result.iter().map(|r|r.0.iter().chain(r.1.iter()).cloned()).flatten().collect_vec();
+        println!("BlockMerkleInclusionCircuit pis cnt {}", assigned_instances.len());
+        for i in 0..result.len() {
+            println!("result {} {:?}", i, result[i]);
+        }
+
+        EthCircuitBuilder::new(
+            assigned_instances.clone(),
+            builder,
+            RefCell::new(keccak),
+            range,
+            break_points,
+            move |builder: &mut RlcThreadBuilder<Fr>,
+                  rlp: RlpChip<Fr>,
+                  keccak_rlcs: (FixedLenRLCs<Fr>, VarLenRLCs<Fr>)| {
+                // ======== SECOND PHASE ===========
+                let chip = EthChip::new(rlp, Some(keccak_rlcs));
+                let _trace = chip.parse_merkle_proof_phase1(builder, assigned_instances);
+            },
+        )
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct EthTrackBlockInput {
@@ -133,7 +271,16 @@ pub struct EthTrackBlockTraceWitness<F: Field> {
 }
 
 pub trait EthTrackBlockChip<F: Field> {
+
     // ================= FIRST PHASE ================
+
+    fn parse_merkle_proof_phase0(
+        &self,
+        ctx: &mut Context<F>,
+        input: BlockMerkleInclusionInput,
+    ) -> BLockMerkleInclusionWitness<F>
+    where
+        Self: EthBlockHeaderChip<F>;
 
     fn parse_track_block_proof_from_block_phase0(
         &self,
@@ -147,6 +294,14 @@ pub trait EthTrackBlockChip<F: Field> {
 
     // ================= SECOND PHASE ================
 
+    fn parse_merkle_proof_phase1(
+        &self,
+        thread_pool: &mut RlcThreadBuilder<F>,
+        input: Vec<AssignedValue<F>>
+    ) -> Vec<AssignedValue<F>>
+    where
+        Self: EthBlockHeaderChip<F>;
+
     fn parse_track_block_proof_from_block_phase1(
         &self,
         thread_pool: &mut RlcThreadBuilder<F>,
@@ -157,8 +312,28 @@ pub trait EthTrackBlockChip<F: Field> {
 }
 
 impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
-    // ================= FIRST PHASE ================
 
+    // ================= FIRST PHASE ================
+    fn parse_merkle_proof_phase0(
+        &self,
+        ctx: &mut Context<F>,
+        input: BlockMerkleInclusionInput,
+    ) -> BLockMerkleInclusionWitness<F>
+    where
+        Self: EthBlockHeaderChip<F> 
+    {
+        let mut result = BLockMerkleInclusionWitness { input: Vec::with_capacity(input.input.capacity()) };
+        input.input.into_iter().for_each(|input| {
+            let merkle_root = ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(input.merkle_root));
+            let proof = input.proof.into_iter().map(|p| {
+                ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(p))
+            }).collect_vec();
+            let target_leaf = ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(input.target_leaf));
+            let path = ctx.assign_witnesses(encode_merkle_path_to_field::<F>(&input.path));
+            result.input.push(BlockMerkleInclusionInputAssigned { merkle_root, proof, target_leaf, path });
+        });
+        result
+    }
     fn parse_track_block_proof_from_block_phase0(
         &self,
         thread_pool: &mut GateThreadBuilder<F>,
@@ -205,7 +380,15 @@ impl<'chip, F: Field> EthTrackBlockChip<F> for EthChip<'chip, F> {
     }
 
     // ================= SECOND PHASE ================
-
+    fn parse_merkle_proof_phase1(
+            &self,
+            thread_pool: &mut RlcThreadBuilder<F>,
+            input: Vec<AssignedValue<F>>
+        ) -> Vec<AssignedValue<F>>
+        where
+            Self: EthBlockHeaderChip<F> {
+        return input;
+    }
     fn parse_track_block_proof_from_block_phase1(
         &self,
         thread_pool: &mut RlcThreadBuilder<F>,

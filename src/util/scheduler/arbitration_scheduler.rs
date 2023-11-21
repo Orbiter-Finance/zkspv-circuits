@@ -1,7 +1,9 @@
 use crate::{
     arbitration::helper::ArbitrationTask,
     storage::{util::get_mdc_storage_circuit, EthBlockStorageCircuit},
-    track_block::{util::get_eth_track_block_circuit, EthTrackBlockCircuit},
+    track_block::{
+        util::get_eth_track_block_circuit, BlockMerkleInclusionCircuit, EthTrackBlockCircuit,
+    },
     util::circuit::PublicAggregationCircuit,
     Network,
 };
@@ -33,6 +35,7 @@ pub enum CircuitRouter {
     ZkSyncTransaction(ZkSyncEraBlockTransactionCircuit),
     AggreateZkSyncTransactions(PublicAggregationCircuit),
 
+    BlockerMerkleInclusion(BlockMerkleInclusionCircuit),
     BlockTrackInterval(EthTrackBlockCircuit),
     AggreateBlockTracks(PublicAggregationCircuit),
 
@@ -135,6 +138,9 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                         prev_snarks,
                     ));
                 }
+            }
+            ArbitrationTask::BlockMerkleInclusion(task) => {
+                CircuitRouter::BlockerMerkleInclusion(task.input)
             }
             ArbitrationTask::Final(final_task) => {
                 println!("FINAL ====== prev_snarks len {}", prev_snarks.len());

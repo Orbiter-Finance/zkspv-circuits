@@ -2,8 +2,9 @@ use ethers_core::abi;
 use ethers_core::abi::{AbiEncode, Token, Uint};
 use ethers_core::types::{Address, BigEndianHash, H256};
 use ethers_core::utils::keccak256;
-use ethers_providers::{Http, Provider};
+use ethers_providers::{Http, Provider, Middleware};
 use halo2_base::{AssignedValue, Context};
+use tokio::runtime::Runtime;
 use std::ops::Add;
 use zkevm_keccak::util::eth_types::Field;
 
@@ -11,6 +12,22 @@ use crate::config::rpcs::get_rpcs_config;
 use crate::keccak::get_bytes;
 use crate::mpt::AssignedBytes;
 use crate::{ArbitrumNetwork, EthereumNetwork, Network, OptimismNetwork, ZkSyncEraNetwork};
+
+pub fn get_block_batch_hashes(
+    provider: &Provider<Http>,
+    start_block_num: u32,
+    end_block_num: u32,
+) -> Vec<H256> {
+    let rt = Runtime::new().unwrap();
+    assert!(start_block_num <= end_block_num);
+    let mut leaves = Vec::with_capacity((end_block_num - start_block_num) as usize);
+    for block_num in (start_block_num..=end_block_num) {
+        let block = rt.block_on(provider.get_block(block_num as u64)).unwrap().unwrap();
+        let block_hash = block.hash.unwrap();
+        leaves.push(block_hash);
+    }
+    leaves
+}
 
 pub fn get_provider(network: &Network) -> Provider<Http> {
     let rpcs = get_rpcs_config();

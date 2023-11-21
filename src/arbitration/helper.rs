@@ -4,6 +4,8 @@ use std::fmt::{Debug, Formatter};
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use syn::Block;
+use tracing_subscriber::fmt::format;
 
 use crate::arbitration::circuit_types::{
     EthStorageCircuitType, EthTransactionCircuitType, FinalAssemblyCircuitType,
@@ -13,6 +15,7 @@ use crate::storage::contract_storage::util::{
     get_contracts_storage_circuit, MultiBlocksContractsStorageConstructor,
 };
 use crate::storage::contract_storage::ObContractsStorageCircuit;
+use crate::track_block::BlockMerkleInclusionCircuit;
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::util::{
     get_eth_transaction_circuit, get_zksync_transaction_circuit, TransactionConstructor,
@@ -27,9 +30,45 @@ use crate::{
     EthereumNetwork, Network,
 };
 
-use super::circuit_types::{ArbitrationCircuitType, EthTrackBlockCircuitType};
+use super::circuit_types::{ArbitrationCircuitType, EthTrackBlockCircuitType, BlockMerkleInclusionCircuitType};
 
 pub type CrossChainNetwork = Network;
+
+#[derive(Clone, Debug)]
+pub struct BlockMerkleInclusionTask {
+    pub input: BlockMerkleInclusionCircuit,
+    pub network: Network,
+    pub block_batch_num: u64,
+    pub tree_depth: u64,
+    pub block_range_length: u64,
+}
+
+impl BlockMerkleInclusionTask {
+    pub fn digest(&self) -> H256 {
+        H256(keccak256(bincode::serialize(&self.input.inclusion_proof.input).unwrap()))
+    }
+}
+
+impl scheduler::Task for BlockMerkleInclusionTask {
+    type CircuitType = BlockMerkleInclusionCircuitType;
+
+    fn circuit_type(&self) -> Self::CircuitType {
+        BlockMerkleInclusionCircuitType {
+            network: self.network,
+            tree_depth: self.tree_depth,
+            block_range_length: self.block_range_length,
+        }
+    }
+
+    fn name(&self) -> String {
+        format!("block_merkle_inclusion_tree_depth_{}_block_range_length_{}_block_batch_num_{}_{}",
+                self.tree_depth, self.block_range_length, self.block_batch_num, self.digest())
+    }
+
+    fn dependencies(&self) -> Vec<Self> {
+        vec![]
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ETHBlockTrackTask {
@@ -90,7 +129,7 @@ impl scheduler::Task for ETHBlockTrackTask {
 
 /// Transaction
 #[derive(Clone, Debug)]
-pub struct EthTransactionTask {
+pub struct TransactionTask {
     pub input: EthBlockTransactionCircuit,
     pub tx_type: EthTransactionType,
     pub tasks_len: u64,
@@ -268,6 +307,7 @@ pub struct FinalAssemblyConstructor {
     pub zksync_transaction_task: Option<ZkSyncTransactionTask>,
     pub eth_block_track_task: Option<ETHBlockTrackTask>,
     pub mdc_state_task: Option<MDCStateTask>,
+    pub block_merkle_inclusion_task: Option<BlockMerkleInclusionTask>,
 }
 
 #[derive(Clone, Debug)]
@@ -317,6 +357,7 @@ impl scheduler::Task for FinalAssemblyTask {
 pub enum ArbitrationTask {
     EthTransaction(EthTransactionTask),
     ZkSyncTransaction(ZkSyncTransactionTask),
+    BlockMerkleInclusion(BlockMerkleInclusionTask),
     MDCState(MDCStateTask),
     ETHBlockTrack(ETHBlockTrackTask),
     Final(FinalAssemblyTask),
@@ -327,6 +368,9 @@ impl scheduler::Task for ArbitrationTask {
 
     fn circuit_type(&self) -> Self::CircuitType {
         match self {
+            ArbitrationTask::BlockMerkleInclusion(task) => {
+                ArbitrationCircuitType::BlockMerkleInclusion(task.circuit_type())
+            }
             ArbitrationTask::ETHBlockTrack(task) => {
                 ArbitrationCircuitType::TrackBlock(task.circuit_type())
             }
@@ -347,6 +391,7 @@ impl scheduler::Task for ArbitrationTask {
 
     fn name(&self) -> String {
         match self {
+            ArbitrationTask::BlockMerkleInclusion(task) => task.name(),
             ArbitrationTask::ETHBlockTrack(task) => task.name(),
             ArbitrationTask::EthTransaction(task) => task.name(),
             ArbitrationTask::ZkSyncTransaction(task) => task.name(),
@@ -362,6 +407,8 @@ impl scheduler::Task for ArbitrationTask {
             }
             ArbitrationTask::ZkSyncTransaction(task) => {
                 task.dependencies().into_iter().map(ArbitrationTask::ZkSyncTransaction).collect()
+            ArbitrationTask::BlockMerkleInclusion(task) => {
+                task.dependencies().into_iter().map(ArbitrationTask::BlockMerkleInclusion).collect()
             }
             ArbitrationTask::MDCState(task) => {
                 task.dependencies().into_iter().map(ArbitrationTask::MDCState).collect()

@@ -7,6 +7,30 @@ use crate::{
     util::{scheduler, EthConfigPinning, Halo2ConfigPinning},
     Network,
 };
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct BlockMerkleInclusionCircuitType {
+    pub network: Network,
+    pub tree_depth: u64,
+    pub block_range_length: u64,
+}
+
+impl BlockMerkleInclusionCircuitType {
+    fn name(&self) -> String {
+        format!(
+            "block_merkle_inclusion_tree_depth_{}_block_range_length_{}",
+            self.tree_depth, self.block_range_length
+        )
+    }
+}
+
+impl scheduler::CircuitType for BlockMerkleInclusionCircuitType {
+    fn name(&self) -> String {
+        self.name()
+    }
+    fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
+        EthConfigPinning::from_path(pinning_path.as_ref()).degree()
+    }
+}
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct EthTrackBlockCircuitType {
@@ -161,6 +185,7 @@ impl scheduler::CircuitType for FinalAssemblyCircuitType {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum ArbitrationCircuitType {
+    BlockMerkleInclusion(BlockMerkleInclusionCircuitType),
     TrackBlock(EthTrackBlockCircuitType),
     Transaction(EthTransactionCircuitType),
     MdcStorage(EthStorageCircuitType),
@@ -170,6 +195,7 @@ pub enum ArbitrationCircuitType {
 impl scheduler::CircuitType for ArbitrationCircuitType {
     fn name(&self) -> String {
         match self {
+            ArbitrationCircuitType::BlockMerkleInclusion(circuit_type) => circuit_type.name(),
             ArbitrationCircuitType::TrackBlock(circuit_type) => circuit_type.name(),
             ArbitrationCircuitType::Transaction(circuit_type) => circuit_type.name(),
             ArbitrationCircuitType::MdcStorage(circuit_type) => circuit_type.name(),
@@ -179,6 +205,9 @@ impl scheduler::CircuitType for ArbitrationCircuitType {
 
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
         match self {
+            ArbitrationCircuitType::BlockMerkleInclusion(circuit_type) => {
+                circuit_type.get_degree_from_pinning(pinning_path)
+            }
             ArbitrationCircuitType::TrackBlock(circuit_type) => {
                 circuit_type.get_degree_from_pinning(pinning_path)
             }
