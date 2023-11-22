@@ -15,8 +15,8 @@ use crate::storage::contract_storage::util::{
     get_contracts_storage_circuit, MultiBlocksContractsStorageConstructor,
 };
 use crate::storage::contract_storage::ObContractsStorageCircuit;
-use crate::track_block::BlockMerkleInclusionCircuit;
 use crate::track_block::util::TrackBlockConstructor;
+use crate::track_block::BlockMerkleInclusionCircuit;
 use crate::transaction::util::{
     get_eth_transaction_circuit, get_zksync_transaction_circuit, TransactionConstructor,
 };
@@ -30,7 +30,9 @@ use crate::{
     EthereumNetwork, Network,
 };
 
-use super::circuit_types::{ArbitrationCircuitType, EthTrackBlockCircuitType, BlockMerkleInclusionCircuitType};
+use super::circuit_types::{
+    ArbitrationCircuitType, BlockMerkleInclusionCircuitType, EthTrackBlockCircuitType,
+};
 
 pub type CrossChainNetwork = Network;
 
@@ -61,8 +63,13 @@ impl scheduler::Task for BlockMerkleInclusionTask {
     }
 
     fn name(&self) -> String {
-        format!("block_merkle_inclusion_tree_depth_{}_block_range_length_{}_block_batch_num_{}_{}",
-                self.tree_depth, self.block_range_length, self.block_batch_num, self.digest())
+        format!(
+            "block_merkle_inclusion_tree_depth_{}_block_range_length_{}_block_batch_num_{}_{}",
+            self.tree_depth,
+            self.block_range_length,
+            self.block_batch_num,
+            self.digest()
+        )
     }
 
     fn dependencies(&self) -> Vec<Self> {
@@ -129,7 +136,7 @@ impl scheduler::Task for ETHBlockTrackTask {
 
 /// Transaction
 #[derive(Clone, Debug)]
-pub struct TransactionTask {
+pub struct EthTransactionTask {
     pub input: EthBlockTransactionCircuit,
     pub tx_type: EthTransactionType,
     pub tasks_len: u64,
@@ -140,7 +147,7 @@ pub struct TransactionTask {
 
 impl EthTransactionTask {
     fn hash(&self) -> H256 {
-        H256(keccak256(bincode::serialize(&self.constructor[0].transaction_rlp).unwrap()))
+        self.constructor[0].transaction_hash
     }
 }
 
@@ -407,6 +414,7 @@ impl scheduler::Task for ArbitrationTask {
             }
             ArbitrationTask::ZkSyncTransaction(task) => {
                 task.dependencies().into_iter().map(ArbitrationTask::ZkSyncTransaction).collect()
+            }
             ArbitrationTask::BlockMerkleInclusion(task) => {
                 task.dependencies().into_iter().map(ArbitrationTask::BlockMerkleInclusion).collect()
             }
@@ -439,6 +447,12 @@ impl scheduler::Task for ArbitrationTask {
                         task.constructor.zksync_transaction_task.unwrap(),
                     ));
                 }
+                if task.constructor.block_merkle_inclusion_task.is_some() {
+                    task_array.push(ArbitrationTask::BlockMerkleInclusion(
+                        task.constructor.block_merkle_inclusion_task.unwrap(),
+                    ));
+                }
+                // Todo: should be delete
                 if task.constructor.eth_block_track_task.is_some() {
                     task_array.push(ArbitrationTask::ETHBlockTrack(
                         task.constructor.eth_block_track_task.unwrap(),

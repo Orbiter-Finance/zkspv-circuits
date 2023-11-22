@@ -1,7 +1,7 @@
+use super::{BlockMerkleInclusionCircuit, BlockMerkleInclusionConstructor};
 use crate::track_block::EthTrackBlockCircuit;
 use crate::util::helpers::get_provider;
 use crate::Network;
-use super::{BlockMerkleInclusionCircuit, BlockMerkleInclusionConstructor};
 
 #[derive(Clone, Debug)]
 pub struct TrackBlockConstructor {
@@ -22,10 +22,13 @@ pub fn get_merkle_inclusion_circuit(
     constructors: Option<Vec<BlockMerkleInclusionConstructor>>,
 ) -> BlockMerkleInclusionCircuit {
     // let provider = get_provider(&constructor.network);
-    if ! from_provider {
+    if !from_provider {
         // This can only be used in test case!
-        return BlockMerkleInclusionCircuit::from_json(target_index.expect("Target Index is None"))
+        return BlockMerkleInclusionCircuit::from_json(target_index.expect("Target Index is None"));
     } else {
-        return BlockMerkleInclusionCircuit::from_provider(&network.expect("Network is None"), &constructors.expect("Constructors is None"))
+        return BlockMerkleInclusionCircuit::from_provider(
+            &network.expect("Network is None"),
+            &constructors.expect("Constructors is None"),
+        );
     }
 }

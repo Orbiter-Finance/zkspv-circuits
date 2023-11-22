@@ -2,10 +2,10 @@ use ethers_core::abi;
 use ethers_core::abi::{AbiEncode, Token, Uint};
 use ethers_core::types::{Address, BigEndianHash, H256};
 use ethers_core::utils::keccak256;
-use ethers_providers::{Http, Provider, Middleware};
+use ethers_providers::{Http, Middleware, Provider};
 use halo2_base::{AssignedValue, Context};
-use tokio::runtime::Runtime;
 use std::ops::Add;
+use tokio::runtime::Runtime;
 use zkevm_keccak::util::eth_types::Field;
 
 use crate::config::rpcs::get_rpcs_config;
@@ -21,9 +21,10 @@ pub fn get_block_batch_hashes(
     let rt = Runtime::new().unwrap();
     assert!(start_block_num <= end_block_num);
     let mut leaves = Vec::with_capacity((end_block_num - start_block_num) as usize);
-    for block_num in (start_block_num..=end_block_num) {
+    for block_num in start_block_num..=end_block_num {
         let block = rt.block_on(provider.get_block(block_num as u64)).unwrap().unwrap();
         let block_hash = block.hash.unwrap();
+        println!("block_num:{:?},block_hash:{:?}", block_num, block_hash);
         leaves.push(block_hash);
     }
     leaves

@@ -7,8 +7,8 @@ use zkspv_circuits::arbitration::router::ProofRouter;
 use zkspv_circuits::server::OriginalProof;
 
 fn main() {
-    // let arbitration_data_file = File::open("test_data/goerli_source.json").unwrap();
-    let arbitration_data_file = File::open("test_data/goerli_dest.json").unwrap();
+    let arbitration_data_file = File::open("test_data/from_goerli_to_era:source.json").unwrap();
+    // let arbitration_data_file = File::open("test_data/goerli_dest.json").unwrap();
 
     let data_reader = BufReader::new(arbitration_data_file);
     let proof_str: Value = serde_json::from_reader(data_reader).unwrap();
@@ -17,5 +17,5 @@ fn main() {
     let constructor = op.get_constructor_by_parse_proof();
 
     let task = ProofRouter::new(constructor, 1);
-    // let _proof = task.get_calldata(true);
+    let _proof = task.get_calldata(true);
 }

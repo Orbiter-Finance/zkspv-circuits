@@ -14,7 +14,7 @@ use crate::storage::contract_storage::util::{
     get_contracts_storage_circuit, EbcRuleParams, MultiBlocksContractsStorageConstructor,
     ObContractStorageConstructor, SingleBlockContractsStorageConstructor,
 };
-use crate::track_block::util::TrackBlockConstructor;
+use crate::track_block::util::{get_merkle_inclusion_circuit, TrackBlockConstructor};
 use crate::transaction::util::{
     get_eth_transaction_circuit, get_zksync_transaction_circuit, TransactionConstructor,
 };

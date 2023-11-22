@@ -1,14 +1,17 @@
 use crate::arbitration::final_assembly::FinalAssemblyType;
 use crate::arbitration::helper::{
-    ETHBlockTrackTask, EthTransactionTask, FinalAssemblyConstructor, FinalAssemblyTask,
-    MDCStateTask, ZkSyncTransactionTask,
+    BlockMerkleInclusionTask, ETHBlockTrackTask, EthTransactionTask, FinalAssemblyConstructor,
+    FinalAssemblyTask, MDCStateTask, ZkSyncTransactionTask,
 };
 use crate::server::OriginalProof;
 use crate::storage::contract_storage::util::{
     get_contracts_storage_circuit, EbcRuleParams, MultiBlocksContractsStorageConstructor,
     ObContractStorageConstructor, SingleBlockContractsStorageConstructor,
 };
-use crate::track_block::util::{get_eth_track_block_circuit, TrackBlockConstructor};
+use crate::track_block::util::{
+    get_eth_track_block_circuit, get_merkle_inclusion_circuit, TrackBlockConstructor,
+};
+use crate::track_block::BlockMerkleInclusionConstructor;
 use crate::transaction::util::{
     get_eth_transaction_circuit, get_zksync_transaction_circuit, TransactionConstructor,
 };
@@ -31,15 +34,25 @@ pub struct MerkleProof {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BatchBlocksMerkleInput {
+    #[serde(rename(deserialize = "startBlockNumber"))]
+    pub start_block_number: u64,
+    #[serde(rename(deserialize = "endBlockNumber"))]
+    pub end_block_number: u64,
+    #[serde(rename(deserialize = "targetBlockNumber"))]
+    pub target_block_number: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ObContractStorageInput {
     #[serde(rename(deserialize = "mdcAddress"))]
     pub mdc_address: Address,
     #[serde(rename(deserialize = "manageAddress"))]
     pub manage_address: Address,
-    #[serde(rename(deserialize = "mdcCurrentBlockNumber"))]
-    pub mdc_current_block_number: u64,
-    #[serde(rename(deserialize = "mdcNextBlockNumber"))]
-    pub mdc_next_block_number: u64,
+    #[serde(rename(deserialize = "mdcCurrentBatchBlocksMerkle"))]
+    pub mdc_current_batch_blocks_merkle: BatchBlocksMerkleInput,
+    #[serde(rename(deserialize = "mdcNextBatchBlocksMerkle"))]
+    pub mdc_next_batch_blocks_merkle: BatchBlocksMerkleInput,
     #[serde(rename(deserialize = "mdcCurrentRuleProof"), skip)]
     pub mdc_current_rule: MerkleProof,
     /// see [`ObContractStorageConstructor`]
@@ -51,8 +64,8 @@ pub struct ObContractStorageInput {
 pub struct TransactionInput {
     #[serde(rename(deserialize = "transactionHash"))]
     pub transaction_hash: H256,
-    #[serde(rename(deserialize = "blockNumber"))]
-    pub block_number: u64,
+    #[serde(rename(deserialize = "transactionBatchBlocksMerkle"))]
+    pub batch_blocks_merkle: BatchBlocksMerkleInput,
     #[serde(rename(deserialize = "transactionProof"), skip)]
     pub transaction_proof: MerkleProof,
     #[serde(rename(deserialize = "transactionProofEnable"))]
@@ -94,7 +107,8 @@ impl ProofInput {
 
         let eth_transaction_task;
         let zksync_transaction_task;
-        let eth_block_track_task;
+        let block_merkle_inclusion_task;
+        // let eth_block_track_task;
         let mdc_state_task;
 
         {
@@ -128,7 +142,10 @@ impl ProofInput {
 
                     let single_block_contracts_storage_constructor_current =
                         SingleBlockContractsStorageConstructor {
-                            block_number: ob_contract_storage_input.mdc_current_block_number as u32,
+                            block_number: ob_contract_storage_input
+                                .mdc_current_batch_blocks_merkle
+                                .target_block_number
+                                as u32,
                             block_contracts_storage: vec![
                                 mdc_contract_storage_current_constructor,
                                 manage_contract_storage_current_constructor,
@@ -136,7 +153,10 @@ impl ProofInput {
                         };
                     let single_block_contracts_storage_constructor_next =
                         SingleBlockContractsStorageConstructor {
-                            block_number: ob_contract_storage_input.mdc_next_block_number as u32,
+                            block_number: ob_contract_storage_input
+                                .mdc_next_batch_blocks_merkle
+                                .target_block_number
+                                as u32,
                             block_contracts_storage: vec![mdc_contract_storage_next_constructor],
                         };
 
@@ -177,53 +197,103 @@ impl ProofInput {
                 println!("No mdc_state_task for L1")
             }
 
-            // get eth_block_track_task
+            // get block_merkle_inclusion_task
             // This part completes the proof on the L1 network
             {
-                let block_task_width;
-                let blocks_number;
+                let mut batch_blocks_merkle = vec![];
 
                 if is_source {
                     let ob_contract_storage_input = ob_contract_storage_input.unwrap();
-                    if is_l2 {
-                        block_task_width = 2;
-                        blocks_number = vec![
-                            ob_contract_storage_input.mdc_current_block_number,
-                            ob_contract_storage_input.mdc_next_block_number,
-                        ];
-                    } else {
-                        block_task_width = 3;
-                        blocks_number = vec![
-                            self.transaction_input.block_number,
-                            ob_contract_storage_input.mdc_current_block_number,
-                            ob_contract_storage_input.mdc_next_block_number,
-                        ];
+                    batch_blocks_merkle = vec![
+                        BlockMerkleInclusionConstructor {
+                            start_block_num: ob_contract_storage_input
+                                .mdc_current_batch_blocks_merkle
+                                .start_block_number
+                                as u32,
+                            end_block_num: ob_contract_storage_input
+                                .mdc_current_batch_blocks_merkle
+                                .end_block_number as u32,
+                            target_block_num: ob_contract_storage_input
+                                .mdc_current_batch_blocks_merkle
+                                .target_block_number
+                                as u32,
+                        },
+                        BlockMerkleInclusionConstructor {
+                            start_block_num: ob_contract_storage_input
+                                .mdc_next_batch_blocks_merkle
+                                .start_block_number
+                                as u32,
+                            end_block_num: ob_contract_storage_input
+                                .mdc_next_batch_blocks_merkle
+                                .end_block_number as u32,
+                            target_block_num: ob_contract_storage_input
+                                .mdc_next_batch_blocks_merkle
+                                .target_block_number
+                                as u32,
+                        },
+                    ];
+                    if !is_l2 {
+                        batch_blocks_merkle.push(BlockMerkleInclusionConstructor {
+                            start_block_num: self
+                                .transaction_input
+                                .batch_blocks_merkle
+                                .start_block_number
+                                as u32,
+                            end_block_num: self
+                                .transaction_input
+                                .batch_blocks_merkle
+                                .end_block_number as u32,
+                            target_block_num: self
+                                .transaction_input
+                                .batch_blocks_merkle
+                                .target_block_number
+                                as u32,
+                        });
                     }
                 } else {
                     if is_l2 {
                         // None
-                        block_task_width = 0;
-                        blocks_number = vec![];
+                        batch_blocks_merkle = vec![];
                     } else {
-                        block_task_width = 1;
-                        blocks_number = vec![self.transaction_input.block_number];
+                        batch_blocks_merkle = vec![BlockMerkleInclusionConstructor {
+                            start_block_num: self
+                                .transaction_input
+                                .batch_blocks_merkle
+                                .start_block_number
+                                as u32,
+                            end_block_num: self
+                                .transaction_input
+                                .batch_blocks_merkle
+                                .end_block_number as u32,
+                            target_block_num: self
+                                .transaction_input
+                                .batch_blocks_merkle
+                                .target_block_number
+                                as u32,
+                        }];
                     }
                 }
 
-                println!("With eth_block_track_task for L1 contains {} numbers", block_task_width);
-
-                let block_track_constructor =
-                    TrackBlockConstructor { blocks_number, network: l1_network };
-
-                eth_block_track_task = if block_task_width.is_zero() {
+                block_merkle_inclusion_task = if batch_blocks_merkle.is_empty() {
+                    println!("No block_merkle_inclusion_task");
                     None
                 } else {
-                    Some(ETHBlockTrackTask {
-                        input: get_eth_track_block_circuit(block_track_constructor.clone()),
+                    let input = get_merkle_inclusion_circuit(
+                        true,
+                        None,
+                        Option::from(l1_network),
+                        Option::from(batch_blocks_merkle.clone()),
+                    );
+                    println!(
+                        "With block_merkle_inclusion_task for L1 contains {} numbers",
+                        batch_blocks_merkle.len()
+                    );
+                    Some(BlockMerkleInclusionTask {
+                        input: input.clone(),
                         network: l1_network,
-                        tasks_len: 1,
-                        task_width: block_task_width,
-                        constructor: vec![block_track_constructor],
+                        tree_depth: 8,
+                        block_batch_num: input.block_batch_num,
+                        block_range_length: input.block_range_length,
                     })
                 };
             }
@@ -279,7 +349,8 @@ impl ProofInput {
             eth_transaction_task,
             zksync_transaction_task,
             mdc_state_task,
-            eth_block_track_task,
+            eth_block_track_task: None,
+            block_merkle_inclusion_task,
         };
 
         let final_assembly_type =
@@ -360,8 +431,6 @@ impl OriginalProof {
             proof_params.ob_contract_storage_input.as_mut().unwrap().mdc_current_rule =
                 mdc_pre_rule_merkle_proof;
         }
-
-        println!("proof_params:{:?}", &proof_params);
 
         ProofRouterConstructor { proof: proof_params }
     }
