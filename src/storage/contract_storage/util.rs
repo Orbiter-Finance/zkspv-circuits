@@ -20,8 +20,8 @@ pub struct EbcRuleParams {
     3. mdc_rule_enable_time_slot,
     4. mdc_column_array_hash_slot,
     5. mdc_response_makers_hash_slot,
-    6. manage_source_chain_info_slot
-    7. manage_source_chain_mainnet_token_info_slot,
+    6. manage_source_chain_slot
+    7. manage_source_chain_mainnet_token_slot,
     8. manage_dest_chain_mainnet_token_slot,
     9. manage_challenge_user_ratio_slot,
  -  *manage_source_chain_info_slot* is

@@ -44,14 +44,14 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
     let provider = get_provider(&network);
 
     let ebc_current_rule_key =
-        H256::from_str("0xb824d67a08c69bc4f694666c7088b5d8eb3151c09000db345a9759f46dc179be")
+        H256::from_str("0x2ec2e18fd25dbf51e0962f9097d0a484bc24e566e48463eecd2eafea6cb62363")
             .unwrap();
     let ebc_current_rule_root =
-        H256::from_str("0x407857a3d36724da1c9af7cf6cadaa4599f7c2499eda48eace754961c75fbaff")
+        H256::from_str("0xb463b593a4a1543b637326d0a5673c8432aaa127f9bbf7e3088ef6ae041097c3")
             .unwrap(); // should be consistent with the value corresponding to the slot
-    let ebc_current_rule_value = Vec::from_hex("f841058308274f010180808701c6bf52634c358809b6e64a8ecbf5e18701c6bf52634005880b1a2bc2ec503d0987038d7ea51bf30087038d7ea53d84c00102211c1b1e").unwrap();
+    let ebc_current_rule_value = Vec::from_hex("f84005820118010180808502540be4008502540be40089056bc75e2d6310000089056bc75e2d631000008502540be4008504a817c800010183093a8083093a80201f").unwrap();
 
-    let pre_proof_one_bytes = Vec::from_hex("f867a120b824d67a08c69bc4f694666c7088b5d8eb3151c09000db345a9759f46dc179beb843f841058308274f010180808701c6bf52634c358809b6e64a8ecbf5e18701c6bf52634005880b1a2bc2ec503d0987038d7ea51bf30087038d7ea53d84c00102211c1b1e").unwrap();
+    let pre_proof_one_bytes = Vec::from_hex("f866a1202ec2e18fd25dbf51e0962f9097d0a484bc24e566e48463eecd2eafea6cb62363b842f84005820118010180808502540be4008502540be40089056bc75e2d6310000089056bc75e2d631000008502540be4008504a817c800010183093a8083093a80201f").unwrap();
 
     let ebc_current_rule_merkle_proof = vec![Bytes::from(pre_proof_one_bytes)];
 
@@ -64,13 +64,13 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
     };
 
     //slots:
-    let mdc_contract_address = "0x5A295a98bD9FCa8784D98c98f222B7BA52367470".parse().unwrap();
-    let manage_contract_address = "0x4aa86B397D9A7242cc9F5576b13e830fBC6FfFb6".parse().unwrap();
+    let mdc_contract_address = "0xbe81b9b0f280a51765e2be5aac4f8c1e83a7328f".parse().unwrap();
+    let manage_contract_address = "0xd7fc431bb74bd1c4c5493719f290f53d65142c1e".parse().unwrap();
     let mdc_rule_root_slot =
-        H256::from_str("0xbb01b056691692273b8d0c6bed43fbc90e57d25c4eb695038e7b6a6c4a7b5b4d")
+        H256::from_str("0x0a6b7347e59a23833f26d008b8a4d5849480313e50796a6eb192a53cda2fc7d5")
             .unwrap();
     let mdc_rule_version_slot =
-        H256::from_str("0xbb01b056691692273b8d0c6bed43fbc90e57d25c4eb695038e7b6a6c4a7b5b4e")
+        H256::from_str("0x0a6b7347e59a23833f26d008b8a4d5849480313e50796a6eb192a53cda2fc7d6")
             .unwrap();
     let mdc_rule_enable_time_slot =
         H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000000")
@@ -103,7 +103,7 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
         H256::from_str("0x820eca3b68a924cd1c2962e3cd26e478c5e43b85c63554221c513ac78ff3a5f1")
             .unwrap();
     let manage_dest_chain_mainnet_token_slot =
-        H256::from_str("0xf135a9a5432bd09d6ad3673a293440942d99ccd7e7a49972f87b60577ac2246a")
+        H256::from_str("0xf928a0ed87ea37f2e28392f64f84061cd2e9765b0aab413688e1386541db1a94")
             .unwrap();
     let manage_challenge_user_ratio_slot =
         H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000006")
@@ -123,7 +123,7 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
     };
     let current_single_block_contracts_storage_constructor =
         SingleBlockContractsStorageConstructor {
-            block_number: 9927633,
+            block_number: 10092192,
             block_contracts_storage: vec![
                 current_mdc_contract_storage_constructor,
                 current_manage_contract_storage_constructor,
@@ -138,7 +138,7 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
         storage_pf_max_depth: 8,
     };
     let next_single_block_contracts_storage_constructor = SingleBlockContractsStorageConstructor {
-        block_number: 9927758,
+        block_number: 10092468,
         block_contracts_storage: vec![next_mdc_contract_storage_constructor],
     };
 

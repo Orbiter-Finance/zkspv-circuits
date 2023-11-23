@@ -8,10 +8,8 @@ use crate::storage::contract_storage::util::{
     get_contracts_storage_circuit, EbcRuleParams, MultiBlocksContractsStorageConstructor,
     ObContractStorageConstructor, SingleBlockContractsStorageConstructor,
 };
-use crate::track_block::util::{
-    get_eth_track_block_circuit, get_merkle_inclusion_circuit, TrackBlockConstructor,
-};
-use crate::track_block::{BlockMerkleInclusionCircuit, BlockMerkleInclusionConstructor};
+
+use crate::track_block::BlockMerkleInclusionCircuit;
 use crate::transaction::util::{
     get_eth_transaction_circuit, get_zksync_transaction_circuit, TransactionConstructor,
 };
@@ -26,7 +24,7 @@ use std::fmt::Debug;
 use std::str::FromStr;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BlockData {
+pub struct BatchBlocksMerkleInput {
     #[serde(rename(deserialize = "blockHashBatch"))]
     pub block_hash_batch: Vec<H256>,
     #[serde(rename(deserialize = "blockBatchMerkleRoot"))]
@@ -36,9 +34,9 @@ pub struct BlockData {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BatchData {
+pub struct BatchBlocksInput {
     #[serde(rename(deserialize = "batchData"))]
-    pub batch_data: Vec<BlockData>,
+    pub batch_blocks_merkle: Vec<BatchBlocksMerkleInput>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -50,25 +48,15 @@ pub struct MerkleProof {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BatchBlocksMerkleInput {
-    #[serde(rename(deserialize = "startBlockNumber"))]
-    pub start_block_number: u64,
-    #[serde(rename(deserialize = "endBlockNumber"))]
-    pub end_block_number: u64,
-    #[serde(rename(deserialize = "targetBlockNumber"))]
-    pub target_block_number: u64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ObContractStorageInput {
     #[serde(rename(deserialize = "mdcAddress"))]
     pub mdc_address: Address,
     #[serde(rename(deserialize = "manageAddress"))]
     pub manage_address: Address,
-    #[serde(rename(deserialize = "mdcCurrentBatchBlocksMerkle"))]
-    pub mdc_current_batch_blocks_merkle: BatchBlocksMerkleInput,
-    #[serde(rename(deserialize = "mdcNextBatchBlocksMerkle"))]
-    pub mdc_next_batch_blocks_merkle: BatchBlocksMerkleInput,
+    #[serde(rename(deserialize = "mdcCurrentEnableTimeBlockNumber"))]
+    pub mdc_current_enable_time_block_number: u64,
+    #[serde(rename(deserialize = "mdcNextEnableTimeBlockNumber"))]
+    pub mdc_next_enable_time_block_number: u64,
     #[serde(rename(deserialize = "mdcCurrentRuleProof"), skip)]
     pub mdc_current_rule: MerkleProof,
     /// see [`ObContractStorageConstructor`]
@@ -80,8 +68,6 @@ pub struct ObContractStorageInput {
 pub struct TransactionInput {
     #[serde(rename(deserialize = "transactionHash"))]
     pub transaction_hash: H256,
-    #[serde(rename(deserialize = "transactionBatchBlocksMerkle"))]
-    pub batch_blocks_merkle: BatchBlocksMerkleInput,
     #[serde(rename(deserialize = "transactionProof"), skip)]
     pub transaction_proof: MerkleProof,
     #[serde(rename(deserialize = "transactionProofEnable"))]
@@ -115,7 +101,7 @@ pub struct ProofInput {
     #[serde(rename(deserialize = "obContractStorageInput"))]
     pub ob_contract_storage_input: Option<ObContractStorageInput>,
     #[serde(rename(deserialize = "blockBatchData"))]
-    pub block_batch_data: Option<BatchData>,
+    pub batch_blocks_input: Option<BatchBlocksInput>,
     #[serde(rename(deserialize = "config"))]
     pub config: ProofConfig,
 }
@@ -134,7 +120,6 @@ impl ProofInput {
         let eth_transaction_task;
         let zksync_transaction_task;
         let block_merkle_inclusion_task;
-        // let eth_block_track_task;
         let mdc_state_task;
 
         {
@@ -169,8 +154,7 @@ impl ProofInput {
                     let single_block_contracts_storage_constructor_current =
                         SingleBlockContractsStorageConstructor {
                             block_number: ob_contract_storage_input
-                                .mdc_current_batch_blocks_merkle
-                                .target_block_number
+                                .mdc_current_enable_time_block_number
                                 as u32,
                             block_contracts_storage: vec![
                                 mdc_contract_storage_current_constructor,
@@ -180,8 +164,7 @@ impl ProofInput {
                     let single_block_contracts_storage_constructor_next =
                         SingleBlockContractsStorageConstructor {
                             block_number: ob_contract_storage_input
-                                .mdc_next_batch_blocks_merkle
-                                .target_block_number
+                                .mdc_next_enable_time_block_number
                                 as u32,
                             block_contracts_storage: vec![mdc_contract_storage_next_constructor],
                         };
@@ -220,15 +203,19 @@ impl ProofInput {
                 println!("With mdc_state_task for L1");
             } else {
                 mdc_state_task = None;
-                println!("No mdc_state_task for L1")
+                println!("No mdc_state_task for L1");
             }
 
             // get block_merkle_inclusion_task
             // This part completes the proof on the L1 network
             {
-                block_merkle_inclusion_task = if self.block_batch_data.is_some() {
+                block_merkle_inclusion_task = if self.batch_blocks_input.is_some() {
                     let input = BlockMerkleInclusionCircuit::from_json_object(
-                        self.block_batch_data.unwrap(),
+                        self.batch_blocks_input.unwrap(),
+                    );
+                    println!(
+                        "block_merkle_inclusion_task for L1 contains {}",
+                        input.block_batch_num
                     );
                     Some(BlockMerkleInclusionTask {
                         input: input.clone(),
@@ -335,7 +322,7 @@ impl OriginalProof {
             if commit_transaction.transaction_proof_enable {
                 let mut transaction_merkle_proof_proof: Vec<Bytes> = vec![];
                 let proofs =
-                    value["transactionInput"]["transactionProof"]["proof"].as_array().unwrap();
+                    value["commitTransaction"]["transactionProof"]["proof"].as_array().unwrap();
                 for proof in proofs {
                     let proof_bytes = Vec::from_hex(proof.as_str().unwrap()).unwrap();
                     transaction_merkle_proof_proof.push(Bytes::from(proof_bytes));
@@ -343,11 +330,11 @@ impl OriginalProof {
 
                 let transaction_merkle_proof = MerkleProof {
                     key: Vec::from_hex(
-                        &value["transactionInput"]["transactionProof"]["key"].as_str().unwrap(),
+                        &value["commitTransaction"]["transactionProof"]["key"].as_str().unwrap(),
                     )
                     .unwrap(),
                     value: Vec::from_hex(
-                        &value["transactionInput"]["transactionProof"]["value"].as_str().unwrap(),
+                        &value["commitTransaction"]["transactionProof"]["value"].as_str().unwrap(),
                     )
                     .unwrap(),
                     proof: transaction_merkle_proof_proof,
@@ -364,7 +351,10 @@ impl OriginalProof {
         }
         if proof_params.transactions_input.original_transaction.transaction_proof_enable {
             let mut transaction_merkle_proof_proof: Vec<Bytes> = vec![];
-            let proofs = value["transactionInput"]["transactionProof"]["proof"].as_array().unwrap();
+            let proofs = value["transactionsInput"]["originalTransaction"]["transactionProof"]
+                ["proof"]
+                .as_array()
+                .unwrap();
             for proof in proofs {
                 let proof_bytes = Vec::from_hex(proof.as_str().unwrap()).unwrap();
                 transaction_merkle_proof_proof.push(Bytes::from(proof_bytes));
@@ -372,11 +362,15 @@ impl OriginalProof {
 
             let transaction_merkle_proof = MerkleProof {
                 key: Vec::from_hex(
-                    &value["transactionInput"]["transactionProof"]["key"].as_str().unwrap(),
+                    &value["transactionsInput"]["originalTransaction"]["transactionProof"]["key"]
+                        .as_str()
+                        .unwrap(),
                 )
                 .unwrap(),
                 value: Vec::from_hex(
-                    &value["transactionInput"]["transactionProof"]["value"].as_str().unwrap(),
+                    &value["transactionsInput"]["originalTransaction"]["transactionProof"]["value"]
+                        .as_str()
+                        .unwrap(),
                 )
                 .unwrap(),
                 proof: transaction_merkle_proof_proof,

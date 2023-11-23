@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 use super::*;
 use crate::{
+    arbitration::types::BatchBlocksInput,
     halo2_proofs::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -16,12 +17,18 @@ use crate::{
         transcript::{Blake2bRead, Blake2bWrite, Challenge255},
         transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
     },
+    providers::get_batch_block_merkle_root,
     rlp::rlc::RlcConfig,
-    util::{helpers::{get_provider, get_block_batch_hashes}, h256_non_standard_tree_root_and_proof, h256_tree_verify, encode_h256_to_bytes_field, encode_merkle_path_to_field}, Network, EthereumNetwork, providers::get_batch_block_merkle_root, arbitration::types::BatchData,
+    util::{
+        encode_h256_to_bytes_field, encode_merkle_path_to_field,
+        h256_non_standard_tree_root_and_proof, h256_tree_verify,
+        helpers::{get_block_batch_hashes, get_provider},
+    },
+    EthereumNetwork, Network,
 };
 use ark_std::{end_timer, start_timer};
 use ethers_core::types::H256;
-use ethers_providers::{Provider, Http, Middleware};
+use ethers_providers::{Http, Middleware, Provider};
 use halo2_base::{
     gates::{
         flex_gate::{FlexGateConfig, GateStrategy},
@@ -34,21 +41,26 @@ use itertools::{assert_equal, Itertools};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
-use tokio::runtime::Runtime;
 use std::{
     env::{set_var, var},
-    fs::{File, self},
-    io::{BufRead, BufReader, Write}, str::FromStr,
+    fs::{self, File},
+    io::{BufRead, BufReader, Write},
+    str::FromStr,
 };
+use tokio::runtime::Runtime;
 use zkevm_keccak::keccak_packed_multi::get_keccak_capacity;
 
 #[test]
 pub fn test_non_standard_merkle_inclusion_verify_from_json() {
-
     let batch_data = get_block_data_hashes_from_json();
-    for batch in batch_data.batch_data {
-        let (leaves, root, target_index) = (batch.block_hash_batch.clone(), batch.block_batch_merkle_root, batch.target_block_index);
-        let (proof_root, proof, path) = h256_non_standard_tree_root_and_proof(&leaves, target_index);
+    for batch in batch_data.batch_blocks_merkle {
+        let (leaves, root, target_index) = (
+            batch.block_hash_batch.clone(),
+            batch.block_batch_merkle_root,
+            batch.target_block_index,
+        );
+        let (proof_root, proof, path) =
+            h256_non_standard_tree_root_and_proof(&leaves, target_index);
         assert_eq!(root, proof_root);
         h256_tree_verify(&proof_root, &leaves[target_index as usize], &proof, &path)
     }
@@ -61,9 +73,10 @@ pub fn test_non_standard_merkle_inclusion_verify_from_provider() {
     let end_block_num = 17114080;
 
     let leaves = get_block_batch_hashes(&provider, start_block_num.clone(), end_block_num.clone());
-    for proof_index in start_block_num..end_block_num+1 {
+    for proof_index in start_block_num..end_block_num + 1 {
         let verify_index = proof_index - start_block_num;
-        let (proof_root, proof, path) = h256_non_standard_tree_root_and_proof(&leaves, verify_index.clone());
+        let (proof_root, proof, path) =
+            h256_non_standard_tree_root_and_proof(&leaves, verify_index.clone());
         h256_tree_verify(&proof_root, &leaves[verify_index as usize], &proof, &path);
     }
 }
@@ -85,9 +98,10 @@ fn test_keccak_non_standard_merkle_verify_circuit<F: Field>(
     h256_tree_verify(&target_root, &target_leaf, &proof, &path);
 
     let target_root = ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(target_root));
-    let proof = proof.iter().map(|p| {
-        ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(p.clone()))
-    }).collect_vec();
+    let proof = proof
+        .iter()
+        .map(|p| ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(p.clone())))
+        .collect_vec();
     println!("proof len {}", proof.len());
     let target_leaf = ctx.assign_witnesses(encode_h256_to_bytes_field::<F>(target_leaf.clone()));
     let path = ctx.assign_witnesses(encode_merkle_path_to_field::<F>(&path));
@@ -107,15 +121,11 @@ fn test_keccak_non_standard_merkle_verify_circuit<F: Field>(
     circuit
 }
 
-
-pub fn get_block_data_hashes_from_json() -> BatchData {
-
+pub fn get_block_data_hashes_from_json() -> BatchBlocksInput {
     let data = fs::read_to_string("test_data/block_batch_data.json").unwrap();
-    let batch_data: BatchData = serde_json::from_str(&data).unwrap();
-    return batch_data
+    let batch_data: BatchBlocksInput = serde_json::from_str(&data).unwrap();
+    return batch_data;
 }
-
-
 
 fn test_keccak_circuit<F: Field>(
     k: u32,
@@ -183,16 +193,28 @@ pub fn test_keccak() {
     println!("Var len keccak passed");
 }
 
-
 #[test]
 pub fn test_keccak_non_standard_merkle_verify() {
     let k: u32 = var("KECCAK_DEGREE").unwrap_or_else(|_| "14".to_string()).parse().unwrap();
     let batch = get_block_data_hashes_from_json();
-    let (leaves, root) = (batch.batch_data[0].block_hash_batch.clone(), batch.batch_data[0].block_batch_merkle_root.clone());
+    let (leaves, root) = (
+        batch.batch_blocks_merkle[0].block_hash_batch.clone(),
+        batch.batch_blocks_merkle[0].block_batch_merkle_root.clone(),
+    );
     let taget_index = 1;
     // let taget_index = 0;
-    let ((proof_root, proof, path), target_leaf) = (h256_non_standard_tree_root_and_proof(&leaves, taget_index.try_into().unwrap()), leaves[taget_index as usize].clone());
-    let circuit = test_keccak_non_standard_merkle_verify_circuit(k, RlcThreadBuilder::keygen(), proof_root, target_leaf, proof.clone(), path.clone());
+    let ((proof_root, proof, path), target_leaf) = (
+        h256_non_standard_tree_root_and_proof(&leaves, taget_index.try_into().unwrap()),
+        leaves[taget_index as usize].clone(),
+    );
+    let circuit = test_keccak_non_standard_merkle_verify_circuit(
+        k,
+        RlcThreadBuilder::keygen(),
+        proof_root,
+        target_leaf,
+        proof.clone(),
+        path.clone(),
+    );
     // MockProver::<Fr>::run(k, &circuit, vec![]).unwrap().assert_satisfied();
 
     let params = gen_srs(k);
@@ -200,13 +222,22 @@ pub fn test_keccak_non_standard_merkle_verify() {
     let pk = keygen_pk(&params, vk, &circuit).unwrap();
     let break_points = circuit.break_points.take();
 
-
     for index in vec![0, 1, 2, 191] {
         let proof_time = start_timer!(|| "Create proof SHPLONK");
-        let ((proof_root, proof, path), target_leaf) = (h256_non_standard_tree_root_and_proof(&leaves, index.try_into().unwrap()), leaves[index as usize].clone());
+        let ((proof_root, proof, path), target_leaf) = (
+            h256_non_standard_tree_root_and_proof(&leaves, index.try_into().unwrap()),
+            leaves[index as usize].clone(),
+        );
         assert_eq!(root, proof_root);
-        println!("proof index {} path {:?}",index, path);
-        let circuit = test_keccak_non_standard_merkle_verify_circuit(k, RlcThreadBuilder::prover(), proof_root, target_leaf, proof, path);
+        println!("proof index {} path {:?}", index, path);
+        let circuit = test_keccak_non_standard_merkle_verify_circuit(
+            k,
+            RlcThreadBuilder::prover(),
+            proof_root,
+            target_leaf,
+            proof,
+            path,
+        );
         *circuit.break_points.borrow_mut() = break_points.clone();
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
         create_proof::<
@@ -220,7 +251,7 @@ pub fn test_keccak_non_standard_merkle_verify() {
         .unwrap();
         let proof = transcript.finalize();
         end_timer!(proof_time);
-    
+
         let verify_time = start_timer!(|| "Verify time");
         let verifier_params = params.verifier_params();
         let strategy = SingleStrategy::new(&params);
@@ -236,7 +267,6 @@ pub fn test_keccak_non_standard_merkle_verify() {
         end_timer!(verify_time);
         println!("Keccak Non Standard Merkle Verify passed!");
     }
-   
 }
 #[derive(Serialize, Deserialize)]
 pub struct KeccakBenchConfig {

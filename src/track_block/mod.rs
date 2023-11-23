@@ -15,7 +15,7 @@ use halo2_base::{AssignedValue, Context};
 use itertools::Itertools;
 use zkevm_keccak::util::eth_types::Field;
 
-use crate::arbitration::types::BatchData;
+use crate::arbitration::types::BatchBlocksInput;
 use crate::block_header::{
     get_block_header_config, BlockHeaderConfig, EthBlockHeaderChip, EthBlockHeaderTrace,
     EthBlockHeaderTraceWitness,
@@ -81,13 +81,16 @@ pub struct BlockMerkleInclusionConstructor {
 }
 
 impl BlockMerkleInclusionCircuit {
-    pub fn from_json_object(batch_data: BatchData) -> Self {
+    pub fn from_json_object(batch_data: BatchBlocksInput) -> Self {
         let input = batch_data
-            .batch_data
+            .batch_blocks_merkle
             .iter()
             .map(|batch| {
                 let ((proof_root, proof, path), target_leaf) = (
-                    h256_non_standard_tree_root_and_proof(&batch.block_hash_batch, batch.target_block_index),
+                    h256_non_standard_tree_root_and_proof(
+                        &batch.block_hash_batch,
+                        batch.target_block_index,
+                    ),
                     batch.block_hash_batch[batch.target_block_index as usize].clone(),
                 );
                 assert_eq!(proof_root, batch.block_batch_merkle_root);
@@ -102,17 +105,16 @@ impl BlockMerkleInclusionCircuit {
 
         Self {
             inclusion_proof: BlockMerkleInclusionInput { input },
-            block_range_length: batch_data.batch_data[0].block_hash_batch.len() as u64,
-            block_batch_num: batch_data.batch_data.len() as u64,
+            block_range_length: batch_data.batch_blocks_merkle[0].block_hash_batch.len() as u64,
+            block_batch_num: batch_data.batch_blocks_merkle.len() as u64,
         }
     }
 
     pub fn from_json() -> Self {
         let batch_data = get_block_data_hashes_from_json();
         Self::from_json_object(batch_data)
-        
     }
-    
+
     pub fn from_provider(
         network: &Network,
         constructors: &Vec<BlockMerkleInclusionConstructor>,
