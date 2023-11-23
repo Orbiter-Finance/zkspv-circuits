@@ -11,7 +11,7 @@ use crate::storage::contract_storage::util::{
 use crate::track_block::util::{
     get_eth_track_block_circuit, get_merkle_inclusion_circuit, TrackBlockConstructor,
 };
-use crate::track_block::BlockMerkleInclusionConstructor;
+use crate::track_block::{BlockMerkleInclusionConstructor, BlockMerkleInclusionCircuit};
 use crate::transaction::util::{
     get_eth_transaction_circuit, get_zksync_transaction_circuit, TransactionConstructor,
 };
@@ -24,6 +24,22 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Debug;
 use std::str::FromStr;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BlockData {
+    #[serde(rename(deserialize = "blockHashBatch"))]
+    pub block_hash_batch: Vec<H256>,
+    #[serde(rename(deserialize = "blockBatchMerkleRoot"))]
+    pub block_batch_merkle_root: H256,
+    #[serde(rename(deserialize = "targetBlockIndex"))]
+    pub target_block_index: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BatchData {
+    #[serde(rename(deserialize = "batchData"))]
+   pub batch_data: Vec<BlockData>
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct MerkleProof {
@@ -90,6 +106,8 @@ pub struct ProofInput {
     pub transaction_input: TransactionInput,
     #[serde(rename(deserialize = "obContractStorageInput"))]
     pub ob_contract_storage_input: Option<ObContractStorageInput>,
+    #[serde(rename(deserialize = "blockBatchData"))]
+    pub block_batch_data: Option<BatchData>,
     #[serde(rename(deserialize = "config"))]
     pub config: ProofConfig,
 }
@@ -200,94 +218,9 @@ impl ProofInput {
             // get block_merkle_inclusion_task
             // This part completes the proof on the L1 network
             {
-                let mut batch_blocks_merkle = vec![];
 
-                if is_source {
-                    let ob_contract_storage_input = ob_contract_storage_input.unwrap();
-                    batch_blocks_merkle = vec![
-                        BlockMerkleInclusionConstructor {
-                            start_block_num: ob_contract_storage_input
-                                .mdc_current_batch_blocks_merkle
-                                .start_block_number
-                                as u32,
-                            end_block_num: ob_contract_storage_input
-                                .mdc_current_batch_blocks_merkle
-                                .end_block_number as u32,
-                            target_block_num: ob_contract_storage_input
-                                .mdc_current_batch_blocks_merkle
-                                .target_block_number
-                                as u32,
-                        },
-                        BlockMerkleInclusionConstructor {
-                            start_block_num: ob_contract_storage_input
-                                .mdc_next_batch_blocks_merkle
-                                .start_block_number
-                                as u32,
-                            end_block_num: ob_contract_storage_input
-                                .mdc_next_batch_blocks_merkle
-                                .end_block_number as u32,
-                            target_block_num: ob_contract_storage_input
-                                .mdc_next_batch_blocks_merkle
-                                .target_block_number
-                                as u32,
-                        },
-                    ];
-                    if !is_l2 {
-                        batch_blocks_merkle.push(BlockMerkleInclusionConstructor {
-                            start_block_num: self
-                                .transaction_input
-                                .batch_blocks_merkle
-                                .start_block_number
-                                as u32,
-                            end_block_num: self
-                                .transaction_input
-                                .batch_blocks_merkle
-                                .end_block_number as u32,
-                            target_block_num: self
-                                .transaction_input
-                                .batch_blocks_merkle
-                                .target_block_number
-                                as u32,
-                        });
-                    }
-                } else {
-                    if is_l2 {
-                        // None
-                        batch_blocks_merkle = vec![];
-                    } else {
-                        batch_blocks_merkle = vec![BlockMerkleInclusionConstructor {
-                            start_block_num: self
-                                .transaction_input
-                                .batch_blocks_merkle
-                                .start_block_number
-                                as u32,
-                            end_block_num: self
-                                .transaction_input
-                                .batch_blocks_merkle
-                                .end_block_number as u32,
-                            target_block_num: self
-                                .transaction_input
-                                .batch_blocks_merkle
-                                .target_block_number
-                                as u32,
-                        }];
-                    }
-                }
-
-                block_merkle_inclusion_task = if batch_blocks_merkle.is_empty() {
-                    println!("No block_merkle_inclusion_task");
-                    None
-                } else {
-                    let input = get_merkle_inclusion_circuit(
-                        true,
-                        None,
-                        Option::from(l1_network),
-                        Option::from(batch_blocks_merkle.clone()),
-                    );
-                    println!(
-                        "With block_merkle_inclusion_task for L1 contains {} numbers",
-                        batch_blocks_merkle.len()
-                    );
+                block_merkle_inclusion_task = if self.block_batch_data.is_some() {
+                    let input = BlockMerkleInclusionCircuit::from_json_object(self.block_batch_data.unwrap());
                     Some(BlockMerkleInclusionTask {
                         input: input.clone(),
                         network: l1_network,
@@ -295,6 +228,9 @@ impl ProofInput {
                         block_batch_num: input.block_batch_num,
                         block_range_length: input.block_range_length,
                     })
+                } else  {
+                    println!("No block_merkle_inclusion_task");
+                    None
                 };
             }
 
