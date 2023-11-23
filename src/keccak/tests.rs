@@ -17,7 +17,7 @@ use crate::{
         transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
     },
     rlp::rlc::RlcConfig,
-    util::{helpers::{get_provider, get_block_batch_hashes}, h256_non_standard_tree_root_and_proof, h256_tree_verify, encode_h256_to_bytes_field, encode_merkle_path_to_field}, Network, EthereumNetwork, providers::get_batch_block_merkle_root,
+    util::{helpers::{get_provider, get_block_batch_hashes}, h256_non_standard_tree_root_and_proof, h256_tree_verify, encode_h256_to_bytes_field, encode_merkle_path_to_field}, Network, EthereumNetwork, providers::get_batch_block_merkle_root, arbitration::types::BatchData,
 };
 use ark_std::{end_timer, start_timer};
 use ethers_core::types::H256;
@@ -42,9 +42,20 @@ use std::{
 };
 use zkevm_keccak::keccak_packed_multi::get_keccak_capacity;
 
+#[test]
+pub fn test_non_standard_merkle_inclusion_verify_from_json() {
+
+    let batch_data = get_block_data_hashes_from_json();
+    for batch in batch_data.batch_data {
+        let (leaves, root, target_index) = (batch.block_hash_batch.clone(), batch.block_batch_merkle_root, batch.target_block_index);
+        let (proof_root, proof, path) = h256_non_standard_tree_root_and_proof(&leaves, target_index);
+        assert_eq!(root, proof_root);
+        h256_tree_verify(&proof_root, &leaves[target_index as usize], &proof, &path)
+    }
+}
 
 #[test]
-pub fn test_merkle_root_verify() {
+pub fn test_non_standard_merkle_inclusion_verify_from_provider() {
     let provider = get_provider(&Network::Ethereum(EthereumNetwork::Mainnet));
     let start_block_num = 17113953;
     let end_block_num = 17114080;
@@ -54,16 +65,6 @@ pub fn test_merkle_root_verify() {
         let verify_index = proof_index - start_block_num;
         let (proof_root, proof, path) = h256_non_standard_tree_root_and_proof(&leaves, verify_index.clone());
         h256_tree_verify(&proof_root, &leaves[verify_index as usize], &proof, &path);
-    }
-
-    let (leaves, root) = get_block_data_hashes_from_json();
-    for(leaves, root) in leaves.into_iter().zip(root.into_iter()) {
-        for proof_index in 0..leaves.len() {
-            let verify_index = proof_index;
-            let (proof_root, proof, path) = h256_non_standard_tree_root_and_proof(&leaves, verify_index.clone().try_into().unwrap());
-            assert_eq!(root, proof_root);
-            h256_tree_verify(&proof_root, &leaves[verify_index as usize], &proof, &path);
-        }
     }
 }
 
@@ -106,31 +107,12 @@ fn test_keccak_non_standard_merkle_verify_circuit<F: Field>(
     circuit
 }
 
-pub fn get_block_data_hashes_from_json() -> (Vec<Vec<H256>>, Vec<H256>) {
-    #[derive(Deserialize)]
-    struct BatchData {
-        batch_1: Vec<String>,
-        batch_root_1: String,
-        batch_2: Vec<String>,
-        batch_root_2: String,
-        batch_3: Vec<String>,
-        batch_root_3: String,
-    }
+
+pub fn get_block_data_hashes_from_json() -> BatchData {
 
     let data = fs::read_to_string("test_data/block_batch_data.json").unwrap();
     let batch_data: BatchData = serde_json::from_str(&data).unwrap();
-    ([
-        batch_data.batch_1.into_iter().map(|s| H256::from_str(&s).unwrap()).collect_vec().into_iter().collect_vec(),
-        batch_data.batch_2.into_iter().map(|s| H256::from_str(&s).unwrap()).collect_vec().into_iter().collect_vec(),
-        batch_data.batch_3.into_iter().map(|s| H256::from_str(&s).unwrap()).collect_vec().into_iter().collect_vec(),
-    ].into_iter().collect_vec()
-    , 
-    [
-        batch_data.batch_root_1.parse().unwrap(),
-        batch_data.batch_root_2.parse().unwrap(),
-        batch_data.batch_root_3.parse().unwrap()
-    ].into_iter().collect_vec()
-    )
+    return batch_data
 }
 
 
@@ -205,8 +187,8 @@ pub fn test_keccak() {
 #[test]
 pub fn test_keccak_non_standard_merkle_verify() {
     let k: u32 = var("KECCAK_DEGREE").unwrap_or_else(|_| "14".to_string()).parse().unwrap();
-    let (leaves_batch, root_batch) = get_block_data_hashes_from_json();
-    let (leaves, root) = (leaves_batch[0].clone(), root_batch[0].clone());
+    let batch = get_block_data_hashes_from_json();
+    let (leaves, root) = (batch.batch_data[0].block_hash_batch.clone(), batch.batch_data[0].block_batch_merkle_root.clone());
     let taget_index = 1;
     // let taget_index = 0;
     let ((proof_root, proof, path), target_leaf) = (h256_non_standard_tree_root_and_proof(&leaves, taget_index.try_into().unwrap()), leaves[taget_index as usize].clone());

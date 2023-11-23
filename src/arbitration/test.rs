@@ -129,7 +129,7 @@ fn test_dest_transaction_task(network: Network) -> EthTransactionTask {
 }
 
 fn test_merkle_inclusion_task(network: Network, target_index: i32) -> BlockMerkleInclusionTask {
-    let input = get_merkle_inclusion_circuit(false, Some(target_index), None, None);
+    let input = get_merkle_inclusion_circuit(false, None, None);
     BlockMerkleInclusionTask {
         input: input.clone(),
         network,
