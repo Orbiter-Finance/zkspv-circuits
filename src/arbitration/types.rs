@@ -73,6 +73,14 @@ pub struct TransactionInput {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TransactionsInput {
+    #[serde(rename(deserialize = "originalTransaction"))]
+    pub original_transaction: TransactionInput,
+    #[serde(rename(deserialize = "commitTransaction"))]
+    pub commit_transaction: Option<TransactionInput>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProofConfig {
     #[serde(rename(deserialize = "isSource"))]
     pub is_source: bool,
@@ -86,8 +94,8 @@ pub struct ProofConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProofInput {
-    #[serde(rename(deserialize = "transactionInput"))]
-    pub transaction_input: TransactionInput,
+    #[serde(rename(deserialize = "transactionsInput"))]
+    pub transactions_input: TransactionsInput,
     #[serde(rename(deserialize = "obContractStorageInput"))]
     pub ob_contract_storage_input: Option<ObContractStorageInput>,
     #[serde(rename(deserialize = "config"))]
@@ -204,6 +212,7 @@ impl ProofInput {
 
                 if is_source {
                     let ob_contract_storage_input = ob_contract_storage_input.unwrap();
+                    // ob contracts storage block merkle
                     batch_blocks_merkle = vec![
                         BlockMerkleInclusionConstructor {
                             start_block_num: ob_contract_storage_input
@@ -233,45 +242,45 @@ impl ProofInput {
                         },
                     ];
                     if !is_l2 {
+                        // has l1 original_transaction block merkle in l1
                         batch_blocks_merkle.push(BlockMerkleInclusionConstructor {
                             start_block_num: self
-                                .transaction_input
+                                .transactions_input
+                                .original_transaction
                                 .batch_blocks_merkle
                                 .start_block_number
                                 as u32,
                             end_block_num: self
-                                .transaction_input
+                                .transactions_input
+                                .original_transaction
                                 .batch_blocks_merkle
                                 .end_block_number as u32,
                             target_block_num: self
-                                .transaction_input
+                                .transactions_input
+                                .original_transaction
                                 .batch_blocks_merkle
                                 .target_block_number
                                 as u32,
                         });
                     }
                 } else {
+                    let l1_transaction;
                     if is_l2 {
-                        // None
-                        batch_blocks_merkle = vec![];
+                        // has l1 commit_transaction block merkle in l1
+                        l1_transaction =
+                            self.transactions_input.commit_transaction.clone().unwrap();
                     } else {
-                        batch_blocks_merkle = vec![BlockMerkleInclusionConstructor {
-                            start_block_num: self
-                                .transaction_input
-                                .batch_blocks_merkle
-                                .start_block_number
-                                as u32,
-                            end_block_num: self
-                                .transaction_input
-                                .batch_blocks_merkle
-                                .end_block_number as u32,
-                            target_block_num: self
-                                .transaction_input
-                                .batch_blocks_merkle
-                                .target_block_number
-                                as u32,
-                        }];
+                        // has l1 original_transaction block merkle in l1
+                        l1_transaction = self.transactions_input.original_transaction.clone();
                     }
+
+                    batch_blocks_merkle = vec![BlockMerkleInclusionConstructor {
+                        start_block_num: l1_transaction.batch_blocks_merkle.start_block_number
+                            as u32,
+                        end_block_num: l1_transaction.batch_blocks_merkle.end_block_number as u32,
+                        target_block_num: l1_transaction.batch_blocks_merkle.target_block_number
+                            as u32,
+                    }];
                 }
 
                 block_merkle_inclusion_task = if batch_blocks_merkle.is_empty() {
@@ -302,39 +311,53 @@ impl ProofInput {
             // is_l2 == false,This part completes the proof on the L1 network;is_l2 == true,This part completes the proof on the L2 network;
             {
                 let network = if is_l2 { l2_network.unwrap() } else { l1_network };
-                let transaction_constructor = TransactionConstructor {
-                    transaction_hash: self.transaction_input.transaction_hash,
-                    transaction_index_bytes: Option::from(
-                        self.transaction_input.transaction_proof.key.clone(),
-                    ),
-                    transaction_rlp: Option::from(
-                        self.transaction_input.transaction_proof.value.clone(),
-                    ),
-                    merkle_proof: Option::from(
-                        self.transaction_input.transaction_proof.proof.clone(),
-                    ),
-                    transaction_pf_max_depth: Option::from(
-                        self.transaction_input.transaction_proof.proof.clone().len(),
-                    ),
+                let original_transaction = self.transactions_input.original_transaction.clone();
+                let original_transaction_constructor = TransactionConstructor::new(
+                    original_transaction.transaction_hash,
+                    Some(original_transaction.transaction_proof.key.clone()),
+                    Some(original_transaction.transaction_proof.value.clone()),
+                    Some(original_transaction.transaction_proof.proof.clone()),
+                    Some(original_transaction.transaction_proof.proof.clone().len()),
                     network,
-                };
+                );
 
                 if is_l2 && matches!(network, Network::ZkSync(_)) {
+                    let commit_transaction =
+                        self.transactions_input.commit_transaction.unwrap().clone();
+                    let commit_transaction_constructor = TransactionConstructor::new(
+                        commit_transaction.transaction_hash,
+                        Some(commit_transaction.transaction_proof.key.clone()),
+                        Some(commit_transaction.transaction_proof.value.clone()),
+                        Some(commit_transaction.transaction_proof.proof.clone()),
+                        Some(commit_transaction.transaction_proof.proof.clone().len()),
+                        network,
+                    );
                     zksync_transaction_task = Some(ZkSyncTransactionTask {
-                        input: get_zksync_transaction_circuit(transaction_constructor.clone()),
+                        input: get_zksync_transaction_circuit(
+                            original_transaction_constructor.clone(),
+                        ),
                         tx_type: EthTransactionType::DynamicFeeTxType,
                         tasks_len: 1,
-                        constructor: vec![transaction_constructor],
+                        constructor: vec![original_transaction_constructor],
                         aggregated: false,
                         network,
                     });
-                    eth_transaction_task = None;
-                } else {
                     eth_transaction_task = Some(EthTransactionTask {
-                        input: get_eth_transaction_circuit(transaction_constructor.clone()),
+                        input: get_eth_transaction_circuit(commit_transaction_constructor.clone()),
                         tx_type: EthTransactionType::DynamicFeeTxType,
                         tasks_len: 1,
-                        constructor: vec![transaction_constructor],
+                        constructor: vec![commit_transaction_constructor],
+                        aggregated: false,
+                        network,
+                    });
+                } else {
+                    eth_transaction_task = Some(EthTransactionTask {
+                        input: get_eth_transaction_circuit(
+                            original_transaction_constructor.clone(),
+                        ),
+                        tx_type: EthTransactionType::DynamicFeeTxType,
+                        tasks_len: 1,
+                        constructor: vec![original_transaction_constructor],
                         aggregated: false,
                         network,
                     });
@@ -369,8 +392,41 @@ impl OriginalProof {
         let value: Value = serde_json::from_str(self.proof.as_str()).unwrap();
         let mut proof_params = serde_json::from_str::<ProofInput>(self.proof.as_str()).unwrap();
 
-        // Load transaction merkle proof
-        if proof_params.transaction_input.transaction_proof_enable {
+        // Load original or commit transaction merkle proof
+        if proof_params.config.is_l2 {
+            let commit_transaction =
+                proof_params.transactions_input.commit_transaction.clone().unwrap();
+            if commit_transaction.transaction_proof_enable {
+                let mut transaction_merkle_proof_proof: Vec<Bytes> = vec![];
+                let proofs =
+                    value["transactionInput"]["transactionProof"]["proof"].as_array().unwrap();
+                for proof in proofs {
+                    let proof_bytes = Vec::from_hex(proof.as_str().unwrap()).unwrap();
+                    transaction_merkle_proof_proof.push(Bytes::from(proof_bytes));
+                }
+
+                let transaction_merkle_proof = MerkleProof {
+                    key: Vec::from_hex(
+                        &value["transactionInput"]["transactionProof"]["key"].as_str().unwrap(),
+                    )
+                    .unwrap(),
+                    value: Vec::from_hex(
+                        &value["transactionInput"]["transactionProof"]["value"].as_str().unwrap(),
+                    )
+                    .unwrap(),
+                    proof: transaction_merkle_proof_proof,
+                    root: None,
+                };
+
+                proof_params
+                    .transactions_input
+                    .commit_transaction
+                    .as_mut()
+                    .unwrap()
+                    .transaction_proof = transaction_merkle_proof;
+            }
+        }
+        if proof_params.transactions_input.original_transaction.transaction_proof_enable {
             let mut transaction_merkle_proof_proof: Vec<Bytes> = vec![];
             let proofs = value["transactionInput"]["transactionProof"]["proof"].as_array().unwrap();
             for proof in proofs {
@@ -391,7 +447,8 @@ impl OriginalProof {
                 root: None,
             };
 
-            proof_params.transaction_input.transaction_proof = transaction_merkle_proof;
+            proof_params.transactions_input.original_transaction.transaction_proof =
+                transaction_merkle_proof;
         }
 
         // Load mdc current rule merkle proof

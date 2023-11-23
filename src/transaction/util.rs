@@ -17,6 +17,26 @@ pub struct TransactionConstructor {
     pub network: Network,
 }
 
+impl TransactionConstructor {
+    pub fn new(
+        transaction_hash: H256,
+        transaction_index_bytes: Option<Vec<u8>>,
+        transaction_rlp: Option<Vec<u8>>,
+        merkle_proof: Option<Vec<Bytes>>,
+        transaction_pf_max_depth: Option<usize>,
+        network: Network,
+    ) -> Self {
+        Self {
+            transaction_hash,
+            transaction_index_bytes,
+            transaction_rlp,
+            merkle_proof,
+            transaction_pf_max_depth,
+            network,
+        }
+    }
+}
+
 // pub enum TransactionCircuitType {
 //     EthBlockTransactionCircuit(EthBlockTransactionCircuit),
 //     ZkSyncEraBlockTransactionCircuit(ZkSyncEraBlockTransactionCircuit),
