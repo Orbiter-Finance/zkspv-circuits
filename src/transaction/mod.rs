@@ -22,7 +22,9 @@ pub const EIP_1559_TX_TYPE: u8 = 0x02;
 
 const TX_INDEX_MAX_LEN: usize = 3;
 
-const TX_DATA_MAX_LEN: usize = 512;
+const TX_DATA_MAX_LEN: usize = 0;
+const TX_NORMAL_DATA_MAX_LEN: usize = 512;
+const TX_COMMIT_DATA_MAX_LEN: usize = 21000;
 const TX_ACCESS_LIST_MAX_LEN: usize = 0;
 
 pub const EIP_2718_TX_TYPE_FIELDS_NUM: usize = 9;
@@ -63,4 +65,36 @@ impl ToString for EthTransactionType {
 pub fn load_transaction_type<F: Field>(ctx: &mut Context<F>, tx_type: u8) -> AssignedValue<F> {
     let type_value = (F::from(tx_type as u64)).try_into().unwrap();
     ctx.load_constant(type_value)
+}
+
+pub fn calculate_tx_max_len(tx_len: usize) -> usize {
+    let mut tx_max_len = 0;
+    if tx_len <= 512 {
+        tx_max_len = TX_NORMAL_DATA_MAX_LEN;
+    } else if tx_len > 512 && tx_len <= 21000 {
+        tx_max_len = TX_COMMIT_DATA_MAX_LEN;
+    }
+    for i in 0..EIP_1559_TX_TYPE_FIELDS_NUM {
+        tx_max_len += EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN[i];
+    }
+    tx_max_len
+}
+
+// Todo: A more elegant way to do it.
+pub fn calculate_tx_max_fields_len(assigned_tx_len: usize) -> Vec<usize> {
+    let mut base = vec![0; EIP_1559_TX_TYPE_FIELDS_NUM];
+    let mut tx_data_max_field_len = 0;
+    if assigned_tx_len == 789 {
+        tx_data_max_field_len = TX_NORMAL_DATA_MAX_LEN;
+    } else if assigned_tx_len == 21277 {
+        tx_data_max_field_len = TX_COMMIT_DATA_MAX_LEN;
+    }
+    for i in 0..EIP_1559_TX_TYPE_FIELDS_NUM {
+        if i == 7 {
+            base[i] = tx_data_max_field_len;
+        } else {
+            base[i] = EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN[i];
+        }
+    }
+    base
 }

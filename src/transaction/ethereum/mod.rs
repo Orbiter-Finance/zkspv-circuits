@@ -28,22 +28,20 @@ use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
 use crate::storage::EthStorageChip;
 use crate::transaction::util::TransactionConstructor;
 use crate::transaction::{
-    load_transaction_type, CALLDATA_BYTES_LEN, EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN,
-    EIP_2718_TX_TYPE, EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_TX_TYPE_CRITICAL_VALUE,
-    ERC20_TO_ADDRESS_BYTES_LEN, FUNCTION_SELECTOR_BYTES_LEN, FUNCTION_SELECTOR_ERC20_TRANSFER,
-    TX_MAX_LEN,
+    calculate_tx_max_fields_len, load_transaction_type, CALLDATA_BYTES_LEN,
+    EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_2718_TX_TYPE,
+    EIP_2718_TX_TYPE_FIELDS_MAX_FIELDS_LEN, EIP_TX_TYPE_CRITICAL_VALUE, ERC20_TO_ADDRESS_BYTES_LEN,
+    FUNCTION_SELECTOR_BYTES_LEN, FUNCTION_SELECTOR_ERC20_TRANSFER,
 };
 use crate::util::helpers::load_bytes;
 use crate::util::{
     bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, encode_h256_to_field, AssignedH256,
 };
 use crate::{
-    EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LIMB_BITS, ETH_LOOKUP_BITS,
-    ETH_NUM_LIMBS,
+    EthChip, EthCircuitBuilder, EthPreCircuit, ETH_LIMB_BITS, ETH_LOOKUP_BITS, ETH_NUM_LIMBS,
 };
 
 pub mod tests;
-
 // lazy_static! {
 //     static ref KECCAK_RLP_EMPTY_STRING: Vec<u8> =
 //         Vec::from_hex("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421").unwrap();
@@ -503,8 +501,10 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             let legacy_transaction_type = load_transaction_type(ctx, EIP_2718_TX_TYPE);
             ctx.constrain_equal(transaction_type, &legacy_transaction_type);
         } else {
+            field_lens = calculate_tx_max_fields_len(transaction_rlp_bytes.len());
+
+            println!("field_lens:{:?}", field_lens);
             transaction_rlp_bytes = transaction_rlp_bytes[1..].to_vec();
-            field_lens = EIP_1559_TX_TYPE_FIELDS_MAX_FIELDS_LEN.to_vec();
 
             join_hash_len = one;
         }
@@ -512,7 +512,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let transaction_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
             transaction_rlp_bytes,
-            &field_lens.as_slice(), //Maximum number of bytes per field. For example, the uint256 is 32 bytes.
+            &field_lens, //Maximum number of bytes per field. For example, the uint256 is 32 bytes.
             true,
         );
 
@@ -523,8 +523,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let mut tx_to_witness;
         let mut tx_amount_witness;
         let mut tx_nonce_witness;
-        // let mock_calldata = Vec::from_hex("a9059cbb0000000000000000000000003620401ebbc40533218d2d0f2c01398dc9148b6f0000000000000000000000000000000000000000000000000000000000116520").unwrap();
-        // let calldata = load_bytes(ctx, mock_calldata.as_slice());
+
         if is_not_legacy_transaction.value == zero.value {
             // [nonce,gasPrice,gasLimit,to,value,data,v,r,s]
             calldata_witness = &transaction_witness.field_witness[5];
@@ -570,7 +569,8 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
                 ctx,
                 vec![&transaction_witness.field_witness[0]],
                 vec![32],
-            )[0];
+            )[0]
+            .clone();
         }
 
         // tx to & tx amount
@@ -644,7 +644,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
         let hash_idx = keccak.keccak_var_len(
             ctx,
             self.range(),
-            transaction_value.to_vec(), // depends on the value of the constant TX_MAX_LEN = 789,
+            transaction_value.to_vec(), // this depends on the TX_MAX_LEN calculated by the method calculate_tx_max_len
             None,
             real_join_hash_len,
             0,

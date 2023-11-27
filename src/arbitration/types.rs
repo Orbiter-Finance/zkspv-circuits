@@ -15,7 +15,6 @@ use crate::transaction::util::{
 };
 use crate::transaction::EthTransactionType;
 use crate::{get_network_from_chain_id, Network};
-use ark_std::Zero;
 use ethers_core::types::{Address, Bytes, H256};
 use hex::FromHex;
 use serde::{Deserialize, Serialize};
@@ -253,7 +252,7 @@ impl ProofInput {
                         Some(commit_transaction.transaction_proof.value.clone()),
                         Some(commit_transaction.transaction_proof.proof.clone()),
                         Some(commit_transaction.transaction_proof.proof.clone().len()),
-                        network,
+                        l1_network,
                     );
                     zksync_transaction_task = Some(ZkSyncTransactionTask {
                         input: get_zksync_transaction_circuit(
@@ -271,7 +270,7 @@ impl ProofInput {
                         tasks_len: 1,
                         constructor: vec![commit_transaction_constructor],
                         aggregated: false,
-                        network,
+                        network: l1_network,
                     });
                 } else {
                     eth_transaction_task = Some(EthTransactionTask {
@@ -321,8 +320,10 @@ impl OriginalProof {
                 proof_params.transactions_input.commit_transaction.clone().unwrap();
             if commit_transaction.transaction_proof_enable {
                 let mut transaction_merkle_proof_proof: Vec<Bytes> = vec![];
-                let proofs =
-                    value["commitTransaction"]["transactionProof"]["proof"].as_array().unwrap();
+                let proofs = value["transactionsInput"]["commitTransaction"]["transactionProof"]
+                    ["proof"]
+                    .as_array()
+                    .unwrap();
                 for proof in proofs {
                     let proof_bytes = Vec::from_hex(proof.as_str().unwrap()).unwrap();
                     transaction_merkle_proof_proof.push(Bytes::from(proof_bytes));
@@ -330,11 +331,16 @@ impl OriginalProof {
 
                 let transaction_merkle_proof = MerkleProof {
                     key: Vec::from_hex(
-                        &value["commitTransaction"]["transactionProof"]["key"].as_str().unwrap(),
+                        &value["transactionsInput"]["commitTransaction"]["transactionProof"]["key"]
+                            .as_str()
+                            .unwrap(),
                     )
                     .unwrap(),
                     value: Vec::from_hex(
-                        &value["commitTransaction"]["transactionProof"]["value"].as_str().unwrap(),
+                        &value["transactionsInput"]["commitTransaction"]["transactionProof"]
+                            ["value"]
+                            .as_str()
+                            .unwrap(),
                     )
                     .unwrap(),
                     proof: transaction_merkle_proof_proof,

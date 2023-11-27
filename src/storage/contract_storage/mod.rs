@@ -217,13 +217,14 @@ impl EthPreCircuit for ObContractsStorageCircuit {
             .chain(slots_key.into_iter().flat_map(|slot| slot.into_iter()))
             .chain(slots_value.into_iter().flat_map(|value| value))
             .chain(digests.ebc_rule_hash.clone().into_iter())
-            // Todo: At present, it is reused, which affects public input, so it is commented out here, and this parameter does not need to be exposed after the aggregation circuit is actually completed.
-            // .chain(
-            //     digests
-            //         .clone()
-            //         .into_iter()
-            //         .flat_map(|d| d.block_hash.into_iter().chain([d.block_number])),
-            // )
+            // Todo: Since the current track block circuit and this circuit are separated, it is necessary to compare the blockhash temporarily.
+            .chain(
+                digests
+                    .multi_blocks_contracts_digest
+                    .clone()
+                    .into_iter()
+                    .flat_map(|d| d.block_hash.into_iter()),
+            )
             .collect();
 
         // For now this circuit is going to constrain that all slots are occupied. We can also create a circuit that exposes the bitmap of slot_is_empty
@@ -238,24 +239,23 @@ impl EthPreCircuit for ObContractsStorageCircuit {
                     .zip(digests.multi_blocks_contracts_digest.iter().skip(1))
             {
                 // Check mdc_current_rule_block_number and mdc_next_rule_block_number, that is, mdc_current_rule_block_number must be less than mdc_next_rule_block_number.
-                // range.check_less_than(
-                //     ctx,
-                //     current_single_block_contracts_digest.block_number,
-                //     next_single_block_contracts_digest.block_number,
-                //     8,
-                // );
+                range.check_less_than(
+                    ctx,
+                    current_single_block_contracts_digest.block_number,
+                    next_single_block_contracts_digest.block_number,
+                    8 * 4,
+                );
 
-                // Check mdc_current_rule_version and mdc_next_rule_version, that is, mdc_current_rule_version must be less than or equal to mdc_next_rule_version.
-                //
-                // let current_version = current_single_block_contracts_digest.slots_values[1].1;
-                // let current_version = current_version.as_slice()[1];
-                // let next_version = next_single_block_contracts_digest.slots_values[0].1;
-                // let next_version = next_version.as_slice()[1];
-                //
-                // let diff_version = chip.gate().sub(ctx, next_version, current_version);
-                //
-                // // diff_version <= 1
-                // range.check_less_than(ctx, diff_version, Constant(Fr::from(2)), 8);
+                // Check mdc_current_rule_version and mdc_next_rule_version, that is, the difference between mdc_next_rule_version - mdc_current_rule_version must be less than or equal to 1.
+                let current_version = current_single_block_contracts_digest.slots_values[1].1;
+                let current_version = current_version.as_slice()[1];
+                let next_version = next_single_block_contracts_digest.slots_values[0].1;
+                let next_version = next_version.as_slice()[1];
+
+                let diff_version = chip.gate().sub(ctx, next_version, current_version);
+
+                // diff_version <= 1
+                range.check_less_than(ctx, diff_version, Constant(Fr::from(2)), 8);
             }
 
             for digest in digests.multi_blocks_contracts_digest {

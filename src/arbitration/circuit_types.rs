@@ -10,6 +10,7 @@ use crate::{
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct BlockMerkleInclusionCircuitType {
     pub network: Network,
+    pub block_batch_num: u64,
     pub tree_depth: u64,
     pub block_range_length: u64,
 }
@@ -17,8 +18,8 @@ pub struct BlockMerkleInclusionCircuitType {
 impl BlockMerkleInclusionCircuitType {
     fn name(&self) -> String {
         format!(
-            "block_merkle_inclusion_tree_depth_{}_block_range_length_{}",
-            self.tree_depth, self.block_range_length
+            "batch_block_merkle_depth_{}_length_{}_num_{}",
+            self.tree_depth, self.block_range_length, self.block_batch_num
         )
     }
 }
@@ -70,6 +71,7 @@ pub struct EthTransactionCircuitType {
     pub network: Network,
     pub tx_type: EthTransactionType,
     pub tasks_len: u64,
+    pub tx_max_len: u64,
     pub aggregated: bool,
 }
 
@@ -88,7 +90,12 @@ impl scheduler::CircuitType for EthTransactionCircuitType {
                 self.tasks_len
             )
         } else {
-            format!("{}_transaction_{}", self.network.to_string(), self.tx_type.to_string())
+            format!(
+                "{}_transaction_{}_max_len_{}",
+                self.network.to_string(),
+                self.tx_type.to_string(),
+                self.tx_max_len
+            )
         }
     }
     fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {

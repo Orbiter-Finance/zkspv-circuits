@@ -44,7 +44,7 @@ use crate::track_block::util::TrackBlockConstructor;
 use crate::track_block::EthTrackBlockInput;
 use crate::transaction::ethereum::{EthBlockTransactionInput, EthTransactionInput};
 use crate::transaction::zksync_era::{ZkSyncEraBlockTransactionInput, ZkSyncEraTransactionInput};
-use crate::transaction::TX_MAX_LEN;
+use crate::transaction::{calculate_tx_max_len, TX_MAX_LEN};
 use crate::util::contract_abi::erc20::{decode_input, is_erc20_transaction};
 use crate::util::helpers::calculate_storage_mapping_key;
 use crate::util::{
@@ -171,7 +171,7 @@ pub fn get_transaction_input(
         root_hash: block.transactions_root,
         proof: merkle_proof.into_iter().map(|x| x.to_vec()).collect(),
         slot_is_empty,
-        value_max_byte_len: TX_MAX_LEN,
+        value_max_byte_len: calculate_tx_max_len(transaction_rlp.to_vec().len()),
         max_depth: transaction_pf_max_depth,
         max_key_byte_len: TRANSACTION_INDEX_MAX_KEY_BYTES_LEN,
         key_byte_len: Some(transaction_key.len()),
@@ -414,7 +414,7 @@ pub fn get_zksync_era_transaction_input(
             transaction_index: tx.transaction_index.unwrap().as_u64(),
             transaction_status: tx_status.status.unwrap().as_u64(),
             transaction_value: tx.rlp().to_vec(),
-            transaction_value_max_bytes: TX_MAX_LEN,
+            transaction_value_max_bytes: calculate_tx_max_len(tx.rlp().len()),
             transaction_ecdsa_verify: EthEcdsaInput {
                 signature,
                 message,

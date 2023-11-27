@@ -1,3 +1,4 @@
+use crate::transaction::calculate_tx_max_len;
 use crate::transaction::ethereum::EthBlockTransactionCircuit;
 use crate::transaction::zksync_era::ZkSyncEraBlockTransactionCircuit;
 use crate::util::errors::ErrorType;
@@ -34,6 +35,10 @@ impl TransactionConstructor {
             transaction_pf_max_depth,
             network,
         }
+    }
+
+    pub fn tx_max_len(&self) -> usize {
+        calculate_tx_max_len(self.transaction_rlp.as_ref().unwrap().len())
     }
 }
 

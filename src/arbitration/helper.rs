@@ -4,7 +4,6 @@ use std::fmt::{Debug, Formatter};
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use syn::Block;
 use tracing_subscriber::fmt::format;
 
 use crate::arbitration::circuit_types::{
@@ -57,6 +56,7 @@ impl scheduler::Task for BlockMerkleInclusionTask {
     fn circuit_type(&self) -> Self::CircuitType {
         BlockMerkleInclusionCircuitType {
             network: self.network,
+            block_batch_num: self.block_batch_num,
             tree_depth: self.tree_depth,
             block_range_length: self.block_range_length,
         }
@@ -149,6 +149,9 @@ impl EthTransactionTask {
     fn hash(&self) -> H256 {
         self.constructor[0].transaction_hash
     }
+    fn tx_max_len(&self) -> u64 {
+        self.constructor[0].tx_max_len() as u64
+    }
 }
 
 impl scheduler::Task for EthTransactionTask {
@@ -159,6 +162,7 @@ impl scheduler::Task for EthTransactionTask {
             network: self.network,
             tx_type: self.tx_type.clone(),
             tasks_len: self.tasks_len,
+            tx_max_len: self.tx_max_len(),
             aggregated: self.aggregated,
         }
     }
@@ -171,7 +175,12 @@ impl scheduler::Task for EthTransactionTask {
                 self.tasks_len
             )
         } else {
-            format!("transaction_{}_tx_{}", self.tx_type.to_string(), self.hash())
+            format!(
+                "transaction_{}_tx_{}_max_len_{}",
+                self.tx_type.to_string(),
+                self.hash(),
+                self.tx_max_len()
+            )
         }
     }
 
@@ -210,6 +219,9 @@ impl ZkSyncTransactionTask {
     fn hash(&self) -> H256 {
         self.constructor[0].transaction_hash
     }
+    fn tx_max_len(&self) -> u64 {
+        789
+    }
 }
 
 impl scheduler::Task for ZkSyncTransactionTask {
@@ -220,6 +232,7 @@ impl scheduler::Task for ZkSyncTransactionTask {
             network: self.network,
             tx_type: self.tx_type.clone(),
             tasks_len: self.tasks_len,
+            tx_max_len: self.tx_max_len(),
             aggregated: self.aggregated,
         }
     }
@@ -232,7 +245,12 @@ impl scheduler::Task for ZkSyncTransactionTask {
                 self.tasks_len
             )
         } else {
-            format!("zksync_era_transaction_{}_tx_{}", self.tx_type.to_string(), self.hash())
+            format!(
+                "zksync_era_transaction_{}_tx_{}_max_len_{}",
+                self.tx_type.to_string(),
+                self.hash(),
+                self.tx_max_len()
+            )
         }
     }
 
