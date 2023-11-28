@@ -99,6 +99,12 @@ pub enum Network {
     ZkSync(ZkSyncEraNetwork),
 }
 
+impl Network {
+    pub fn is_l1(&self) -> bool {
+        matches!(self, Network::Ethereum(_))
+    }
+}
+
 impl ToString for Network {
     fn to_string(&self) -> String {
         match self {

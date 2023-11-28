@@ -199,7 +199,7 @@ pub fn test_arbitration_scheduler_dest_transaction_task() {
 
 fn test_zksync_era_transaction_task(network: Network) -> ZkSyncTransactionTask {
     let transaction_hash =
-        H256::from_str("0xe2221cd2406bb1650677b7079b2742885e1fb81e9ba98b01743a42f9fe1323a5")
+        H256::from_str("0x508331b82868cbe0d4dcfaf123660c2cbe412216d37e62802184c2128002401e")
             .unwrap();
     let constructor = TransactionConstructor {
         transaction_hash,

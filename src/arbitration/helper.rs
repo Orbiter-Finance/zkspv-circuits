@@ -45,6 +45,15 @@ pub struct BlockMerkleInclusionTask {
 }
 
 impl BlockMerkleInclusionTask {
+    pub fn new(
+        input: BlockMerkleInclusionCircuit,
+        network: Network,
+        block_batch_num: u64,
+        tree_depth: u64,
+        block_range_length: u64,
+    ) -> Self {
+        Self { input, network, block_batch_num, tree_depth, block_range_length }
+    }
     pub fn digest(&self) -> H256 {
         H256(keccak256(bincode::serialize(&self.input.inclusion_proof.input).unwrap()))
     }
@@ -146,6 +155,16 @@ pub struct EthTransactionTask {
 }
 
 impl EthTransactionTask {
+    pub fn new(
+        input: EthBlockTransactionCircuit,
+        tx_type: EthTransactionType,
+        tasks_len: u64,
+        constructor: Vec<TransactionConstructor>,
+        aggregated: bool,
+        network: Network,
+    ) -> Self {
+        Self { input, tx_type, tasks_len, constructor, aggregated, network }
+    }
     fn hash(&self) -> H256 {
         self.constructor[0].transaction_hash
     }
@@ -216,6 +235,16 @@ pub struct ZkSyncTransactionTask {
 }
 
 impl ZkSyncTransactionTask {
+    pub fn new(
+        input: ZkSyncEraBlockTransactionCircuit,
+        tx_type: EthTransactionType,
+        tasks_len: u64,
+        constructor: Vec<TransactionConstructor>,
+        aggregated: bool,
+        network: Network,
+    ) -> Self {
+        Self { input, tx_type, tasks_len, constructor, aggregated, network }
+    }
     fn hash(&self) -> H256 {
         self.constructor[0].transaction_hash
     }
@@ -290,6 +319,18 @@ pub struct MDCStateTask {
     pub aggregated: bool,
 }
 
+impl MDCStateTask {
+    pub fn new(
+        input: ObContractsStorageCircuit,
+        single_block_include_contracts: u64,
+        multi_blocks_number: u64,
+        constructor: Vec<MultiBlocksContractsStorageConstructor>,
+        aggregated: bool,
+    ) -> Self {
+        Self { input, single_block_include_contracts, multi_blocks_number, constructor, aggregated }
+    }
+}
+
 impl scheduler::Task for MDCStateTask {
     type CircuitType = EthStorageCircuitType;
 
@@ -330,7 +371,6 @@ impl scheduler::Task for MDCStateTask {
 pub struct FinalAssemblyConstructor {
     pub eth_transaction_task: Option<EthTransactionTask>,
     pub zksync_transaction_task: Option<ZkSyncTransactionTask>,
-    pub eth_block_track_task: Option<ETHBlockTrackTask>,
     pub mdc_state_task: Option<MDCStateTask>,
     pub block_merkle_inclusion_task: Option<BlockMerkleInclusionTask>,
 }
@@ -339,8 +379,8 @@ pub struct FinalAssemblyConstructor {
 pub struct FinalAssemblyTask {
     pub round: usize,
     pub final_assembly_type: FinalAssemblyType,
-    pub l1_network: Network,
-    pub l2_network: Option<Network>,
+    pub from_network: Network,
+    pub to_network: Network,
     pub constructor: FinalAssemblyConstructor,
 }
 
@@ -348,11 +388,11 @@ impl FinalAssemblyTask {
     pub fn new(
         round: usize,
         final_assembly_type: FinalAssemblyType,
-        l1_network: Network,
-        l2_network: Option<Network>,
+        from_network: Network,
+        to_network: Network,
         constructor: FinalAssemblyConstructor,
     ) -> Self {
-        Self { round, final_assembly_type, l1_network, l2_network, constructor }
+        Self { round, final_assembly_type, from_network, to_network, constructor }
     }
 }
 
@@ -363,8 +403,8 @@ impl scheduler::Task for FinalAssemblyTask {
         FinalAssemblyCircuitType {
             round: self.round,
             aggregation_type: self.final_assembly_type.clone(),
-            l1_network: self.l1_network,
-            l2_network: self.l2_network,
+            from_network: self.from_network,
+            to_network: self.to_network,
         }
     }
 
@@ -468,12 +508,6 @@ impl scheduler::Task for ArbitrationTask {
                 if task.constructor.block_merkle_inclusion_task.is_some() {
                     task_array.push(ArbitrationTask::BlockMerkleInclusion(
                         task.constructor.block_merkle_inclusion_task.unwrap(),
-                    ));
-                }
-                // Todo: should be delete
-                if task.constructor.eth_block_track_task.is_some() {
-                    task_array.push(ArbitrationTask::ETHBlockTrack(
-                        task.constructor.eth_block_track_task.unwrap(),
                     ));
                 }
                 if task.constructor.mdc_state_task.is_some() {

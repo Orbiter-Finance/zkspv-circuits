@@ -27,7 +27,7 @@ pub fn test_1559_transaction() -> Result<(), Box<dyn std::error::Error>> {
     let params = EthConfigParams::from_path("configs/tests/zksync_era_transaction.json");
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let k = params.degree;
-    let tx = H256::from_str("0xe2221cd2406bb1650677b7079b2742885e1fb81e9ba98b01743a42f9fe1323a5")
+    let tx = H256::from_str("0x508331b82868cbe0d4dcfaf123660c2cbe412216d37e62802184c2128002401e")
         .unwrap();
     let input = get_test_circuit(tx, Network::ZkSync(ZkSyncEraNetwork::Goerli));
     let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);

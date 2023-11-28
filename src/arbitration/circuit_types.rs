@@ -160,21 +160,16 @@ pub struct FinalAssemblyCircuitType {
     /// This is used to reduce circuit size and final EVM verification gas costs.
     pub round: usize,
     pub aggregation_type: FinalAssemblyType,
-    pub l1_network: Network,
-    pub l2_network: Option<Network>,
+    pub from_network: Network,
+    pub to_network: Network,
 }
 
 impl FinalAssemblyCircuitType {
     pub fn name(&self) -> String {
-        let l2_network = if self.l2_network.is_some() {
-            self.l2_network.unwrap().to_string()
-        } else {
-            "null".to_string()
-        };
         format!(
-            "l1_{}_l2_{}_{}_final_{}",
-            self.l1_network.to_string(),
-            l2_network,
+            "from_{}_to_{}_{}_final_{}",
+            self.from_network.to_string(),
+            self.to_network.to_string(),
             self.aggregation_type.to_string(),
             self.round
         )

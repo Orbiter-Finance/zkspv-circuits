@@ -16,7 +16,7 @@ use crate::transaction::ethereum::{
 
 use crate::receipt::TX_STATUS_SUCCESS;
 use crate::transaction::util::TransactionConstructor;
-use crate::util::helpers::{bytes_to_u8, load_bytes};
+use crate::util::helpers::{bytes_to_u8, bytes_to_vec_u8, load_bytes};
 use crate::util::{
     bytes_be_to_u128, bytes_be_to_uint, bytes_be_var_to_fixed, u128s_to_bytes_be, AssignedH256,
 };
@@ -329,12 +329,13 @@ impl<'chip, F: Field> ZkSyncEraBlockTransactionChip<F> for EthChip<'chip, F> {
             transaction_input.transaction_ecdsa_verify,
         );
 
-        let block_include_hash_with_index =
+        let target_tx_hash_in_block =
             block_txs.get(bytes_to_u8(&transaction_input.transaction_index) as usize).unwrap();
-
+        let target_tx_hash_in_block =
+            load_bytes(ctx, bytes_to_vec_u8(target_tx_hash_in_block).as_slice());
         let hash = u128s_to_bytes_be(ctx, self.range(), &transaction_extra_witness.hash);
-        for (block_tx_hash, hash) in block_include_hash_with_index.iter().zip(hash.iter()) {
-            ctx.constrain_equal(block_tx_hash, hash);
+        for (target_tx_hash, hash) in target_tx_hash_in_block.iter().zip(hash.iter()) {
+            ctx.constrain_equal(target_tx_hash, hash);
         }
 
         let tx_status_success = ctx.load_witness(F::from(TX_STATUS_SUCCESS as u64));

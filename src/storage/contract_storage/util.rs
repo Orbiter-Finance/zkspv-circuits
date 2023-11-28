@@ -12,6 +12,24 @@ pub struct EbcRuleParams {
     pub ebc_rule_pf_max_depth: usize,
 }
 
+impl EbcRuleParams {
+    pub fn new(
+        ebc_rule_key: H256,
+        ebc_rule_root: H256,
+        ebc_rule_value: Vec<u8>,
+        ebc_rule_merkle_proof: Vec<Bytes>,
+        ebc_rule_pf_max_depth: usize,
+    ) -> Self {
+        Self {
+            ebc_rule_key,
+            ebc_rule_root,
+            ebc_rule_value,
+            ebc_rule_merkle_proof,
+            ebc_rule_pf_max_depth,
+        }
+    }
+}
+
 /**
  - contract_address is mdc、manage
  - slots is
@@ -40,10 +58,30 @@ pub struct ObContractStorageConstructor {
     pub storage_pf_max_depth: usize,
 }
 
+impl ObContractStorageConstructor {
+    pub fn new(
+        contract_address: Address,
+        slots: Vec<H256>,
+        acct_pf_max_depth: usize,
+        storage_pf_max_depth: usize,
+    ) -> Self {
+        Self { contract_address, slots, acct_pf_max_depth, storage_pf_max_depth }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SingleBlockContractsStorageConstructor {
     pub block_number: u32,
     pub block_contracts_storage: Vec<ObContractStorageConstructor>,
+}
+
+impl SingleBlockContractsStorageConstructor {
+    pub fn new(
+        block_number: u32,
+        block_contracts_storage: Vec<ObContractStorageConstructor>,
+    ) -> Self {
+        Self { block_number, block_contracts_storage }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -51,6 +89,20 @@ pub struct MultiBlocksContractsStorageConstructor {
     pub blocks_contracts_storage: Vec<SingleBlockContractsStorageConstructor>,
     pub ebc_rule_params: EbcRuleParams,
     pub network: Network,
+}
+impl MultiBlocksContractsStorageConstructor {
+    pub fn new(
+        blocks_contracts_storage: Vec<SingleBlockContractsStorageConstructor>,
+        ebc_rule_params: EbcRuleParams,
+        network: Network,
+    ) -> Self {
+        Self { blocks_contracts_storage, ebc_rule_params, network }
+    }
+
+    pub fn get_circuit(self) -> ObContractsStorageCircuit {
+        let provider = get_provider(&self.network);
+        ObContractsStorageCircuit::from_provider(&provider, self)
+    }
 }
 
 pub fn get_contracts_storage_circuit(

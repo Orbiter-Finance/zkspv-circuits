@@ -26,8 +26,8 @@ pub struct ProofRouter {
 
 impl ProofRouter {
     pub fn new(constructor: ProofRouterConstructor, round: usize) -> Self {
-        let task = constructor.proof.get_final_assembly_task(round);
-        let scheduler = init_scheduler(task.l1_network);
+        let task = constructor.proof.get_final_task(round);
+        let scheduler = init_scheduler(task.from_network);
         ProofRouter { arbitration_scheduler: scheduler, task }
     }
     pub fn get_calldata(&self, generate_smart_contract: bool) -> String {
