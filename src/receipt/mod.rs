@@ -1,4 +1,5 @@
 mod tests;
+pub mod util;
 
 use std::cell::RefCell;
 
@@ -19,6 +20,7 @@ use crate::block_header::{
 use crate::keccak::{FixedLenRLCs, FnSynthesize, KeccakChip, VarLenRLCs};
 use crate::mpt::{MPTInput, MPTProof, MPTProofWitness};
 use crate::providers::get_receipt_input;
+use crate::receipt::util::ReceiptConstructor;
 use crate::rlp::builder::{RlcThreadBreakPoints, RlcThreadBuilder};
 use crate::rlp::rlc::{RlcContextPair, FIRST_PHASE};
 use crate::rlp::{RlpArrayTraceWitness, RlpChip, RlpFieldTrace, RlpFieldWitness};
@@ -28,17 +30,22 @@ use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS}
 
 const RECEIPT_FIELDS_NUM: usize = 4;
 const RECEIPT_LOGS_BLOOM_MAX_LEN: usize = 256;
-const RECEIPT_LOGS_MAX_LEN: usize = 128;
+
+const RECEIPT_DATA_MAX_BYTES: usize = 128;
+const RECEIPT_LOG_MAX_NUM: usize = 6;
+const RECEIPT_TOPIC_MAX_NUM: usize = 4;
+const RECEIPT_LOG_MAX_LEN: usize =
+    3 + 21 + 3 + 33 * RECEIPT_TOPIC_MAX_NUM + 3 + RECEIPT_DATA_MAX_BYTES + 1;
 const RECEIPT_FIELDS_MAX_FIELDS_LEN: [usize; RECEIPT_FIELDS_NUM] =
-    [8, 8, RECEIPT_LOGS_BLOOM_MAX_LEN, RECEIPT_LOGS_MAX_LEN];
-pub(crate) const RECEIPT_MAX_LEN: usize = 8 * 2 + RECEIPT_LOGS_BLOOM_MAX_LEN + RECEIPT_LOGS_MAX_LEN;
-// Status of the transaction
+    [32 + 1, 32 + 1, RECEIPT_LOGS_BLOOM_MAX_LEN + 3, RECEIPT_LOG_MAX_NUM * RECEIPT_LOG_MAX_LEN];
+pub(crate) const RECEIPT_MAX_LEN: usize =
+    3 + 33 * 2 + RECEIPT_LOGS_BLOOM_MAX_LEN + 3 + RECEIPT_LOG_MAX_NUM * RECEIPT_LOG_MAX_LEN;
 pub const TX_STATUS_SUCCESS: u8 = 1;
 const NUM_BITS: usize = 8;
 
 #[derive(Clone, Debug)]
 pub struct EthReceiptInput {
-    pub receipt_index: u32,
+    pub receipt_index: u64,
     pub receipt_proofs: MPTInput,
 }
 
@@ -50,8 +57,7 @@ pub struct EthReceiptInputAssigned<F: Field> {
 
 impl EthReceiptInput {
     pub fn assign<F: Field>(self, ctx: &mut Context<F>) -> EthReceiptInputAssigned<F> {
-        let receipt_index = (F::from(self.receipt_index as u64)).try_into().unwrap();
-        let receipt_index = ctx.load_witness(receipt_index);
+        let receipt_index = ctx.load_witness(F::from(self.receipt_index));
         let receipt_proofs = self.receipt_proofs.assign(ctx);
 
         EthReceiptInputAssigned { receipt_index, receipt_proofs }
@@ -61,7 +67,7 @@ impl EthReceiptInput {
 #[derive(Clone, Debug)]
 pub struct EthBlockReceiptInput {
     pub block: Block<H256>,
-    pub block_number: u32,
+    pub block_number: u64,
     pub block_hash: H256,
     // provided for convenience, actual block_hash is computed from block_header
     pub block_header: Vec<u8>,
@@ -88,24 +94,16 @@ pub struct EthBlockReceiptCircuit {
 }
 
 impl EthBlockReceiptCircuit {
-    pub fn from_provider(
-        provider: &Provider<Http>,
-        block_number: u32,
-        receipt_index: u32,
-        receipt_rlp: Vec<u8>,
-        merkle_proof: Vec<Bytes>,
-        receipt_pf_max_depth: usize,
-        network: Network,
-    ) -> Self {
+    pub fn from_provider(provider: &Provider<Http>, constructor: ReceiptConstructor) -> Self {
         let inputs = get_receipt_input(
             provider,
-            block_number,
-            receipt_index,
-            receipt_rlp,
-            merkle_proof,
-            receipt_pf_max_depth,
+            constructor.transaction_hash,
+            constructor.receipt_index_bytes,
+            constructor.receipt_rlp,
+            constructor.merkle_proof,
+            constructor.receipt_pf_max_depth,
         );
-        let block_header_config = get_block_header_config(&network);
+        let block_header_config = get_block_header_config(&constructor.network);
         Self { inputs, block_header_config }
     }
 }
@@ -130,21 +128,9 @@ impl EthPreCircuit for EthBlockReceiptCircuit {
             &self.block_header_config,
         );
 
-        let EIP1186ResponseDigest {
-            block_hash,
-            block_number,
-            index,
-            // slots_values,
-            receipt_is_empty,
-        } = digest;
+        let EIP1186ResponseDigest { block_hash, block_number, index, receipt_is_empty } = digest;
 
-        let assigned_instances = block_hash
-            .into_iter()
-            .chain([block_number, index])
-            // .chain(
-            //     slots_values
-            // )
-            .collect_vec();
+        let assigned_instances = block_hash.into_iter().chain([index]).collect_vec();
         {
             let ctx = builder.gate_builder.main(FIRST_PHASE);
             range.gate.assert_is_const(ctx, &receipt_is_empty, &Fr::zero());
@@ -319,7 +305,6 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
             block_hash: block_hash.try_into().unwrap(),
             block_number,
             index: receipt_index,
-            // slots_values: receipt_rlp,
             receipt_is_empty: receipt_witness.mpt_witness.slot_is_empty,
         };
         (EthBlockReceiptTraceWitness { block_witness, receipt_witness }, digest)
@@ -370,7 +355,7 @@ impl<'chip, F: Field> EthBlockReceiptChip<F> for EthChip<'chip, F> {
         let receipt_witness = self.rlp().decompose_rlp_array_phase0(
             ctx,
             receipt_rlp_bytes,
-            &RECEIPT_FIELDS_MAX_FIELDS_LEN, //Maximum number of bytes per field. For example, the uint64 is 8 bytes.
+            &RECEIPT_FIELDS_MAX_FIELDS_LEN,
             true,
         );
 

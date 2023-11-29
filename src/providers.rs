@@ -112,18 +112,21 @@ pub fn get_block_track_input(
 
 pub fn get_receipt_input(
     provider: &Provider<Http>,
-    block_number: u32,
-    receipt_index: u32,
+    transaction_hash: H256,
+    receipt_index_bytes: Option<Vec<u8>>,
     receipt_rlp: Vec<u8>,
     merkle_proof: Vec<Bytes>,
     receipt_pf_max_depth: usize,
 ) -> EthBlockReceiptInput {
     let rt = Runtime::new().unwrap();
-    let block = rt.block_on(provider.get_block(block_number as u64)).unwrap().unwrap();
+    let tx = rt.block_on(provider.get_transaction(transaction_hash)).unwrap().unwrap();
+    let receipt_index = tx.transaction_index.unwrap().as_u64();
+    let block_number = tx.block_number.unwrap().as_u64();
+    let block = rt.block_on(provider.get_block(block_number)).unwrap().unwrap();
     let block_hash = block.hash.unwrap();
     let block_header = get_block_rlp(&block);
-    let receipt_key_u256 = U256::from(receipt_index);
-    let receipt_key = get_buffer_rlp(receipt_key_u256.as_u32());
+    let receipt_key =
+        receipt_index_bytes.unwrap_or(get_buffer_rlp(U256::from(receipt_index).as_u32()));
     let slot_is_empty = false;
 
     let receipt_proofs = MPTInput {
@@ -185,7 +188,7 @@ pub fn get_transaction_input(
         block_hash,
         block_header,
         transaction: EthTransactionInput {
-            transaction_index: transaction_index as u32,
+            transaction_index,
             transaction_proofs,
             transaction_ecdsa_verify: EthEcdsaInput {
                 signature,

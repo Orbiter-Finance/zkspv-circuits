@@ -32,7 +32,7 @@ impl NetworkPairs {
     pub fn parse_pairs_task(
         &self,
         ob_contract_storage_input: Option<ObContractStorageInput>,
-        batch_blocks_input: Option<BatchBlocksInput>,
+        batch_blocks_input: BatchBlocksInput,
         original_transaction: TransactionInput,
         commit_transaction: Option<TransactionInput>,
     ) -> FinalAssemblyConstructor {

@@ -52,7 +52,7 @@ const CACHE_BITS: usize = 12;
 
 #[derive(Clone, Debug)]
 pub struct EthTransactionInput {
-    pub transaction_index: u32,
+    pub transaction_index: u64,
     pub transaction_proofs: MPTInput,
     pub transaction_ecdsa_verify: EthEcdsaInput,
 }
@@ -66,7 +66,7 @@ pub struct EthTransactionInputAssigned<F: Field> {
 
 impl EthTransactionInput {
     pub fn assign<F: Field>(self, ctx: &mut Context<F>) -> EthTransactionInputAssigned<F> {
-        let transaction_index = ctx.load_witness(F::from(self.transaction_index as u64));
+        let transaction_index = ctx.load_witness(F::from(self.transaction_index));
         let transaction_proofs = self.transaction_proofs.assign(ctx);
         let transaction_ecdsa_verify = self.transaction_ecdsa_verify.assign(ctx);
         EthTransactionInputAssigned {

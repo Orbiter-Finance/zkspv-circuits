@@ -34,39 +34,6 @@ impl scheduler::CircuitType for BlockMerkleInclusionCircuitType {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct EthTrackBlockCircuitType {
-    pub network: Network,
-    pub tasks_len: u64,
-    pub task_width: u64,
-}
-
-impl EthTrackBlockCircuitType {
-    fn name(&self) -> String {
-        if self.is_aggregated() {
-            format!("block_track_aggregate_width_{}_task_len_{}", self.task_width, self.tasks_len)
-        } else {
-            format!("block_track_width_{}", self.task_width)
-        }
-    }
-    pub(crate) fn is_aggregated(&self) -> bool {
-        return self.tasks_len != 1;
-    }
-}
-
-impl scheduler::CircuitType for EthTrackBlockCircuitType {
-    fn name(&self) -> String {
-        self.name()
-    }
-    fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
-        if self.is_aggregated() {
-            AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()
-        } else {
-            EthConfigPinning::from_path(pinning_path.as_ref()).degree()
-        }
-    }
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct EthTransactionCircuitType {
     pub network: Network,
     pub tx_type: EthTransactionType,
@@ -92,6 +59,76 @@ impl scheduler::CircuitType for EthTransactionCircuitType {
         } else {
             format!(
                 "{}_transaction_{}_max_len_{}",
+                self.network.to_string(),
+                self.tx_type.to_string(),
+                self.tx_max_len
+            )
+        }
+    }
+    fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
+        if self.is_aggregated() {
+            AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()
+        } else {
+            EthConfigPinning::from_path(pinning_path.as_ref()).degree()
+        }
+    }
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct EthReceiptCircuitType {
+    pub network: Network,
+    pub aggregated: bool,
+}
+
+impl EthReceiptCircuitType {
+    pub fn is_aggregated(&self) -> bool {
+        self.aggregated
+    }
+}
+
+impl scheduler::CircuitType for EthReceiptCircuitType {
+    fn name(&self) -> String {
+        if self.is_aggregated() {
+            format!("receipt_aggregate",)
+        } else {
+            format!("receipt",)
+        }
+    }
+    fn get_degree_from_pinning(&self, pinning_path: impl AsRef<Path>) -> u32 {
+        if self.is_aggregated() {
+            AggregationConfigPinning::from_path(pinning_path.as_ref()).degree()
+        } else {
+            EthConfigPinning::from_path(pinning_path.as_ref()).degree()
+        }
+    }
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct EthTransactionReceiptCircuitType {
+    pub network: Network,
+    pub tx_type: EthTransactionType,
+    pub tasks_len: u64,
+    pub tx_max_len: u64,
+    pub aggregated: bool,
+}
+
+impl EthTransactionReceiptCircuitType {
+    pub fn is_aggregated(&self) -> bool {
+        self.aggregated
+    }
+}
+
+impl scheduler::CircuitType for EthTransactionReceiptCircuitType {
+    fn name(&self) -> String {
+        if self.is_aggregated() {
+            format!(
+                "transaction_receipt_aggregate_{}_tasks_len_{}",
+                self.tx_type.to_string(),
+                self.tasks_len
+            )
+        } else {
+            format!(
+                "{}_transaction_receipt_{}_max_len_{}",
                 self.network.to_string(),
                 self.tx_type.to_string(),
                 self.tx_max_len
@@ -188,8 +225,9 @@ impl scheduler::CircuitType for FinalAssemblyCircuitType {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum ArbitrationCircuitType {
     BlockMerkleInclusion(BlockMerkleInclusionCircuitType),
-    TrackBlock(EthTrackBlockCircuitType),
     Transaction(EthTransactionCircuitType),
+    Receipt(EthReceiptCircuitType),
+    TransactionReceipt(EthTransactionReceiptCircuitType),
     MdcStorage(EthStorageCircuitType),
     FinalAssembly(FinalAssemblyCircuitType),
 }
@@ -198,8 +236,9 @@ impl scheduler::CircuitType for ArbitrationCircuitType {
     fn name(&self) -> String {
         match self {
             ArbitrationCircuitType::BlockMerkleInclusion(circuit_type) => circuit_type.name(),
-            ArbitrationCircuitType::TrackBlock(circuit_type) => circuit_type.name(),
             ArbitrationCircuitType::Transaction(circuit_type) => circuit_type.name(),
+            ArbitrationCircuitType::Receipt(circuit_type) => circuit_type.name(),
+            ArbitrationCircuitType::TransactionReceipt(circuit_type) => circuit_type.name(),
             ArbitrationCircuitType::MdcStorage(circuit_type) => circuit_type.name(),
             ArbitrationCircuitType::FinalAssembly(circuit_type) => circuit_type.name(),
         }
@@ -210,11 +249,15 @@ impl scheduler::CircuitType for ArbitrationCircuitType {
             ArbitrationCircuitType::BlockMerkleInclusion(circuit_type) => {
                 circuit_type.get_degree_from_pinning(pinning_path)
             }
-            ArbitrationCircuitType::TrackBlock(circuit_type) => {
+            ArbitrationCircuitType::Transaction(circuit_type) => {
                 circuit_type.get_degree_from_pinning(pinning_path)
             }
 
-            ArbitrationCircuitType::Transaction(circuit_type) => {
+            ArbitrationCircuitType::Receipt(circuit_type) => {
+                circuit_type.get_degree_from_pinning(pinning_path)
+            }
+
+            ArbitrationCircuitType::TransactionReceipt(circuit_type) => {
                 circuit_type.get_degree_from_pinning(pinning_path)
             }
 

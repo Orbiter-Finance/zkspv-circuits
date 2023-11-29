@@ -1,20 +1,9 @@
 use crate::arbitration::final_assembly::FinalAssemblyType;
-use crate::arbitration::helper::{
-    BlockMerkleInclusionTask, ETHBlockTrackTask, EthTransactionTask, FinalAssemblyConstructor,
-    FinalAssemblyTask, MDCStateTask, ZkSyncTransactionTask,
-};
+use crate::arbitration::helper::FinalAssemblyTask;
 use crate::server::OriginalProof;
-use crate::storage::contract_storage::util::{
-    get_contracts_storage_circuit, EbcRuleParams, MultiBlocksContractsStorageConstructor,
-    ObContractStorageConstructor, SingleBlockContractsStorageConstructor,
-};
+use crate::storage::contract_storage::util::ObContractStorageConstructor;
 
 use crate::arbitration::network_pairs::NetworkPairs;
-use crate::track_block::BlockMerkleInclusionCircuit;
-use crate::transaction::util::{
-    get_eth_transaction_circuit, get_zksync_transaction_circuit, TransactionConstructor,
-};
-use crate::transaction::EthTransactionType;
 use crate::{get_network_from_chain_id, Network};
 use ethers_core::types::{Address, Bytes, H256};
 use hex::FromHex;
@@ -72,6 +61,10 @@ pub struct TransactionInput {
     pub transaction_proof: MerkleProof,
     #[serde(rename(deserialize = "transactionProofEnable"))]
     pub transaction_proof_enable: bool,
+    #[serde(rename(deserialize = "receiptProof"), skip)]
+    pub receipt_proof: MerkleProof,
+    #[serde(rename(deserialize = "receiptProofEnable"))]
+    pub receipt_proof_enable: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -101,7 +94,7 @@ pub struct ProofInput {
     #[serde(rename(deserialize = "obContractStorageInput"))]
     pub ob_contract_storage_input: Option<ObContractStorageInput>,
     #[serde(rename(deserialize = "blockBatchData"))]
-    pub batch_blocks_input: Option<BatchBlocksInput>,
+    pub batch_blocks_input: BatchBlocksInput,
     #[serde(rename(deserialize = "config"))]
     pub config: ProofConfig,
 }
@@ -179,6 +172,42 @@ impl OriginalProof {
                     .unwrap()
                     .transaction_proof = transaction_merkle_proof;
             }
+
+            if commit_transaction.receipt_proof_enable {
+                let mut receipt_merkle_proof_proof: Vec<Bytes> = vec![];
+                let proofs = value["transactionsInput"]["commitTransaction"]["receiptProof"]
+                    ["proof"]
+                    .as_array()
+                    .unwrap();
+                for proof in proofs {
+                    let proof_bytes = Vec::from_hex(proof.as_str().unwrap()).unwrap();
+                    receipt_merkle_proof_proof.push(Bytes::from(proof_bytes));
+                }
+
+                let receipt_merkle_proof = MerkleProof {
+                    key: Vec::from_hex(
+                        &value["transactionsInput"]["commitTransaction"]["receiptProof"]["key"]
+                            .as_str()
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                    value: Vec::from_hex(
+                        &value["transactionsInput"]["commitTransaction"]["receiptProof"]["value"]
+                            .as_str()
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                    proof: receipt_merkle_proof_proof,
+                    root: None,
+                };
+
+                proof_params
+                    .transactions_input
+                    .commit_transaction
+                    .as_mut()
+                    .unwrap()
+                    .receipt_proof = receipt_merkle_proof;
+            }
         }
 
         // Load original tx
@@ -212,6 +241,36 @@ impl OriginalProof {
 
             proof_params.transactions_input.original_transaction.transaction_proof =
                 transaction_merkle_proof;
+        }
+        if proof_params.transactions_input.original_transaction.receipt_proof_enable {
+            let mut receipt_merkle_proof_proof: Vec<Bytes> = vec![];
+            let proofs = value["transactionsInput"]["originalTransaction"]["receiptProof"]["proof"]
+                .as_array()
+                .unwrap();
+            for proof in proofs {
+                let proof_bytes = Vec::from_hex(proof.as_str().unwrap()).unwrap();
+                receipt_merkle_proof_proof.push(Bytes::from(proof_bytes));
+            }
+
+            let receipt_merkle_proof = MerkleProof {
+                key: Vec::from_hex(
+                    &value["transactionsInput"]["originalTransaction"]["receiptProof"]["key"]
+                        .as_str()
+                        .unwrap(),
+                )
+                .unwrap(),
+                value: Vec::from_hex(
+                    &value["transactionsInput"]["originalTransaction"]["receiptProof"]["value"]
+                        .as_str()
+                        .unwrap(),
+                )
+                .unwrap(),
+                proof: receipt_merkle_proof_proof,
+                root: None,
+            };
+
+            proof_params.transactions_input.original_transaction.receipt_proof =
+                receipt_merkle_proof;
         }
 
         // Load mdc current rule merkle proof

@@ -1,26 +1,28 @@
 use crate::arbitration::helper::{
-    BlockMerkleInclusionTask, EthTransactionTask, FinalAssemblyConstructor, MDCStateTask,
-    ZkSyncTransactionTask,
+    BlockMerkleInclusionTask, EthReceiptTask, EthTransactionTask, FinalAssemblyConstructor,
+    MDCStateTask, ZkSyncTransactionTask,
 };
 use crate::arbitration::network_pairs::NetworkPairs;
 use crate::arbitration::types::{BatchBlocksInput, ObContractStorageInput, TransactionInput};
+use crate::receipt::util::{ReceiptConstructor, RECEIPT_PF_MAX_DEPTH};
 use crate::storage::contract_storage::util::{
     EbcRuleParams, MultiBlocksContractsStorageConstructor, ObContractStorageConstructor,
-    SingleBlockContractsStorageConstructor,
+    SingleBlockContractsStorageConstructor, EBC_RULE_PF_MAX_DEPTH,
 };
+use crate::storage::util::{ACCOUNT_PF_MAX_DEPTH, STORAGE_PF_MAX_DEPTH};
 use crate::track_block::BlockMerkleInclusionCircuit;
 use crate::transaction::util::{
     get_eth_transaction_circuit, get_zksync_transaction_circuit, TransactionConstructor,
+    TRANSACTION_PF_MAX_DEPTH,
 };
 use crate::transaction::EthTransactionType;
 use crate::util::errors::COMMIT_TRANSACTION_IS_EMPTY;
-use crate::Network;
 use ethers_core::types::H256;
 
 pub fn parse_from_ethereum_to_zksync(
     pairs: &NetworkPairs,
     ob_contract_storage_input: Option<ObContractStorageInput>,
-    batch_blocks_input: Option<BatchBlocksInput>,
+    batch_blocks_input: BatchBlocksInput,
     original_transaction: TransactionInput,
     commit_transaction: Option<TransactionInput>,
 ) -> FinalAssemblyConstructor {
@@ -29,27 +31,26 @@ pub fn parse_from_ethereum_to_zksync(
 
     let mut eth_transaction_task = None;
     let mut zksync_transaction_task = None;
+    let mut eth_receipt_task = None;
+    let mut eth_transaction_receipt_task = None;
     let mut mdc_state_task = None;
     let mut block_merkle_inclusion_task = None;
 
-    if batch_blocks_input.is_some() {
-        let batch_blocks_task_input =
-            BlockMerkleInclusionCircuit::from_json_object(batch_blocks_input.unwrap());
-        block_merkle_inclusion_task = Some(BlockMerkleInclusionTask::new(
-            batch_blocks_task_input.clone(),
-            l1_network,
-            batch_blocks_task_input.block_batch_num,
-            8,
-            batch_blocks_task_input.block_range_length,
-        ));
-    }
+    let batch_blocks_task_input = BlockMerkleInclusionCircuit::from_json_object(batch_blocks_input);
+    block_merkle_inclusion_task = Some(BlockMerkleInclusionTask::new(
+        batch_blocks_task_input.clone(),
+        l1_network,
+        batch_blocks_task_input.block_batch_num,
+        8,
+        batch_blocks_task_input.block_range_length,
+    ));
 
     let mut original_transaction_constructor = TransactionConstructor::new(
         original_transaction.transaction_hash,
         Some(original_transaction.transaction_proof.key.clone()),
         Some(original_transaction.transaction_proof.value.clone()),
         Some(original_transaction.transaction_proof.proof.clone()),
-        Some(original_transaction.transaction_proof.proof.clone().len()),
+        Some(TRANSACTION_PF_MAX_DEPTH),
         l1_network,
     );
 
@@ -59,22 +60,22 @@ pub fn parse_from_ethereum_to_zksync(
         let mdc_contract_storage_current_constructor = ObContractStorageConstructor::new(
             storage_input.mdc_address,
             storage_input.contracts_slots_hash[..5].to_vec(),
-            9,
-            8,
+            ACCOUNT_PF_MAX_DEPTH,
+            STORAGE_PF_MAX_DEPTH,
         );
 
         let manage_contract_storage_current_constructor = ObContractStorageConstructor::new(
             storage_input.manage_address,
             storage_input.contracts_slots_hash[5..].to_vec(),
-            9,
-            8,
+            ACCOUNT_PF_MAX_DEPTH,
+            STORAGE_PF_MAX_DEPTH,
         );
 
         let mdc_contract_storage_next_constructor = ObContractStorageConstructor::new(
             storage_input.mdc_address,
             storage_input.contracts_slots_hash[1..3].to_vec(),
-            9,
-            8,
+            ACCOUNT_PF_MAX_DEPTH,
+            STORAGE_PF_MAX_DEPTH,
         );
 
         let single_block_contracts_storage_constructor_current =
@@ -100,7 +101,7 @@ pub fn parse_from_ethereum_to_zksync(
                 storage_input.mdc_current_rule.root.unwrap(),
                 storage_input.mdc_current_rule.value.clone(),
                 storage_input.mdc_current_rule.proof.clone(),
-                8,
+                EBC_RULE_PF_MAX_DEPTH,
             ),
             l1_network,
         );
@@ -122,7 +123,7 @@ pub fn parse_from_ethereum_to_zksync(
         ));
     } else {
         // Todo: Currently the maximum encoding is not supported.
-        // let commit_transaction = commit_transaction.expect(COMMIT_TRANSACTION_IS_EMPTY);
+        let commit_transaction = commit_transaction.expect(COMMIT_TRANSACTION_IS_EMPTY);
         // // commit tx
         // let commit_transaction_constructor = TransactionConstructor::new(
         //     commit_transaction.transaction_hash,
@@ -132,6 +133,14 @@ pub fn parse_from_ethereum_to_zksync(
         //     Some(commit_transaction.transaction_proof.proof.clone().len()),
         //     l1_network,
         // );
+        let commit_receipt_constructor = ReceiptConstructor::new(
+            commit_transaction.transaction_hash,
+            Some(commit_transaction.receipt_proof.key.clone()),
+            commit_transaction.receipt_proof.value.clone(),
+            commit_transaction.receipt_proof.proof.clone(),
+            RECEIPT_PF_MAX_DEPTH,
+            l1_network,
+        );
         original_transaction_constructor.network = l2_network;
 
         zksync_transaction_task = Some(ZkSyncTransactionTask::new(
@@ -150,11 +159,19 @@ pub fn parse_from_ethereum_to_zksync(
         //     false,
         //     l1_network,
         // ));
+        eth_receipt_task = Some(EthReceiptTask::new(
+            commit_receipt_constructor.clone().get_circuit(),
+            vec![commit_receipt_constructor],
+            false,
+            l1_network,
+        ));
     }
 
     FinalAssemblyConstructor {
         eth_transaction_task,
         zksync_transaction_task,
+        eth_receipt_task,
+        eth_transaction_receipt_task,
         mdc_state_task,
         block_merkle_inclusion_task,
     }

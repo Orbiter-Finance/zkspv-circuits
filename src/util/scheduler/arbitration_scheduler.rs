@@ -10,11 +10,13 @@ use crate::{
 
 use super::EthScheduler;
 use crate::arbitration::circuit_types::FinalAssemblyFinality;
+use crate::receipt::EthBlockReceiptCircuit;
 use crate::storage::contract_storage::ObContractsStorageCircuit;
 use crate::storage::util::StorageConstructor;
 use crate::track_block::util::TrackBlockConstructor;
 use crate::transaction::ethereum::EthBlockTransactionCircuit;
 use crate::transaction::zksync_era::ZkSyncEraBlockTransactionCircuit;
+use crate::transaction_receipt::TransactionReceiptCircuit;
 use crate::util::scheduler::{self, AnyCircuit, Task};
 use circuit_derive::AnyCircuit;
 use halo2_base::halo2_proofs::{
@@ -35,9 +37,13 @@ pub enum CircuitRouter {
     ZkSyncTransaction(ZkSyncEraBlockTransactionCircuit),
     AggreateZkSyncTransactions(PublicAggregationCircuit),
 
+    EthReceipt(EthBlockReceiptCircuit),
+    AggreateEthReceipt(PublicAggregationCircuit),
+
+    EthTransactionReceipt(TransactionReceiptCircuit),
+    AggreateEthTransactionReceipt(PublicAggregationCircuit),
+
     BlockerMerkleInclusion(BlockMerkleInclusionCircuit),
-    BlockTrackInterval(EthTrackBlockCircuit),
-    AggreateBlockTracks(PublicAggregationCircuit),
 
     MdcStorage(ObContractsStorageCircuit),
     AggreateMdcStorages(PublicAggregationCircuit),
@@ -98,6 +104,46 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                     CircuitRouter::ZkSyncTransaction(task.input)
                 }
             }
+            ArbitrationTask::EthReceipt(task) => {
+                if task.circuit_type().is_aggregated() {
+                    println!("EthReceipt AGGREGATION ====== prev_snarks len {}", prev_snarks.len());
+                    let prev_snarks = prev_snarks
+                        .into_iter()
+                        .map(|snark| {
+                            println!("EthReceipt instances num {}", snark.instances.len());
+                            (snark, false)
+                        })
+                        .collect_vec();
+                    CircuitRouter::AggreateEthReceipt(PublicAggregationCircuit::new(prev_snarks))
+                } else {
+                    println!("TASK_LEN1======");
+                    CircuitRouter::EthReceipt(task.input)
+                }
+            }
+            ArbitrationTask::EthTransactionReceipt(task) => {
+                if task.circuit_type().is_aggregated() {
+                    println!(
+                        "EthTransactionReceipt AGGREGATION ====== prev_snarks len {}",
+                        prev_snarks.len()
+                    );
+                    let prev_snarks = prev_snarks
+                        .into_iter()
+                        .map(|snark| {
+                            println!(
+                                "EthTransactionReceipt instances num {}",
+                                snark.instances.len()
+                            );
+                            (snark, false)
+                        })
+                        .collect_vec();
+                    CircuitRouter::AggreateEthTransactionReceipt(PublicAggregationCircuit::new(
+                        prev_snarks,
+                    ))
+                } else {
+                    println!("TASK_LEN1======");
+                    CircuitRouter::EthTransactionReceipt(task.input)
+                }
+            }
             ArbitrationTask::MDCState(task) => {
                 if task.circuit_type().is_aggregated() {
                     println!(
@@ -116,27 +162,6 @@ impl scheduler::Scheduler for ArbitrationScheduler {
                 } else {
                     println!("OB Contracts Storage TASK_LEN1======");
                     CircuitRouter::MdcStorage(task.input)
-                }
-            }
-            ArbitrationTask::ETHBlockTrack(task) => {
-                if task.tasks_len == 1 {
-                    println!("TASK_LEN1======");
-                    CircuitRouter::BlockTrackInterval(task.input)
-                } else {
-                    println!(
-                        "ETHBlockTrack AGGREGATION ====== prev_snarks len {}",
-                        prev_snarks.len()
-                    );
-                    let prev_snarks = prev_snarks
-                        .into_iter()
-                        .map(|snark| {
-                            println!("instances num {}", snark.instances.len());
-                            (snark, false)
-                        })
-                        .collect_vec();
-                    return CircuitRouter::AggreateBlockTracks(PublicAggregationCircuit::new(
-                        prev_snarks,
-                    ));
                 }
             }
             ArbitrationTask::BlockMerkleInclusion(task) => {

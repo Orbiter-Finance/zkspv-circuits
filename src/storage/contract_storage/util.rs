@@ -3,6 +3,8 @@ use crate::util::helpers::get_provider;
 use crate::Network;
 use ethers_core::types::{Address, Bytes, H256};
 
+pub const EBC_RULE_PF_MAX_DEPTH: usize = 8;
+
 #[derive(Clone, Debug)]
 pub struct EbcRuleParams {
     pub ebc_rule_key: H256,

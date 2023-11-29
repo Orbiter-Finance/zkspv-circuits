@@ -8,6 +8,8 @@ use ethers_core::types::{Bytes, H256};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
+pub const TRANSACTION_PF_MAX_DEPTH: usize = 8;
+
 #[derive(Clone, Debug)]
 pub struct TransactionConstructor {
     pub transaction_hash: H256,

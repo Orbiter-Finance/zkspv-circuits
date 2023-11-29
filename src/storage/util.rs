@@ -4,6 +4,9 @@ use ethers_core::types::{Address, Bytes};
 
 use super::EthBlockStorageCircuit;
 
+pub const ACCOUNT_PF_MAX_DEPTH: usize = 9;
+pub const STORAGE_PF_MAX_DEPTH: usize = 8;
+
 #[derive(Clone, Debug)]
 pub struct StorageConstructor {
     pub block_number: u32,

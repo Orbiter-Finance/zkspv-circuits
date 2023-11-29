@@ -56,6 +56,7 @@ mod gen;
 #[cfg(feature = "providers")]
 pub mod providers;
 pub mod server;
+mod transaction_receipt;
 pub mod util;
 
 pub(crate) const ETH_LOOKUP_BITS: usize = 8; // always want 8 to range check bytes

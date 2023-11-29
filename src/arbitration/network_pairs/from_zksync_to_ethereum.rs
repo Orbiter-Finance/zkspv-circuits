@@ -1,9 +1,10 @@
 use crate::arbitration::helper::{
-    BlockMerkleInclusionTask, EthTransactionTask, FinalAssemblyConstructor, MDCStateTask,
-    ZkSyncTransactionTask,
+    BlockMerkleInclusionTask, EthReceiptTask, EthTransactionReceiptTask, EthTransactionTask,
+    FinalAssemblyConstructor, MDCStateTask, ZkSyncTransactionTask,
 };
 use crate::arbitration::network_pairs::NetworkPairs;
 use crate::arbitration::types::{BatchBlocksInput, ObContractStorageInput, TransactionInput};
+use crate::receipt::util::{ReceiptConstructor, RECEIPT_PF_MAX_DEPTH};
 use crate::storage::contract_storage::util::{
     EbcRuleParams, MultiBlocksContractsStorageConstructor, ObContractStorageConstructor,
     SingleBlockContractsStorageConstructor,
@@ -11,15 +12,17 @@ use crate::storage::contract_storage::util::{
 use crate::track_block::BlockMerkleInclusionCircuit;
 use crate::transaction::util::{
     get_eth_transaction_circuit, get_zksync_transaction_circuit, TransactionConstructor,
+    TRANSACTION_PF_MAX_DEPTH,
 };
 use crate::transaction::EthTransactionType;
+use crate::transaction_receipt::util::TransactionReceiptConstructor;
 use crate::util::errors::COMMIT_TRANSACTION_IS_EMPTY;
 use ethers_core::types::H256;
 
 pub fn parse_from_zksync_to_ethereum(
     pairs: &NetworkPairs,
     ob_contract_storage_input: Option<ObContractStorageInput>,
-    batch_blocks_input: Option<BatchBlocksInput>,
+    batch_blocks_input: BatchBlocksInput,
     original_transaction: TransactionInput,
     commit_transaction: Option<TransactionInput>,
 ) -> FinalAssemblyConstructor {
@@ -28,26 +31,26 @@ pub fn parse_from_zksync_to_ethereum(
 
     let mut eth_transaction_task = None;
     let mut zksync_transaction_task = None;
+    let mut eth_receipt_task = None;
+    let mut eth_transaction_receipt_task = None;
     let mut mdc_state_task = None;
     let mut block_merkle_inclusion_task = None;
 
-    if batch_blocks_input.is_some() {
-        let batch_blocks_task_input =
-            BlockMerkleInclusionCircuit::from_json_object(batch_blocks_input.unwrap());
-        block_merkle_inclusion_task = Some(BlockMerkleInclusionTask::new(
-            batch_blocks_task_input.clone(),
-            l1_network,
-            batch_blocks_task_input.block_batch_num,
-            8,
-            batch_blocks_task_input.block_range_length,
-        ));
-    }
+    let batch_blocks_task_input = BlockMerkleInclusionCircuit::from_json_object(batch_blocks_input);
+    block_merkle_inclusion_task = Some(BlockMerkleInclusionTask::new(
+        batch_blocks_task_input.clone(),
+        l1_network,
+        batch_blocks_task_input.block_batch_num,
+        8,
+        batch_blocks_task_input.block_range_length,
+    ));
+
     let mut original_transaction_constructor = TransactionConstructor::new(
         original_transaction.transaction_hash,
         Some(original_transaction.transaction_proof.key.clone()),
         Some(original_transaction.transaction_proof.value.clone()),
         Some(original_transaction.transaction_proof.proof.clone()),
-        Some(original_transaction.transaction_proof.proof.clone().len()),
+        Some(TRANSACTION_PF_MAX_DEPTH),
         l2_network,
     );
 
@@ -141,19 +144,47 @@ pub fn parse_from_zksync_to_ethereum(
         // ));
     } else {
         original_transaction_constructor.network = l1_network;
-        eth_transaction_task = Some(EthTransactionTask::new(
-            get_eth_transaction_circuit(original_transaction_constructor.clone()),
+        let original_receipt_constructor = ReceiptConstructor::new(
+            original_transaction.transaction_hash,
+            Some(original_transaction.receipt_proof.key.clone()),
+            original_transaction.receipt_proof.value.clone(),
+            original_transaction.receipt_proof.proof.clone(),
+            RECEIPT_PF_MAX_DEPTH,
+            l1_network,
+        );
+        let original_transaction_receipt_constructor = TransactionReceiptConstructor::new(
+            original_transaction_constructor,
+            original_receipt_constructor,
+        );
+        eth_transaction_receipt_task = Some(EthTransactionReceiptTask::new(
+            original_transaction_receipt_constructor.clone().get_circuit(),
             EthTransactionType::DynamicFeeTxType,
             1,
-            vec![original_transaction_constructor],
+            vec![original_transaction_receipt_constructor],
             false,
             l1_network,
         ));
+        // eth_transaction_task = Some(EthTransactionTask::new(
+        //     get_eth_transaction_circuit(original_transaction_constructor.clone()),
+        //     EthTransactionType::DynamicFeeTxType,
+        //     1,
+        //     vec![original_transaction_constructor],
+        //     false,
+        //     l1_network,
+        // ));
+        // eth_receipt_task = Some(EthReceiptTask::new(
+        //     original_receipt_constructor.clone().get_circuit(),
+        //     vec![original_receipt_constructor],
+        //     false,
+        //     l1_network,
+        // ));
     }
 
     FinalAssemblyConstructor {
         eth_transaction_task,
         zksync_transaction_task,
+        eth_receipt_task,
+        eth_transaction_receipt_task,
         mdc_state_task,
         block_merkle_inclusion_task,
     }

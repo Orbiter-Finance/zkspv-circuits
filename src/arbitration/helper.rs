@@ -4,23 +4,26 @@ use std::fmt::{Debug, Formatter};
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use tracing_subscriber::fmt::format;
 
 use crate::arbitration::circuit_types::{
-    EthStorageCircuitType, EthTransactionCircuitType, FinalAssemblyCircuitType,
+    EthReceiptCircuitType, EthStorageCircuitType, EthTransactionCircuitType,
+    EthTransactionReceiptCircuitType, FinalAssemblyCircuitType,
 };
 use crate::arbitration::final_assembly::FinalAssemblyType;
+use crate::receipt::util::ReceiptConstructor;
+use crate::receipt::EthBlockReceiptCircuit;
 use crate::storage::contract_storage::util::{
     get_contracts_storage_circuit, MultiBlocksContractsStorageConstructor,
 };
 use crate::storage::contract_storage::ObContractsStorageCircuit;
-use crate::track_block::util::TrackBlockConstructor;
 use crate::track_block::BlockMerkleInclusionCircuit;
 use crate::transaction::util::{
     get_eth_transaction_circuit, get_zksync_transaction_circuit, TransactionConstructor,
 };
 use crate::transaction::zksync_era::ZkSyncEraBlockTransactionCircuit;
 use crate::transaction::EthTransactionType;
+use crate::transaction_receipt::util::TransactionReceiptConstructor;
+use crate::transaction_receipt::TransactionReceiptCircuit;
 use crate::util::scheduler::CircuitType;
 use crate::{
     track_block::{util::get_eth_track_block_circuit, EthTrackBlockCircuit},
@@ -29,9 +32,7 @@ use crate::{
     EthereumNetwork, Network,
 };
 
-use super::circuit_types::{
-    ArbitrationCircuitType, BlockMerkleInclusionCircuitType, EthTrackBlockCircuitType,
-};
+use super::circuit_types::{ArbitrationCircuitType, BlockMerkleInclusionCircuitType};
 
 pub type CrossChainNetwork = Network;
 
@@ -83,63 +84,6 @@ impl scheduler::Task for BlockMerkleInclusionTask {
 
     fn dependencies(&self) -> Vec<Self> {
         vec![]
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct ETHBlockTrackTask {
-    pub input: EthTrackBlockCircuit,
-    pub network: Network,
-    pub tasks_len: u64,  // Group number of blocks
-    pub task_width: u64, // Length of a group of blocks
-    pub constructor: Vec<TrackBlockConstructor>,
-}
-
-impl scheduler::Task for ETHBlockTrackTask {
-    type CircuitType = EthTrackBlockCircuitType;
-
-    fn circuit_type(&self) -> Self::CircuitType {
-        EthTrackBlockCircuitType {
-            network: self.network,
-            tasks_len: self.tasks_len,
-            task_width: self.task_width,
-        }
-    }
-
-    fn name(&self) -> String {
-        if self.circuit_type().is_aggregated() {
-            format!(
-                "block_track_aggregated_width_{}_task_len_{}",
-                self.task_width,
-                self.constructor.len()
-            )
-        } else {
-            format!(
-                "block_track_width_{}_start_{}_end_{}",
-                self.task_width,
-                self.constructor[0].blocks_number.first().unwrap(),
-                self.constructor[0].blocks_number.last().unwrap()
-            )
-        }
-    }
-
-    fn dependencies(&self) -> Vec<Self> {
-        if self.circuit_type().is_aggregated() {
-            let constructors = self.constructor.clone();
-            let result = constructors
-                .into_iter()
-                .map(|constructor| Self {
-                    input: get_eth_track_block_circuit(constructor.clone()),
-                    network: self.network,
-                    tasks_len: 1u64,
-                    task_width: self.task_width,
-                    constructor: [constructor].to_vec(),
-                })
-                .collect_vec();
-            result
-        } else {
-            vec![]
-        }
     }
 }
 
@@ -304,6 +248,140 @@ impl scheduler::Task for ZkSyncTransactionTask {
     }
 }
 
+/// Transaction
+#[derive(Clone, Debug)]
+pub struct EthReceiptTask {
+    pub input: EthBlockReceiptCircuit,
+    pub constructor: Vec<ReceiptConstructor>,
+    pub aggregated: bool,
+    pub network: Network,
+}
+
+impl EthReceiptTask {
+    pub fn new(
+        input: EthBlockReceiptCircuit,
+        constructor: Vec<ReceiptConstructor>,
+        aggregated: bool,
+        network: Network,
+    ) -> Self {
+        Self { input, constructor, aggregated, network }
+    }
+}
+
+impl scheduler::Task for EthReceiptTask {
+    type CircuitType = EthReceiptCircuitType;
+
+    fn circuit_type(&self) -> Self::CircuitType {
+        EthReceiptCircuitType { network: self.network, aggregated: self.aggregated }
+    }
+
+    fn name(&self) -> String {
+        if self.circuit_type().is_aggregated() {
+            format!("receipt_aggregated",)
+        } else {
+            format!("receipt",)
+        }
+    }
+
+    fn dependencies(&self) -> Vec<Self> {
+        if self.circuit_type().is_aggregated() {
+            let constructor = self.constructor.clone();
+            let result = constructor
+                .into_iter()
+                .map(|constructor| Self {
+                    input: constructor.clone().get_circuit(),
+                    constructor: [constructor].to_vec(),
+                    aggregated: false,
+                    network: self.network,
+                })
+                .collect_vec();
+            result
+        } else {
+            vec![]
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct EthTransactionReceiptTask {
+    pub input: TransactionReceiptCircuit,
+    pub tx_type: EthTransactionType,
+    pub tasks_len: u64,
+    pub constructor: Vec<TransactionReceiptConstructor>,
+    pub aggregated: bool,
+    pub network: Network,
+}
+
+impl EthTransactionReceiptTask {
+    pub fn new(
+        input: TransactionReceiptCircuit,
+        tx_type: EthTransactionType,
+        tasks_len: u64,
+        constructor: Vec<TransactionReceiptConstructor>,
+        aggregated: bool,
+        network: Network,
+    ) -> Self {
+        Self { input, tx_type, tasks_len, constructor, aggregated, network }
+    }
+    fn hash(&self) -> H256 {
+        self.constructor[0].eth_transaction.transaction_hash
+    }
+    fn tx_max_len(&self) -> u64 {
+        self.constructor[0].eth_transaction.tx_max_len() as u64
+    }
+}
+
+impl scheduler::Task for EthTransactionReceiptTask {
+    type CircuitType = EthTransactionReceiptCircuitType;
+
+    fn circuit_type(&self) -> Self::CircuitType {
+        EthTransactionReceiptCircuitType {
+            network: self.network,
+            tx_type: self.tx_type.clone(),
+            tasks_len: self.tasks_len,
+            tx_max_len: self.tx_max_len(),
+            aggregated: self.aggregated,
+        }
+    }
+
+    fn name(&self) -> String {
+        if self.circuit_type().is_aggregated() {
+            format!(
+                "transaction_receipt_aggregated_{}_task_len_{}",
+                self.tx_type.to_string(),
+                self.tasks_len
+            )
+        } else {
+            format!(
+                "transaction_receipt_{}_tx_{}_max_len_{}",
+                self.tx_type.to_string(),
+                self.hash(),
+                self.tx_max_len()
+            )
+        }
+    }
+
+    fn dependencies(&self) -> Vec<Self> {
+        if self.circuit_type().is_aggregated() {
+            let constructor = self.constructor.clone();
+            let result = constructor
+                .into_iter()
+                .map(|constructor| Self {
+                    input: constructor.clone().get_circuit(),
+                    tx_type: self.tx_type.clone(),
+                    tasks_len: 1u64,
+                    constructor: [constructor].to_vec(),
+                    aggregated: false,
+                    network: self.network,
+                })
+                .collect_vec();
+            result
+        } else {
+            vec![]
+        }
+    }
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum TransactionInput {
@@ -371,6 +449,8 @@ impl scheduler::Task for MDCStateTask {
 pub struct FinalAssemblyConstructor {
     pub eth_transaction_task: Option<EthTransactionTask>,
     pub zksync_transaction_task: Option<ZkSyncTransactionTask>,
+    pub eth_receipt_task: Option<EthReceiptTask>,
+    pub eth_transaction_receipt_task: Option<EthTransactionReceiptTask>,
     pub mdc_state_task: Option<MDCStateTask>,
     pub block_merkle_inclusion_task: Option<BlockMerkleInclusionTask>,
 }
@@ -422,9 +502,10 @@ impl scheduler::Task for FinalAssemblyTask {
 pub enum ArbitrationTask {
     EthTransaction(EthTransactionTask),
     ZkSyncTransaction(ZkSyncTransactionTask),
+    EthReceipt(EthReceiptTask),
+    EthTransactionReceipt(EthTransactionReceiptTask),
     BlockMerkleInclusion(BlockMerkleInclusionTask),
     MDCState(MDCStateTask),
-    ETHBlockTrack(ETHBlockTrackTask),
     Final(FinalAssemblyTask),
 }
 
@@ -436,14 +517,17 @@ impl scheduler::Task for ArbitrationTask {
             ArbitrationTask::BlockMerkleInclusion(task) => {
                 ArbitrationCircuitType::BlockMerkleInclusion(task.circuit_type())
             }
-            ArbitrationTask::ETHBlockTrack(task) => {
-                ArbitrationCircuitType::TrackBlock(task.circuit_type())
-            }
             ArbitrationTask::EthTransaction(task) => {
                 ArbitrationCircuitType::Transaction(task.circuit_type())
             }
             ArbitrationTask::ZkSyncTransaction(task) => {
                 ArbitrationCircuitType::Transaction(task.circuit_type())
+            }
+            ArbitrationTask::EthReceipt(task) => {
+                ArbitrationCircuitType::Receipt(task.circuit_type())
+            }
+            ArbitrationTask::EthTransactionReceipt(task) => {
+                ArbitrationCircuitType::TransactionReceipt(task.circuit_type())
             }
             ArbitrationTask::MDCState(task) => {
                 ArbitrationCircuitType::MdcStorage(task.circuit_type())
@@ -457,9 +541,10 @@ impl scheduler::Task for ArbitrationTask {
     fn name(&self) -> String {
         match self {
             ArbitrationTask::BlockMerkleInclusion(task) => task.name(),
-            ArbitrationTask::ETHBlockTrack(task) => task.name(),
             ArbitrationTask::EthTransaction(task) => task.name(),
             ArbitrationTask::ZkSyncTransaction(task) => task.name(),
+            ArbitrationTask::EthReceipt(task) => task.name(),
+            ArbitrationTask::EthTransactionReceipt(task) => task.name(),
             ArbitrationTask::MDCState(task) => task.name(),
             ArbitrationTask::Final(task) => task.name(),
         }
@@ -473,14 +558,19 @@ impl scheduler::Task for ArbitrationTask {
             ArbitrationTask::ZkSyncTransaction(task) => {
                 task.dependencies().into_iter().map(ArbitrationTask::ZkSyncTransaction).collect()
             }
+            ArbitrationTask::EthReceipt(task) => {
+                task.dependencies().into_iter().map(ArbitrationTask::EthReceipt).collect()
+            }
+            ArbitrationTask::EthTransactionReceipt(task) => task
+                .dependencies()
+                .into_iter()
+                .map(ArbitrationTask::EthTransactionReceipt)
+                .collect(),
             ArbitrationTask::BlockMerkleInclusion(task) => {
                 task.dependencies().into_iter().map(ArbitrationTask::BlockMerkleInclusion).collect()
             }
             ArbitrationTask::MDCState(task) => {
                 task.dependencies().into_iter().map(ArbitrationTask::MDCState).collect()
-            }
-            ArbitrationTask::ETHBlockTrack(task) => {
-                task.dependencies().into_iter().map(ArbitrationTask::ETHBlockTrack).collect()
             }
             ArbitrationTask::Final(task) => {
                 if task.circuit_type().round != 0 {
@@ -493,8 +583,7 @@ impl scheduler::Task for ArbitrationTask {
                 }
                 let task = task.clone();
                 let mut task_array = vec![];
-                // source 1.eth (eth_transaction_task,eth_block_track_task,mdc_state_task) 2.zkSync (zksync_transaction_task,eth_block_track_task,mdc_state_task)
-                // dest   1.eth (eth_transaction_task,eth_block_track_task)                2.zkSync (zksync_transaction_task,eth_block_track_task)
+
                 if task.constructor.eth_transaction_task.is_some() {
                     task_array.push(ArbitrationTask::EthTransaction(
                         task.constructor.eth_transaction_task.unwrap(),
@@ -503,6 +592,16 @@ impl scheduler::Task for ArbitrationTask {
                 if task.constructor.zksync_transaction_task.is_some() {
                     task_array.push(ArbitrationTask::ZkSyncTransaction(
                         task.constructor.zksync_transaction_task.unwrap(),
+                    ));
+                }
+                if task.constructor.eth_receipt_task.is_some() {
+                    task_array.push(ArbitrationTask::EthReceipt(
+                        task.constructor.eth_receipt_task.unwrap(),
+                    ));
+                }
+                if task.constructor.eth_transaction_receipt_task.is_some() {
+                    task_array.push(ArbitrationTask::EthTransactionReceipt(
+                        task.constructor.eth_transaction_receipt_task.unwrap(),
                     ));
                 }
                 if task.constructor.block_merkle_inclusion_task.is_some() {

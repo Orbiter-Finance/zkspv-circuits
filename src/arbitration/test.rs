@@ -7,9 +7,10 @@ use std::{
 };
 
 use crate::arbitration::helper::{
-    EthTransactionTask, FinalAssemblyConstructor, FinalAssemblyTask, MDCStateTask,
+    EthReceiptTask, EthTransactionTask, FinalAssemblyConstructor, FinalAssemblyTask, MDCStateTask,
     ZkSyncTransactionTask,
 };
+use crate::receipt::util::{ReceiptConstructor, RECEIPT_PF_MAX_DEPTH};
 use crate::storage::contract_storage::util::{
     get_contracts_storage_circuit, EbcRuleParams, MultiBlocksContractsStorageConstructor,
     ObContractStorageConstructor, SingleBlockContractsStorageConstructor,
@@ -24,10 +25,6 @@ use crate::{
     storage::{
         tests::get_test_circuit as get_test_storage_circuit, EthBlockStorageCircuit,
         StorageConfigParams,
-    },
-    track_block::{util::get_eth_track_block_circuit, EthTrackBlockCircuit},
-    transaction::ethereum::{
-        tests::get_test_circuit as get_test_ethereum_tx_circuit, EthBlockTransactionCircuit,
     },
     util::{
         circuit::custom_gen_evm_verifier_shplonk,
@@ -51,14 +48,10 @@ use snark_verifier_sdk::{
     CircuitExt, Snark, SHPLONK,
 };
 
-use super::helper::{ArbitrationTask, BlockMerkleInclusionTask, ETHBlockTrackTask};
+use super::helper::{ArbitrationTask, BlockMerkleInclusionTask};
 
 fn test_get_storage_circuit(network: Network, block_number: u32) -> EthBlockStorageCircuit {
     get_test_storage_circuit(network, block_number)
-}
-
-fn test_get_block_track_circuit(constructor: TrackBlockConstructor) -> EthTrackBlockCircuit {
-    get_eth_track_block_circuit(constructor)
 }
 
 fn test_scheduler(network: Network) -> ArbitrationScheduler {
@@ -70,26 +63,6 @@ fn test_scheduler(network: Network) -> ArbitrationScheduler {
         PathBuf::from("data/arbitration/"),
         PathBuf::from("cache_data/arbitration/"),
     )
-}
-
-fn test_block_track_task(network: Network) -> ETHBlockTrackTask {
-    let constructor =
-        TrackBlockConstructor { blocks_number: vec![17113954, 17113964, 17113974], network };
-    ETHBlockTrackTask {
-        input: test_get_block_track_circuit(constructor.clone()),
-        network: Network::Ethereum(EthereumNetwork::Mainnet),
-        tasks_len: 1,
-        task_width: 3,
-        constructor: vec![constructor],
-    }
-}
-
-#[test]
-pub fn test_arbitration_scheduler_block_track_task() {
-    let network = Network::Ethereum(EthereumNetwork::Mainnet);
-    let scheduler = test_scheduler(network);
-    let _task = test_block_track_task(network);
-    scheduler.get_snark(ArbitrationTask::ETHBlockTrack(_task));
 }
 
 fn test_dest_transaction_task(network: Network) -> EthTransactionTask {
@@ -312,6 +285,48 @@ pub fn test_arbitration_scheduler_mdc_task() {
     let scheduler = test_scheduler(network);
     let _task = test_mdc_task(network);
     scheduler.get_snark(ArbitrationTask::MDCState(_task));
+}
+
+fn test_transaction_receipt(network: Network) -> EthReceiptTask {
+    // receipt 1
+    let transaction_hash =
+        "0x4bec5ffb56c6fe79a662d74fb937dfa1cae0183c6f51692c2aa172b32a5e801c".parse().unwrap();
+    let receipt_rlp = Vec::from_hex("02f901090183734aedb9010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0").unwrap();
+
+    let proof_one_bytes = Vec::from_hex("f8d1a0e458cbc1ebfcd0b4405fabbac6860b9d4ab873b0c6c6a8cdc2a01ba69aaa69dfa03f3b46f9c16206394e6fbf276dbce0af723226c833c6bf2b054d2f07832e999fa04ce67daf6ebd76db8ba50e1694c58d18d83982955357bb9ec2c0cf376534ab29a03bac8ecd1b98e60e62608e2c79be30179b6356ba3be966aade8e7ec43f48fc0ea05dc6a4101fd9a6110f3e407e325e66bc2bc8bc7ed4851d2c802116b60b40ae20808080a0e9e83fae5e35e495bb379f3146056d92f744506aedb29059c695e8bc46de99ab8080808080808080").unwrap();
+    let proof_one = Bytes::from(proof_one_bytes);
+
+    let proof_two_bytes = Vec::from_hex("f90211a02604114a63bb1ff4157e609dfad285e72623569e3ae489c00654328fe391e5c5a026f9dcd8e7f12a432508173352c04ed48e8133c6a9b595c4049df6f0a093e492a08c84322035e81862ba9474b19c60a5482edee026f881874cd426d9977289a9f2a0e2f3c12bf4fc15c91f4657f198b6c8c4879a27189b34e922f4650c38572172bba02033a33d6ba37536fbb00591b43f62c2c1b68a40f130914dcabaaa114806024aa01c9dd42963fed695d1758a107465ca1bf468520055697835f8354dbfae4b3383a0bb92f2bef8b66b9d0af2d9c11c2014b1e3f317e1f4b0fe856f878604c174e0b6a004852f0e2a3ddd7898b2a3ddbc38ba4f7f79dfb41e3366ee6d5f0399ec4fd5d2a0d7b15884918721ce30cb9eb0a40c77e16d860d0959f84398942c9d4a4f0f52cfa03137832eb2571bf9233b6753332526e7ec2ecf88f00928b2849e362b271d090da02ef0982e908300aec272d116445253934f58c8fbb5dc9399cb0b38accd3a5c2ea073d90a57fcd502562755c1944d62b1be573743f0852de7e13c92e1f9922d865ca0f18dfe8d53cf7de25a650901c6db3ee1b4601b265c474001a3b19f577b925a10a0716e3d3d241a2c4e556a30f035505676dafe407030a3c3960978d150e2e9c892a0a51e21f93fc03c9ad33f0f5f84db53a25eee0a198e1d28640bed2930a57d1c5ca0ff68b688521ee71fce4bf844afae3ece2c2de9e9f5cebba472141d52bd3a609680").unwrap();
+    let proof_two = Bytes::from(proof_two_bytes);
+
+    let proof_three_bytes = Vec::from_hex("f9011120b9010d02f901090183734aedb9010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0").unwrap();
+    let proof_three = Bytes::from(proof_three_bytes);
+
+    let merkle_proof = vec![proof_one, proof_two, proof_three];
+
+    let constructor = ReceiptConstructor::new(
+        transaction_hash,
+        None,
+        receipt_rlp,
+        merkle_proof,
+        RECEIPT_PF_MAX_DEPTH,
+        network,
+    );
+
+    EthReceiptTask {
+        input: constructor.clone().get_circuit(),
+        constructor: vec![constructor],
+        aggregated: false,
+        network,
+    }
+}
+
+#[test]
+pub fn test_arbitration_scheduler_transaction_receipt_task() {
+    let network = Network::Ethereum(EthereumNetwork::Goerli);
+    let scheduler = test_scheduler(network);
+    let _task = test_transaction_receipt(network);
+    scheduler.get_snark(ArbitrationTask::EthReceipt(_task));
 }
 
 // #[test]
