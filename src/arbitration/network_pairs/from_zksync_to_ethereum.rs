@@ -7,8 +7,9 @@ use crate::arbitration::types::{BatchBlocksInput, ObContractStorageInput, Transa
 use crate::receipt::util::{ReceiptConstructor, RECEIPT_PF_MAX_DEPTH};
 use crate::storage::contract_storage::util::{
     EbcRuleParams, MultiBlocksContractsStorageConstructor, ObContractStorageConstructor,
-    SingleBlockContractsStorageConstructor,
+    SingleBlockContractsStorageConstructor, EBC_RULE_PF_MAX_DEPTH,
 };
+use crate::storage::util::{ACCOUNT_PF_MAX_DEPTH, STORAGE_PF_MAX_DEPTH};
 use crate::track_block::BlockMerkleInclusionCircuit;
 use crate::transaction::util::{
     get_eth_transaction_circuit, get_zksync_transaction_circuit, TransactionConstructor,
@@ -60,22 +61,22 @@ pub fn parse_from_zksync_to_ethereum(
         let mdc_contract_storage_current_constructor = ObContractStorageConstructor::new(
             storage_input.mdc_address,
             storage_input.contracts_slots_hash[..5].to_vec(),
-            9,
-            8,
+            ACCOUNT_PF_MAX_DEPTH,
+            STORAGE_PF_MAX_DEPTH,
         );
 
         let manage_contract_storage_current_constructor = ObContractStorageConstructor::new(
             storage_input.manage_address,
             storage_input.contracts_slots_hash[5..].to_vec(),
-            9,
-            8,
+            ACCOUNT_PF_MAX_DEPTH,
+            STORAGE_PF_MAX_DEPTH,
         );
 
         let mdc_contract_storage_next_constructor = ObContractStorageConstructor::new(
             storage_input.mdc_address,
             storage_input.contracts_slots_hash[1..3].to_vec(),
-            9,
-            8,
+            ACCOUNT_PF_MAX_DEPTH,
+            STORAGE_PF_MAX_DEPTH,
         );
 
         let single_block_contracts_storage_constructor_current =
@@ -101,7 +102,7 @@ pub fn parse_from_zksync_to_ethereum(
                 storage_input.mdc_current_rule.root.unwrap(),
                 storage_input.mdc_current_rule.value.clone(),
                 storage_input.mdc_current_rule.proof.clone(),
-                8,
+                EBC_RULE_PF_MAX_DEPTH,
             ),
             l1_network,
         );
@@ -164,20 +165,6 @@ pub fn parse_from_zksync_to_ethereum(
             false,
             l1_network,
         ));
-        // eth_transaction_task = Some(EthTransactionTask::new(
-        //     get_eth_transaction_circuit(original_transaction_constructor.clone()),
-        //     EthTransactionType::DynamicFeeTxType,
-        //     1,
-        //     vec![original_transaction_constructor],
-        //     false,
-        //     l1_network,
-        // ));
-        // eth_receipt_task = Some(EthReceiptTask::new(
-        //     original_receipt_constructor.clone().get_circuit(),
-        //     vec![original_receipt_constructor],
-        //     false,
-        //     l1_network,
-        // ));
     }
 
     FinalAssemblyConstructor {

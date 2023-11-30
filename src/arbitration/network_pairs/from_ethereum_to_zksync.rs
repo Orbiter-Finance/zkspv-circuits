@@ -1,6 +1,6 @@
 use crate::arbitration::helper::{
-    BlockMerkleInclusionTask, EthReceiptTask, EthTransactionTask, FinalAssemblyConstructor,
-    MDCStateTask, ZkSyncTransactionTask,
+    BlockMerkleInclusionTask, EthReceiptTask, EthTransactionReceiptTask, EthTransactionTask,
+    FinalAssemblyConstructor, MDCStateTask, ZkSyncTransactionTask,
 };
 use crate::arbitration::network_pairs::NetworkPairs;
 use crate::arbitration::types::{BatchBlocksInput, ObContractStorageInput, TransactionInput};
@@ -16,6 +16,7 @@ use crate::transaction::util::{
     TRANSACTION_PF_MAX_DEPTH,
 };
 use crate::transaction::EthTransactionType;
+use crate::transaction_receipt::util::TransactionReceiptConstructor;
 use crate::util::errors::COMMIT_TRANSACTION_IS_EMPTY;
 use ethers_core::types::H256;
 
@@ -55,6 +56,7 @@ pub fn parse_from_ethereum_to_zksync(
     );
 
     if is_source {
+        // ob storage
         let storage_input = ob_contract_storage_input.as_ref().unwrap();
 
         let mdc_contract_storage_current_constructor = ObContractStorageConstructor::new(
@@ -113,18 +115,32 @@ pub fn parse_from_ethereum_to_zksync(
             false,
         ));
 
-        eth_transaction_task = Some(EthTransactionTask::new(
-            get_eth_transaction_circuit(original_transaction_constructor.clone()),
+        let original_receipt_constructor = ReceiptConstructor::new(
+            original_transaction.transaction_hash,
+            Some(original_transaction.receipt_proof.key.clone()),
+            original_transaction.receipt_proof.value.clone(),
+            original_transaction.receipt_proof.proof.clone(),
+            RECEIPT_PF_MAX_DEPTH,
+            l1_network,
+        );
+
+        let original_transaction_receipt_constructor = TransactionReceiptConstructor::new(
+            original_transaction_constructor,
+            original_receipt_constructor,
+        );
+
+        eth_transaction_receipt_task = Some(EthTransactionReceiptTask::new(
+            original_transaction_receipt_constructor.clone().get_circuit(),
             EthTransactionType::DynamicFeeTxType,
             1,
-            vec![original_transaction_constructor],
+            vec![original_transaction_receipt_constructor],
             false,
             l1_network,
         ));
     } else {
         // Todo: Currently the maximum encoding is not supported.
         let commit_transaction = commit_transaction.expect(COMMIT_TRANSACTION_IS_EMPTY);
-        // // commit tx
+        // commit tx
         // let commit_transaction_constructor = TransactionConstructor::new(
         //     commit_transaction.transaction_hash,
         //     Some(commit_transaction.transaction_proof.key.clone()),
