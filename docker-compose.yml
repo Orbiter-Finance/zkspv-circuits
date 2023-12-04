@@ -10,8 +10,9 @@ services:
   circuit:
     build:
       context: ./
-      dockerfile: 20.04_amd64_cuda_12_0.Dockerfile
-#    command: ./target/release/arbitration_business
+#      dockerfile: 20.04_amd64_cuda_12_0.Dockerfile
+      dockerfile: cuda_12.2_amd64.Dockerfile
+    command: ./target/release/arbitration_business
     # command: sleep 3000
     restart: always
     networks:
