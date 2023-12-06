@@ -5,3 +5,4 @@ params/
 .idea
 .vscode
 target/
+svp.toml
