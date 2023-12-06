@@ -4,6 +4,7 @@ port = 3306
 user = "root"
 password = "123456789"
 name = "spv"
+path = "./challenge_db"
 
 [api]
 spv_host = "127.0.0.1"
@@ -24,20 +25,3 @@ optimism_goerli = "https://opt-goerli.g.alchemy.com/v2/ChkRlZzMrEsYeffOEqPaA2lIu
 
 zksync_mainnet = "https://mainnet.era.zksync.io"
 zksync_goerli = "https://testnet.era.zksync.dev"
-
-[contracts]
-storage-block = "0xBE3ae6fcc5B8599Cb5d5B135A38121710E712B3A"
-node-interface="0x00000000000000000000000000000000000000C8"
-sequencer="0x0484A87B144745A2E5b7c359552119B6EA2917A9"
-out-box="0x45Af9Ed1D03703e480CE7d328fB684bb67DA5049"
-zksync_nonce_holder="0x0000000000000000000000000000000000008003"
-
-[token]
-zksync_eth="0x000000000000000000000000000000000000800a"
-zksync_usdc="0x3355df6D4c9C3035724Fd0e3914dE96A5a83aaf4"
-zksync_weth="0x5aea5775959fbc2557cc8789bc1bf90a239d9a91"
-
-[layout]
-zksync_nonce_holder=0
-zksync_eth=0
-zksync_usdc=51

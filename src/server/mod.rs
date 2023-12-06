@@ -59,6 +59,7 @@ pub async fn init_server(tx: UnboundedSender<OriginalProof>) -> std::io::Result<
             Value::String(serialized)
         })
         .unwrap();
+
     let addr = server.local_addr().unwrap();
 
     let handle = server.start(module);

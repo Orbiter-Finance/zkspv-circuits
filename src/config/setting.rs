@@ -10,6 +10,11 @@ pub struct SpvClientApi {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct DB {
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct Api {
     pub spv_host: String,
     pub spv_port: isize,
@@ -34,6 +39,7 @@ pub struct Rpcs {
 }
 #[derive(Clone, Debug, Deserialize)]
 pub struct Settings {
+    pub db: DB,
     pub api: Api,
     pub rpcs: Rpcs,
 }

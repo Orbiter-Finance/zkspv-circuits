@@ -51,6 +51,7 @@ pub mod track_block;
 pub mod transaction;
 
 pub mod config;
+pub mod db;
 pub mod ecdsa;
 mod gen;
 #[cfg(feature = "providers")]

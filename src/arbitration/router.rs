@@ -42,5 +42,3 @@ impl ProofRouter {
         calldata
     }
 }
-
-//pub fn get_transaction_constructor(){}

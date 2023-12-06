@@ -12,3 +12,4 @@ cache_data/
 .cargo
 arbitration_business
 services
+challenge_db/

@@ -3,8 +3,8 @@
     "degree": 20,
     "num_rlc_columns": 1,
     "num_range_advice": [
-      3,
       2,
+      1,
       0
     ],
     "num_lookup_advice": [
@@ -20,12 +20,9 @@
   "break_points": {
     "gate": [
       [
-        1048466,
-        1048465
+        1048466
       ],
-      [
-        1048465
-      ],
+      [],
       []
     ],
     "rlc": []
