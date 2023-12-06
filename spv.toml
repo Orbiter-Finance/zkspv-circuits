@@ -10,7 +10,7 @@ path = "./challenge_db"
 spv_host = "127.0.0.1"
 spv_port = 8100
 spv_path = "rpc"
-internal_host = "127.0.0.1"
+internal_host = "0.0.0.0"
 internal_port = 3030
 
 [rpcs]

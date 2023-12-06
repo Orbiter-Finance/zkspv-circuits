@@ -12,18 +12,38 @@ services:
       context: ./
 #      dockerfile: 20.04_amd64_cuda_12_0.Dockerfile
       dockerfile: cuda_12.2_amd64.Dockerfile
-    command: ./target/release/arbitration_business
+    command: ./target/release/services
+    # command: ./target/release/arbitration_business
     # command: sleep 3000
     restart: always
+    # runtime: nvidia
+    # environment:
+    #   - NVIDIA_VISIBLE_DEVICES=all
+    #   # - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    #   - ENABLE_CUDA=1
     networks:
       - zkspv__services_network
+    ports:
+      - "80:3030"
     volumes:
-      - .data/cache_data:/cache_data
-      - .data/setup:/params
-    devices:
-      - /dev/nvidia0:/dev/nvidia0
-      - /dev/nvidiactl:/dev/nvidiactl
-      - /dev/nvidia-caps:/dev/nvidia-caps
-      - /dev/nvidia-modeset:/dev/nvidia-modeset
-      - /dev/nvidia-uvm:/dev/nvidia-uvm
-      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+      - ./data:/usr/src/zkSpv/data
+      - ./cache_data:/usr/src/zkSpv/cache_data
+      - ./params:/usr/src/zkSpv/params
+      - .spv.toml:/usr/src/zkSpv/spv.toml
+    # devices:
+    #   - /dev/nvidia0:/dev/nvidia0
+      # - /dev/nvidiactl:/dev/nvidiactl
+      # - /dev/nvidia-caps:/dev/nvidia-caps
+      # - /dev/nvidia-modeset:/dev/nvidia-modeset
+      # - /dev/nvidia-uvm:/dev/nvidia-uvm
+      # - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+      # - driver: "nvidia"
+      #   count: "all"
+      #   capabilities: ["gpu"]
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #       - driver: nvidia
+    #         count: all
+    #         capabilities: [gpu]

@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.2.0-runtime-ubuntu20.04 as base
+FROM nvidia/cuda:12.2.2-devel-ubuntu20.04 as base
 
 ENV LD_LIBRARY_PATH /usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
@@ -6,7 +6,9 @@ WORKDIR /usr/src/zkSpv
 ENV DEBIAN_FRONTEND noninteractive
 
 # Install required dependencies
-RUN apt-get update && apt-get install -y \
+RUN echo 'Acquire::http::Timeout "10";' > /etc/apt/apt.conf.d/99timeout && \
+    echo 'Acquire::Retries "5";' >> /etc/apt/apt.conf.d/99timeout && \
+    apt-get update && apt-get install -y \
     cmake \
     make \
     bash \
@@ -41,6 +43,15 @@ RUN add-apt-repository ppa:savoury1/virtualisation && \
     lld \
     liburing-dev \
     libclang-dev
+
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    libglib2.0-dev \
+    libgl1-mesa-dev \
+    libxrender1 \
+    libgl1-mesa-glx \
+    libxext-dev
 
 # Install docker engine
 RUN wget -c -O - https://download.docker.com/linux/ubuntu/gpg | apt-key add -
@@ -104,5 +115,9 @@ RUN mkdir -p /data/cache_data ; \
 
 COPY . ${ZKSPV_HOME}/
 
-RUN cd ${ZKSPV_HOME}/ && cargo run --release --bin arbitration_business
+
+# RUN cargo build --release --bin arbitration_business
+
+RUN cd ${ZKSPV_HOME}/ && cargo build --release --bin arbitration_business --verbose --jobs=20
+RUN cd ${ZKSPV_HOME}/ && cargo build --release --bin services --verbose --jobs=20
 

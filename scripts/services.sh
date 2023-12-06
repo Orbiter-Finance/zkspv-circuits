@@ -9,4 +9,4 @@ rm services
 cargo clean
 cargo build --release --bin services
 cp target/release/services .
-./services
+nohup ./services & > services.log 2>&1 &
