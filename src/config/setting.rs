@@ -16,9 +16,6 @@ pub struct DB {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Api {
-    pub spv_host: String,
-    pub spv_port: isize,
-    pub spv_path: String,
     pub internal_host: String,
     pub internal_port: isize,
 }
