@@ -8,6 +8,7 @@ ENV DEBIAN_FRONTEND noninteractive
 # Install required dependencies
 RUN echo 'Acquire::http::Timeout "10";' > /etc/apt/apt.conf.d/99timeout && \
     echo 'Acquire::Retries "5";' >> /etc/apt/apt.conf.d/99timeout && \
+    apt-get clean && \
     apt-get update && apt-get install -y \
     cmake \
     make \
@@ -25,9 +26,6 @@ RUN echo 'Acquire::http::Timeout "10";' > /etc/apt/apt.conf.d/99timeout && \
     openssh-client \
     wget \
     vim \
-    ca-certificates \
-    gnupg2 \
-    postgresql-client \
     hub \
     unzip
 
@@ -61,11 +59,6 @@ RUN apt update; apt install -y docker-ce-cli
 # Configurate git to fetch submodules correctly (https://stackoverflow.com/questions/38378914/how-to-fix-git-error-rpc-failed-curl-56-gnutls)
 RUN git config --global http.postBuffer 1048576000
 
-# Install node and yarn
-RUN wget -c -O - https://deb.nodesource.com/setup_18.x | bash -
-RUN apt-get install -y nodejs
-RUN npm install -g yarn
-
 # Install Rust and required cargo packages
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
@@ -78,9 +71,9 @@ RUN cargo install --version=0.5.13 sqlx-cli
 RUN cargo install cargo-nextest
 
 # Copy compiler  binaries
-# Obtain `solc` 0.8.20.
-RUN wget -c https://github.com/ethereum/solc-bin/raw/gh-pages/linux-amd64/solc-linux-amd64-v0.8.20%2Bcommit.a1b79de6 \
-    && mv solc-linux-amd64-v0.8.20+commit.a1b79de6 /usr/bin/solc \
+# Obtain `solc` 0.8.19.
+RUN wget -c https://github.com/ethereum/solc-bin/raw/gh-pages/linux-amd64/solc-linux-amd64-v0.8.19%2Bcommit.7dd6d404 \
+    && mv solc-linux-amd64-v0.8.19+commit.7dd6d404 /usr/bin/solc \
     && chmod +x /usr/bin/solc
 
 # Setup the environment
@@ -111,7 +104,7 @@ RUN wget -c https://github.com/Kitware/CMake/releases/download/v3.24.3/cmake-3.2
     ./cmake-3.24.3-linux-x86_64.sh --skip-license --prefix=/usr/local
 
 RUN mkdir -p /data/cache_data ; \
-    mkdir -p /data/setup
+    mkdir -p /challenges_db
 
 COPY . ${ZKSPV_HOME}/
 

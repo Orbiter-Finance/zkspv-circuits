@@ -24,7 +24,7 @@ use crate::{
     EthChip, EthCircuitBuilder, EthPreCircuit, ETH_LIMB_BITS, ETH_LOOKUP_BITS, ETH_NUM_LIMBS,
 };
 use ethers_core::types::{Block, H256};
-use ethers_providers::{Http, Provider};
+use ethers_providers::{Http, Provider, RetryClient};
 use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::gates::{GateInstructions, RangeChip, RangeInstructions};
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
@@ -106,7 +106,10 @@ pub struct ZkSyncEraBlockTransactionCircuit {
 }
 
 impl ZkSyncEraBlockTransactionCircuit {
-    pub fn from_provider(provider: &Provider<Http>, constructor: TransactionConstructor) -> Self {
+    pub fn from_provider(
+        provider: &Provider<RetryClient<Http>>,
+        constructor: TransactionConstructor,
+    ) -> Self {
         let inputs = get_zksync_era_transaction_input(provider, constructor.transaction_hash);
         Self { inputs }
     }

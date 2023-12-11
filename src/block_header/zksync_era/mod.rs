@@ -14,7 +14,7 @@ use crate::util::{
 };
 use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, Network, ETH_LOOKUP_BITS};
 use ethers_core::types::H256;
-use ethers_providers::{Http, Provider};
+use ethers_providers::{Http, Provider, RetryClient};
 use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::gates::{GateInstructions, RangeChip};
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
@@ -86,7 +86,7 @@ pub struct ZkSyncEraBlockHeaderChainCircuit {
 impl ZkSyncEraBlockHeaderChainCircuit {
     #[cfg(feature = "providers")]
     pub fn from_provider(
-        provider: &Provider<Http>,
+        provider: &Provider<RetryClient<Http>>,
         _network: Network,
         blocks_number: Vec<u64>,
     ) -> Self {

@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::BufReader;
+use std::str::FromStr;
 
 use ethers_core::types::H256;
 use serde_json::Value;
@@ -9,10 +10,10 @@ use zkspv_circuits::server::OriginalProof;
 
 fn main() {
     let challenge_storage = ChallengesStorage::new();
-    // let arbitration_data_file =
-    //     File::open("test_data/from_ethereum_to_zksync_era_source.json").unwrap();
     let arbitration_data_file =
-        File::open("test_data/from_ethereum_to_zksync_era_dest.json").unwrap();
+        File::open("test_data/from_ethereum_to_zksync_era_source.json").unwrap();
+    // let arbitration_data_file =
+    //     File::open("test_data/from_ethereum_to_zksync_era_dest.json").unwrap();
     log::info!("start mock challenge");
 
     // let arbitration_data_file =
@@ -35,7 +36,7 @@ fn main() {
 #[test]
 fn test_read() {
     let challenge_storage = ChallengesStorage::new();
-    let id = H256([0u8; 32]);
+    let id = H256::from_str("").unwrap();
     let r = challenge_storage.get_proof_by_challenge_id(id);
     match r {
         Ok(Some(value)) => println!("retrieved value {}", String::from_utf8(value).unwrap()),

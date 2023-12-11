@@ -22,7 +22,7 @@ use crate::util::{
 };
 use crate::{EthChip, EthCircuitBuilder, EthPreCircuit, ETH_LOOKUP_BITS};
 use ethers_core::types::{Block, H256};
-use ethers_providers::{Http, Provider};
+use ethers_providers::{Http, Provider, RetryClient};
 use futures::{AsyncReadExt, FutureExt};
 use halo2_base::gates::RangeInstructions;
 use halo2_base::QuantumCell::Constant;
@@ -127,7 +127,7 @@ pub struct ObContractsStorageCircuit {
 impl ObContractsStorageCircuit {
     #[cfg(feature = "providers")]
     pub fn from_provider(
-        provider: &Provider<Http>,
+        provider: &Provider<RetryClient<Http>>,
         constructor: MultiBlocksContractsStorageConstructor,
     ) -> Self {
         let inputs = get_contract_storage_input(provider, constructor.clone());

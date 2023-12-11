@@ -13,3 +13,6 @@ cache_data/
 arbitration_business
 services
 challenge_db/
+
+nohup.out
+services.log

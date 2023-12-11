@@ -4,7 +4,7 @@ use core::{
 };
 use std::cell::RefCell;
 
-use ethers_providers::{Http, Provider};
+use ethers_providers::{Http, Provider, RetryClient};
 use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::gates::{GateInstructions, RangeChip, RangeInstructions};
 use halo2_base::halo2_proofs::{halo2curves::bn256::Fr, plonk::*};
@@ -724,7 +724,7 @@ pub struct EthBlockHeaderChainCircuit<F> {
 impl<F: Field> EthBlockHeaderChainCircuit<F> {
     #[cfg(feature = "providers")]
     pub fn from_provider(
-        provider: &Provider<Http>,
+        provider: &Provider<RetryClient<Http>>,
         network: Network,
         start_block_number: u32,
         num_blocks: u32,

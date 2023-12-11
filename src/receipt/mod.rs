@@ -4,7 +4,7 @@ pub mod util;
 use std::cell::RefCell;
 
 use ethers_core::types::{Block, Bytes, H256};
-use ethers_providers::{Http, Provider};
+use ethers_providers::{Http, Provider, RetryClient};
 use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::gates::{GateInstructions, RangeChip, RangeInstructions};
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
@@ -94,7 +94,10 @@ pub struct EthBlockReceiptCircuit {
 }
 
 impl EthBlockReceiptCircuit {
-    pub fn from_provider(provider: &Provider<Http>, constructor: ReceiptConstructor) -> Self {
+    pub fn from_provider(
+        provider: &Provider<RetryClient<Http>>,
+        constructor: ReceiptConstructor,
+    ) -> Self {
         let inputs = get_receipt_input(
             provider,
             constructor.transaction_hash,

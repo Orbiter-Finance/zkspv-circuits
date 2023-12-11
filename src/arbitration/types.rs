@@ -81,10 +81,10 @@ pub struct ProofConfig {
     pub is_source: bool,
     #[serde(rename(deserialize = "isL2"))]
     pub is_l2: bool,
-    #[serde(rename(deserialize = "fromNetwork"))]
-    pub from_network: u64,
-    #[serde(rename(deserialize = "toNetwork"))]
-    pub to_network: u64,
+    #[serde(rename(deserialize = "sourceNetwork"))]
+    pub source_network: u64,
+    #[serde(rename(deserialize = "destNetwork"))]
+    pub dest_network: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -102,9 +102,9 @@ pub struct ProofInput {
 impl ProofInput {
     pub fn get_final_task(self, round: usize) -> FinalAssemblyTask {
         let is_source = self.config.is_source;
-        let from_network = get_network_from_chain_id(self.config.from_network).unwrap();
-        let to_network = get_network_from_chain_id(self.config.to_network).unwrap();
-        let pairs = NetworkPairs::new_pairs(from_network, to_network, is_source).unwrap();
+        let source_network = get_network_from_chain_id(self.config.source_network).unwrap();
+        let dest_network = get_network_from_chain_id(self.config.dest_network).unwrap();
+        let pairs = NetworkPairs::new_pairs(source_network, dest_network, is_source).unwrap();
         let ob_contract_storage_input = self.ob_contract_storage_input;
         let batch_blocks_input = self.batch_blocks_input;
         let original_transaction = self.transactions_input.original_transaction;
@@ -119,7 +119,13 @@ impl ProofInput {
         let final_assembly_type =
             if is_source { FinalAssemblyType::Source } else { FinalAssemblyType::Destination };
 
-        FinalAssemblyTask::new(round, final_assembly_type, from_network, to_network, constructor)
+        FinalAssemblyTask::new(
+            round,
+            final_assembly_type,
+            source_network,
+            dest_network,
+            constructor,
+        )
     }
 }
 #[derive(Clone, Debug)]

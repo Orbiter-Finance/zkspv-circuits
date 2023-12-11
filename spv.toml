@@ -1,21 +1,13 @@
 [db]
-host = "127.0.0.1"
-port = 3306
-user = "root"
-password = "123456789"
-name = "spv"
-path = "./challenge_db"
+path = "./challenges_db"
 
 [api]
-spv_host = "127.0.0.1"
-spv_port = 8100
-spv_path = "rpc"
 internal_host = "0.0.0.0"
 internal_port = 3030
 
 [rpcs]
 mainnet = "https://eth-mainnet.g.alchemy.com/v2/y0S4FG_c5sVLGgF0ny14hNjw0c6DDySz"
-goerli = "https://eth-goerli.g.alchemy.com/v2/jmWy91tpjAUOgBHEyGa-J9rpmXGlnwFD"
+goerli = "https://eth-goerli.g.alchemy.com/v2/HOfCWPxkquxmcROM7XqLmREJIRZSK8lf"
 
 arbitrum_mainnet = "https://arb-mainnet.g.alchemy.com/v2/zGs7et8HqZ7gY35zI1CbIwYmhqTkcwUX"
 arbitrum_goerli = "https://arb-goerli.g.alchemy.com/v2/yKCEaSWa9llIeVNAp6NYivWNCD5suKU7"

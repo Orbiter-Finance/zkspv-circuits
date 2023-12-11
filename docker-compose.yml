@@ -10,11 +10,9 @@ services:
   circuit:
     build:
       context: ./
-#      dockerfile: 20.04_amd64_cuda_12_0.Dockerfile
       dockerfile: cuda_12.2_amd64.Dockerfile
     command: ./target/release/services
     # command: ./target/release/arbitration_business
-    # command: sleep 3000
     restart: always
     # runtime: nvidia
     # environment:
@@ -29,7 +27,8 @@ services:
       - ./data:/usr/src/zkSpv/data
       - ./cache_data:/usr/src/zkSpv/cache_data
       - ./params:/usr/src/zkSpv/params
-      - .spv.toml:/usr/src/zkSpv/spv.toml
+      - ./challenges_db:/usr/src/zkSpv/challenges_db
+      - ./spv.toml:/usr/src/zkSpv/spv.toml
     # devices:
     #   - /dev/nvidia0:/dev/nvidia0
       # - /dev/nvidiactl:/dev/nvidiactl

@@ -2,6 +2,7 @@ use std::io::Read;
 use std::{cell::RefCell, env::var, fs::File, path::Path};
 
 use ethers_core::types::{Address, Block, H256, U256};
+use ethers_providers::RetryClient;
 #[cfg(feature = "providers")]
 use ethers_providers::{Http, Provider};
 use halo2_base::{
@@ -611,7 +612,10 @@ pub struct EthBlockStorageCircuit {
 
 impl EthBlockStorageCircuit {
     #[cfg(feature = "providers")]
-    pub fn from_provider(provider: &Provider<Http>, constructor: StorageConstructor) -> Self {
+    pub fn from_provider(
+        provider: &Provider<RetryClient<Http>>,
+        constructor: StorageConstructor,
+    ) -> Self {
         let inputs = get_storage_input(
             provider,
             constructor.block_number,

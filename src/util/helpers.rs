@@ -2,7 +2,7 @@ use ethers_core::abi;
 use ethers_core::abi::{AbiEncode, Token, Uint};
 use ethers_core::types::{Address, BigEndianHash, H256};
 use ethers_core::utils::keccak256;
-use ethers_providers::{Http, Middleware, Provider};
+use ethers_providers::{Http, Middleware, Provider, RetryClient, RetryClientBuilder};
 use halo2_base::{AssignedValue, Context};
 use std::ops::Add;
 use tokio::runtime::Runtime;
@@ -14,7 +14,7 @@ use crate::mpt::AssignedBytes;
 use crate::{ArbitrumNetwork, EthereumNetwork, Network, OptimismNetwork, ZkSyncEraNetwork};
 
 pub fn get_block_batch_hashes(
-    provider: &Provider<Http>,
+    provider: &Provider<RetryClient<Http>>,
     start_block_num: u32,
     end_block_num: u32,
 ) -> Vec<H256> {
@@ -30,7 +30,7 @@ pub fn get_block_batch_hashes(
     leaves
 }
 
-pub fn get_provider(network: &Network) -> Provider<Http> {
+pub fn get_provider(network: &Network) -> Provider<RetryClient<Http>> {
     let rpcs = get_rpcs_config();
     let provider_url = match network {
         Network::Ethereum(ethereum_network) => match ethereum_network {
@@ -50,7 +50,7 @@ pub fn get_provider(network: &Network) -> Provider<Http> {
             ZkSyncEraNetwork::Goerli => rpcs.zksync_era.goerli,
         },
     };
-    let provider = Provider::<Http>::try_from(provider_url.as_str())
+    let provider = Provider::new_client(provider_url.as_str(), 10, 1)
         .expect("could not instantiate HTTP Provider");
     provider
 }

@@ -14,7 +14,7 @@ use crate::transaction_receipt::util::TransactionReceiptConstructor;
 use crate::{
     EthChip, EthCircuitBuilder, EthPreCircuit, ETH_LIMB_BITS, ETH_LOOKUP_BITS, ETH_NUM_LIMBS,
 };
-use ethers_providers::{Http, Provider};
+use ethers_providers::{Http, Provider, RetryClient};
 use halo2_base::gates::{GateInstructions, RangeChip};
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
@@ -31,7 +31,7 @@ pub struct TransactionReceiptCircuit {
 
 impl TransactionReceiptCircuit {
     pub fn from_provider(
-        provider: &Provider<Http>,
+        provider: &Provider<RetryClient<Http>>,
         constructor: TransactionReceiptConstructor,
     ) -> Self {
         let eth_transaction_input = get_transaction_input(

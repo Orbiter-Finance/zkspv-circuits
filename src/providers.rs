@@ -16,7 +16,7 @@ use ethers_core::types::{
 };
 use ethers_core::utils::hex::FromHex;
 use ethers_core::utils::keccak256;
-use ethers_providers::{Http, Middleware, Provider, ProviderError, StreamExt};
+use ethers_providers::{Http, Middleware, Provider, ProviderError, RetryClient, StreamExt};
 use futures::future::{join, join_all};
 use itertools::Itertools;
 use lazy_static::__Deref;
@@ -61,7 +61,7 @@ const TRANSACTION_INDEX_MAX_KEY_BYTES_LEN: usize = 3;
 const K256_MAX_KEY_BYTES_LEN: usize = 32;
 
 pub fn get_batch_block_merkle_root(
-    provider: &Provider<Http>,
+    provider: &Provider<RetryClient<Http>>,
     start_block_num: u32,
     end_block_num: u32,
     block_verify_index: u32,
@@ -88,7 +88,7 @@ fn get_buffer_rlp(value: u32) -> Vec<u8> {
 }
 
 pub fn get_block_track_input(
-    provider: &Provider<Http>,
+    provider: &Provider<RetryClient<Http>>,
     constructor: &TrackBlockConstructor,
 ) -> EthTrackBlockInput {
     let rt = Runtime::new().unwrap();
@@ -110,8 +110,9 @@ pub fn get_block_track_input(
     EthTrackBlockInput { block, block_number, block_hash, block_header }
 }
 
+//
 pub fn get_receipt_input(
-    provider: &Provider<Http>,
+    provider: &Provider<RetryClient<Http>>,
     transaction_hash: H256,
     receipt_index_bytes: Option<Vec<u8>>,
     receipt_rlp: Vec<u8>,
@@ -151,7 +152,7 @@ pub fn get_receipt_input(
 }
 
 pub fn get_transaction_input(
-    provider: &Provider<Http>,
+    provider: &Provider<RetryClient<Http>>,
     transaction_hash: H256,
     transaction_index_bytes: Option<Vec<u8>>,
     transaction_rlp: Vec<u8>,
@@ -201,7 +202,7 @@ pub fn get_transaction_input(
 }
 
 pub fn get_storage_input(
-    provider: &Provider<Http>,
+    provider: &Provider<RetryClient<Http>>,
     block_number: u32,
     addr: Address,
     slots: Vec<H256>,
@@ -267,7 +268,7 @@ pub fn get_storage_input(
 }
 
 pub fn get_contract_storage_input(
-    provider: &Provider<Http>,
+    provider: &Provider<RetryClient<Http>>,
     constructor: MultiBlocksContractsStorageConstructor,
 ) -> ObContractsStorageBlockInput {
     let rt = Runtime::new().unwrap();
@@ -381,7 +382,7 @@ pub fn get_contract_storage_input(
 }
 
 pub fn get_zksync_era_block_with_txs_input(
-    provider: &Provider<Http>,
+    provider: &Provider<RetryClient<Http>>,
     blocks_number: Vec<u64>,
 ) -> ZkSyncEraBlockHeadersInput {
     let rt = Runtime::new().unwrap();
@@ -400,7 +401,7 @@ pub fn get_zksync_era_block_with_txs_input(
 }
 
 pub fn get_zksync_era_transaction_input(
-    provider: &Provider<Http>,
+    provider: &Provider<RetryClient<Http>>,
     tx_hash: H256,
 ) -> ZkSyncEraBlockTransactionInput {
     let rt = Runtime::new().unwrap();
@@ -549,7 +550,7 @@ pub struct ProcessedBlock {
 ///   * where merkleRoots is a length `max_depth + 1` vector representing a merkle mountain range, ordered largest mountain first
 // second tuple `instance` is only used for debugging now
 pub fn get_blocks_input(
-    provider: &Provider<Http>,
+    provider: &Provider<RetryClient<Http>>,
     start_block_number: u32,
     num_blocks: u32,
     max_depth: usize,
@@ -594,7 +595,7 @@ pub fn get_blocks_input(
 }
 
 pub fn get_blocks(
-    provider: &Provider<Http>,
+    provider: &Provider<RetryClient<Http>>,
     block_numbers: impl IntoIterator<Item = u64>,
 ) -> Result<Vec<Option<Block<H256>>>, ProviderError> {
     let rt = Runtime::new().unwrap();

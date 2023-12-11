@@ -5,7 +5,7 @@ use serde::Serialize;
 use std::cell::RefCell;
 
 use ethers_core::types::{Block, H256};
-use ethers_providers::{Http, Provider};
+use ethers_providers::{Http, Provider, RetryClient};
 use futures::AsyncReadExt;
 use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::gates::RangeChip;
@@ -240,7 +240,10 @@ pub struct EthTrackBlockCircuit {
 }
 
 impl EthTrackBlockCircuit {
-    pub fn from_provider(provider: &Provider<Http>, constructor: TrackBlockConstructor) -> Self {
+    pub fn from_provider(
+        provider: &Provider<RetryClient<Http>>,
+        constructor: TrackBlockConstructor,
+    ) -> Self {
         let inputs = get_block_track_input(provider, &constructor);
         let block_header_config = get_block_header_config(&constructor.network);
         Self { inputs, block_header_config }

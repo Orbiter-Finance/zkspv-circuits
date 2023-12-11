@@ -1,6 +1,9 @@
 use crate::config::db::get_rocks_db_path;
 use ethers_core::types::H256;
+use jsonrpsee::core::Serialize;
 use rocksdb::{DBWithThreadMode, Error, Options, SingleThreaded, DB};
+use serde::Deserialize;
+
 pub struct ChallengesStorage {
     pub storage: DBWithThreadMode<SingleThreaded>,
 }

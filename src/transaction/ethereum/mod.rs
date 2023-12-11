@@ -2,7 +2,7 @@ use ethers_core::abi::AbiEncode;
 use std::cell::RefCell;
 
 use ethers_core::types::{Block, Bytes, H256};
-use ethers_providers::{Http, Provider};
+use ethers_providers::{Http, Provider, RetryClient};
 use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::gates::{GateInstructions, RangeChip, RangeInstructions};
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
@@ -107,7 +107,10 @@ pub struct EthBlockTransactionCircuit {
 }
 
 impl EthBlockTransactionCircuit {
-    pub fn from_provider(provider: &Provider<Http>, constructor: TransactionConstructor) -> Self {
+    pub fn from_provider(
+        provider: &Provider<RetryClient<Http>>,
+        constructor: TransactionConstructor,
+    ) -> Self {
         let inputs = get_transaction_input(
             provider,
             constructor.transaction_hash,

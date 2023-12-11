@@ -1,19 +1,14 @@
-pub mod client;
 pub mod server;
 
 use crate::config::api::get_internal_api;
-use crate::server::client::send_to_client;
-// use crate::server::server::{RpcServerImpl, ZkpRpcServer};
-use chrono::{DateTime, Local};
+use crate::db::ChallengesStorage;
 use ethers_core::types::H256;
 use hyper::Method;
 use jsonrpsee::server::{RpcModule, Server};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::thread::sleep;
-use std::{thread, time};
+use std::sync::{Arc, Mutex};
 use tokio::signal::ctrl_c;
 use tokio::sync::mpsc::UnboundedSender;
 use tower_http::cors::{Any, CorsLayer};
@@ -24,12 +19,27 @@ pub struct OriginalProof {
     pub proof: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct QueryChallenge {
+    pub challenge_id: H256,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QueryChallengeOutput {
+    pub challenge_id: H256,
+    pub proof: Option<String>,
+    pub status: u64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Response {
     pub status: u64,
 }
 
-pub async fn init_server(tx: UnboundedSender<OriginalProof>) -> std::io::Result<()> {
+pub async fn init_server(
+    tx: UnboundedSender<OriginalProof>,
+    challenges_storage: Arc<Mutex<ChallengesStorage>>,
+) -> std::io::Result<()> {
     let tx = Arc::new(tx);
     let cors = CorsLayer::new()
         // Allow `POST` when accessing the resource
@@ -55,6 +65,30 @@ pub async fn init_server(tx: UnboundedSender<OriginalProof>) -> std::io::Result<
             });
 
             let response = Response { status: 200 };
+            let serialized = serde_json::to_string(&response).unwrap();
+            Value::String(serialized)
+        })
+        .unwrap();
+
+    module
+        .register_method("get_challenge_proof", move |params, c| {
+            let challenges_storage = challenges_storage.clone();
+            let mut storage = challenges_storage.lock().unwrap();
+
+            let query_challenge: QueryChallenge = params.parse().unwrap();
+            let challenge_proof = storage.get_proof_by_challenge_id(query_challenge.challenge_id);
+            let mut status = 0;
+            let mut proof = None;
+            match challenge_proof {
+                Ok(Some(value)) => {
+                    status = 1;
+                    proof = Some(String::from_utf8(value).unwrap());
+                }
+                Ok(None) => status = 0,
+                Err(e) => println!("operational problem encountered: {}", e),
+            }
+            let response =
+                QueryChallengeOutput { challenge_id: query_challenge.challenge_id, proof, status };
             let serialized = serde_json::to_string(&response).unwrap();
             Value::String(serialized)
         })
