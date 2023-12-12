@@ -29,6 +29,8 @@ RUN echo 'Acquire::http::Timeout "10";' > /etc/apt/apt.conf.d/99timeout && \
     hub \
     unzip
 
+# https://forums.developer.nvidia.com/t/error-apt-get-updating-from-nvidia-cuda11-2-1-base-ubuntu20-04/209836
+RUN rm /etc/apt/sources.list.d/cuda.list
 # Install dependencies for RocksDB. `liburing` is not available for Ubuntu 20.04,
 # so we use a PPA with the backport
 RUN add-apt-repository ppa:savoury1/virtualisation && \
@@ -108,9 +110,5 @@ RUN mkdir -p /data/cache_data ; \
 
 COPY . ${ZKSPV_HOME}/
 
-
-# RUN cargo build --release --bin arbitration_business
-
-RUN cd ${ZKSPV_HOME}/ && cargo build --release --bin arbitration_business --verbose --jobs=20
 RUN cd ${ZKSPV_HOME}/ && cargo build --release --bin services --verbose --jobs=20
 

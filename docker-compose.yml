@@ -11,8 +11,7 @@ services:
     build:
       context: ./
       dockerfile: cuda_12.2_amd64.Dockerfile
-    command: ./target/release/services
-    # command: ./target/release/arbitration_business
+    command: ./target/release/services --cache_srs_pk --generate_smart_contract
     restart: always
     # runtime: nvidia
     # environment:

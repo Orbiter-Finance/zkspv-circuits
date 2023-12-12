@@ -1,8 +1,9 @@
 .git
 docker-compose.yml
-.data/
 params/
+cache_data/arbitration/
 .idea
 .vscode
 target/
 svp.toml
+challenges_db/
