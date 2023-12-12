@@ -4,6 +4,10 @@
 #![allow(incomplete_features)]
 #![feature(thread_id_value)]
 
+#[macro_use]
+extern crate log;
+extern crate log4rs;
+
 extern crate core;
 
 use ark_std::{end_timer, start_timer};

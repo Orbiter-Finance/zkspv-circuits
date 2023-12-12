@@ -1,7 +1,8 @@
 use clap::Parser;
 use ethers_core::types::H256;
-use log::info;
+use log::{info, warn};
 use serde_json::Value;
+use std::env;
 use std::fs::File;
 use std::io::BufReader;
 use std::process::Command;
@@ -9,12 +10,12 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::task;
 use zkspv_circuits::arbitration::router::SchedulerRouter;
+use zkspv_circuits::config::log::init_log;
 use zkspv_circuits::db::ChallengesStorage;
 use zkspv_circuits::server::{init_server, OriginalProof};
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)] // Read from `Cargo.toml`
-/// Optionally does final processing to get merkle mountain range and/or produce EVM verifier contract code and calldata.
+#[command(author, version, about, long_about = None)]
 struct Cli {
     #[arg(long = "cache_srs_pk")]
     cache_srs_pk: bool,
@@ -24,11 +25,13 @@ struct Cli {
 
 #[tokio::main]
 async fn main() {
+    init_log();
     let args = Cli::parse();
     let scheduler = Arc::new(Mutex::new(SchedulerRouter::default()));
     let scheduler_cache_srs_pk = scheduler.clone();
     let scheduler_running = scheduler.clone();
     if args.cache_srs_pk {
+        info!(target: "app","Start caching srs and pk files");
         task::spawn_blocking(move || {
             let arbitration_data_file =
                 File::open("test_data/from_ethereum_to_zksync_era_source.json").unwrap();
@@ -51,6 +54,8 @@ async fn main() {
         })
         .await
         .expect("cache srs pk should success");
+
+        info!(target: "app","Caching of srs and pk files has ended");
     }
 
     let challenge_storage = Arc::new(Mutex::new(ChallengesStorage::new()));
@@ -66,6 +71,8 @@ async fn main() {
             let scheduler_running = scheduler_running.clone();
             let challenge_storage_clone = challenge_storage.clone();
             let scheduler_result = task::spawn_blocking(move || {
+                info!(target: "app","Start generating proof for Challenge: {:?}",original_proof.clone().unwrap().task_id);
+
                 // clear
                 let mut clear = Command::new("sh")
                     .arg("./scripts/clear_snark.sh")
@@ -86,9 +93,14 @@ async fn main() {
 
                     let (challenge_id, proof) = result;
                     storage.storage_challenge_proof(challenge_id, proof).expect("save success");
+                    info!(target: "app","Successfully generated proof for Challenge: {:?}",challenge_id);
+
                     println!("prove success")
                 }
-                Err(err) => eprintln!("prove error: {}", err),
+                Err(err) => {
+                    warn!(target: "app","Failed to generate proof for Challenge,err: {}",err);
+                    eprintln!("prove error: {}", err)
+                }
             }
         }
     });

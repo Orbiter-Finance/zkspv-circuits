@@ -27,6 +27,7 @@ services:
       - ./cache_data:/usr/src/zkSpv/cache_data
       - ./params:/usr/src/zkSpv/params
       - ./challenges_db:/usr/src/zkSpv/challenges_db
+      - ./log:/usr/src/zkSpv/log
       - ./spv.toml:/usr/src/zkSpv/spv.toml
     # devices:
     #   - /dev/nvidia0:/dev/nvidia0

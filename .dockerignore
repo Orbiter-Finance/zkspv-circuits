@@ -1,9 +1,14 @@
 .git
-docker-compose.yml
-params/
-cache_data/arbitration/
 .idea
 .vscode
-target/
-svp.toml
+# cache pk & srs
+cache_data/arbitration/
+params/
+
 challenges_db/
+log/
+
+target/
+
+docker-compose.yml
+svp.toml

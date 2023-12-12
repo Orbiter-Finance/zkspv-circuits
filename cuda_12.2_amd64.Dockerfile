@@ -105,9 +105,6 @@ RUN wget -c https://github.com/Kitware/CMake/releases/download/v3.24.3/cmake-3.2
     chmod +x cmake-3.24.3-linux-x86_64.sh && \
     ./cmake-3.24.3-linux-x86_64.sh --skip-license --prefix=/usr/local
 
-RUN mkdir -p /data/cache_data ; \
-    mkdir -p /challenges_db
-
 COPY . ${ZKSPV_HOME}/
 
 RUN cd ${ZKSPV_HOME}/ && cargo build --release --bin services --verbose --jobs=20
