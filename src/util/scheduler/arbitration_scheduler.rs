@@ -26,7 +26,7 @@ use halo2_base::halo2_proofs::{
 };
 use itertools::Itertools;
 use snark_verifier_sdk::Snark;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, AnyCircuit)]
@@ -54,6 +54,19 @@ pub enum CircuitRouter {
 }
 
 pub type ArbitrationScheduler = EthScheduler<ArbitrationTask>;
+
+impl ArbitrationScheduler {
+    pub fn default(network: Network) -> Self {
+        ArbitrationScheduler::new(
+            network,
+            false,
+            false,
+            PathBuf::from("configs/arbitration/"),
+            PathBuf::from("data/arbitration/"),
+            PathBuf::from("cache_data/arbitration/"),
+        )
+    }
+}
 
 impl scheduler::Scheduler for ArbitrationScheduler {
     type Task = ArbitrationTask;

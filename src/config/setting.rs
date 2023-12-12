@@ -3,13 +3,6 @@ use serde::Deserialize;
 use std::{fs::File, io::Read};
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct SpvClientApi {
-    pub host: String,
-    pub port: isize,
-    pub path: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
 pub struct DB {
     pub path: String,
 }

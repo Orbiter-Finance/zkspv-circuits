@@ -1,16 +1,58 @@
+use clap::Parser;
 use ethers_core::types::H256;
 use log::info;
+use serde_json::Value;
+use std::fs::File;
+use std::io::BufReader;
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::task;
-use zkspv_circuits::arbitration::router::ProofRouter;
+use zkspv_circuits::arbitration::router::SchedulerRouter;
 use zkspv_circuits::db::ChallengesStorage;
 use zkspv_circuits::server::{init_server, OriginalProof};
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)] // Read from `Cargo.toml`
+/// Optionally does final processing to get merkle mountain range and/or produce EVM verifier contract code and calldata.
+struct Cli {
+    #[arg(long = "cache_srs_pk")]
+    cache_srs_pk: bool,
+    #[arg(long = "generate_smart_contract")]
+    generate_smart_contract: bool,
+}
+
 #[tokio::main]
 async fn main() {
-    env_logger::init();
-    info!("start services");
+    let args = Cli::parse();
+    let scheduler = Arc::new(Mutex::new(SchedulerRouter::default()));
+    let scheduler_cache_srs_pk = scheduler.clone();
+    let scheduler_running = scheduler.clone();
+    if args.cache_srs_pk {
+        task::spawn_blocking(move || {
+            let arbitration_data_file =
+                File::open("test_data/from_ethereum_to_zksync_era_source.json").unwrap();
+            // let arbitration_data_file =
+            //     File::open("test_data/from_ethereum_to_zksync_era_dest.json").unwrap();
+
+            // let arbitration_data_file =
+            //     File::open("test_data/from_zksync_era_to_ethereum_source.json").unwrap();
+
+            // let arbitration_data_file =
+            //     File::open("test_data/from_zksync_era_to_ethereum_dest.json").unwrap();
+
+            let data_reader = BufReader::new(arbitration_data_file);
+            let proof_str: Value = serde_json::from_reader(data_reader).unwrap();
+
+            let op = OriginalProof { task_id: H256([0u8; 32]), proof: proof_str.to_string() };
+            let constructor = op.clone().get_constructor_by_parse_proof();
+            scheduler_cache_srs_pk.lock().unwrap().update(constructor, 1);
+            scheduler_cache_srs_pk.lock().unwrap().cache_srs_pk_files();
+        })
+        .await
+        .expect("cache srs pk should success");
+    }
+
     let challenge_storage = Arc::new(Mutex::new(ChallengesStorage::new()));
     let (tx, mut rx) = mpsc::unbounded_channel::<OriginalProof>();
 
@@ -21,17 +63,26 @@ async fn main() {
 
     let execute_tasks = task::spawn(async move {
         while let original_proof = rx.recv().await {
+            let scheduler_running = scheduler_running.clone();
             let challenge_storage_clone = challenge_storage.clone();
-            // thread 'tokio-runtime-worker' panicked at 'called `Result::unwrap()` on an `Err` value: JoinError::Panic(Id(264), ...)', src/bin/services.rs:30:14
-            let mut a = task::spawn_blocking(|| {
+            let scheduler_result = task::spawn_blocking(move || {
+                // clear
+                let mut clear = Command::new("sh")
+                    .arg("./scripts/clear_snark.sh")
+                    .spawn()
+                    .expect("Failed to execute command");
+                let _ = clear.wait();
                 let constructor = original_proof.clone().unwrap().get_constructor_by_parse_proof();
-                let task = ProofRouter::new(constructor, 1);
-                (original_proof.unwrap().task_id, task.get_calldata(true))
+                scheduler_running.lock().unwrap().update(constructor, 1);
+                (
+                    original_proof.unwrap().task_id,
+                    scheduler_running.lock().unwrap().get_calldata(args.generate_smart_contract),
+                )
             })
             .await;
-            match a {
+            match scheduler_result {
                 Ok(result) => {
-                    let mut storage = challenge_storage_clone.lock().unwrap();
+                    let storage = challenge_storage_clone.lock().unwrap();
 
                     let (challenge_id, proof) = result;
                     storage.storage_challenge_proof(challenge_id, proof).expect("save success");

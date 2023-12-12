@@ -129,12 +129,12 @@ impl ProofInput {
     }
 }
 #[derive(Clone, Debug)]
-pub struct ProofRouterConstructor {
+pub struct SchedulerRouterConstructor {
     pub proof: ProofInput,
 }
 
 impl OriginalProof {
-    pub fn get_constructor_by_parse_proof(self) -> ProofRouterConstructor {
+    pub fn get_constructor_by_parse_proof(self) -> SchedulerRouterConstructor {
         let value: Value = serde_json::from_str(self.proof.as_str()).unwrap();
         let mut proof_params = serde_json::from_str::<ProofInput>(self.proof.as_str()).unwrap();
 
@@ -317,6 +317,6 @@ impl OriginalProof {
                 mdc_pre_rule_merkle_proof;
         }
 
-        ProofRouterConstructor { proof: proof_params }
+        SchedulerRouterConstructor { proof: proof_params }
     }
 }

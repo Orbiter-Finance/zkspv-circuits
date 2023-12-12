@@ -12,8 +12,5 @@ cache_data/
 .cargo
 arbitration_business
 services
-challenge_db/
-
-nohup.out
 services.log
 challenges_db/
