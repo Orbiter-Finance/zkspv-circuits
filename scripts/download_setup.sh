@@ -1,4 +1,3 @@
-cd ../
 mkdir -p params && cd params
 
 wget -b https://orbiter-finance-zk.s3.ap-southeast-1.amazonaws.com/challenge_0078/kzg_bn254_15.srs
