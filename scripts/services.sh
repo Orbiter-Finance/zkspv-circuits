@@ -1,9 +1,21 @@
-# rm data/arbitration/*.snark
-# rm data/arbitration/*.yul
-# rm data/arbitration/*.calldata
-# rm data/arbitration/*.pk
-# rm cache_data/arbitration/*.snark
-# rm cache_data/arbitration/*.pk
+
+# If the user of directory challenges_db is not equal to the user at work, a permission error will occur when initializing the database.
+db_name="challenges_db"
+path=`pwd`
+db_path=${path}/${db_name}
+if [ -d $db_path ]
+then
+  echo "$db_path directory already exists"
+  if [ -O $db_path ]
+  then
+    echo "$db_path directory belongs to the current user"
+  else
+    echo "$db_path directory does not belong to the current user, a permission error will occur when initializing the database"
+    return
+  fi
+else
+  echo "$db_path directory does not exist and will be newly created"
+fi
 
 rm services
 rm services.log

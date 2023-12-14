@@ -81,8 +81,12 @@ pub async fn init_server(
             let mut proof = None;
             match challenge_proof {
                 Ok(Some(value)) => {
-                    status = 1;
-                    proof = Some(String::from_utf8(value).unwrap());
+                    if value.is_empty() {
+                        status = 2;
+                    } else {
+                        status = 1;
+                        proof = Some(String::from_utf8(value).unwrap());
+                    }
                 }
                 Ok(None) => status = 0,
                 Err(e) => println!("operational problem encountered: {}", e),
@@ -95,6 +99,8 @@ pub async fn init_server(
         .unwrap();
 
     let addr = server.local_addr().unwrap();
+
+    info!(target: "app","Spv Pool server listening on {:?}",addr.to_string());
 
     let handle = server.start(module);
 

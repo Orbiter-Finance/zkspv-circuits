@@ -58,11 +58,15 @@ pub mod config;
 pub mod db;
 pub mod ecdsa;
 mod gen;
+
 #[cfg(feature = "providers")]
 pub mod providers;
 pub mod server;
 mod transaction_receipt;
 pub mod util;
+
+// entry point
+pub mod integration;
 
 pub(crate) const ETH_LOOKUP_BITS: usize = 8; // always want 8 to range check bytes
 pub(crate) const ETH_LIMB_BITS: usize = 88;
