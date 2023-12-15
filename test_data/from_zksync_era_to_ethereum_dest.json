@@ -230,7 +230,7 @@
   "config": {
     "isSource": false,
     "isL2": false,
-    "fromNetwork": 280,
-    "toNetwork": 5
+    "sourceNetwork": 280,
+    "destNetwork": 5
   }
 }

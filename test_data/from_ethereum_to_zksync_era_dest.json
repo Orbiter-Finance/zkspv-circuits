@@ -236,7 +236,7 @@
   "config": {
     "isSource": false,
     "isL2": true,
-    "fromNetwork": 5,
-    "toNetwork": 280
+    "sourceNetwork": 5,
+    "destNetwork": 280
   }
 }

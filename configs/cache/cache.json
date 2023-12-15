@@ -1,0 +1,8 @@
+{
+  "list": [
+    "test_data/from_ethereum_to_zksync_era_source.json",
+    "test_data/from_ethereum_to_zksync_era_dest.json",
+    "test_data/from_zksync_era_to_ethereum_source.json",
+    "test_data/from_zksync_era_to_ethereum_dest.json"
+  ]
+}

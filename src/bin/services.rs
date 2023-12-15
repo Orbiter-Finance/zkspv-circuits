@@ -10,6 +10,7 @@ use tokio::task;
 use zkspv_circuits::config::log::init_log;
 use zkspv_circuits::integration::Integration;
 use zkspv_circuits::server::{init_server, OriginalProof};
+use zkspv_circuits::util::cache::CacheConfig;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -30,24 +31,19 @@ async fn main() {
     if args.cache_srs_pk {
         info!(target: "app","Start caching srs and pk files");
         task::spawn_blocking(move || {
-            let arbitration_data_file =
-                File::open("test_data/from_ethereum_to_zksync_era_source.json").unwrap();
-            // let arbitration_data_file =
-            //     File::open("test_data/from_ethereum_to_zksync_era_dest.json").unwrap();
+            let cache = CacheConfig::from_reader("configs/cache/cache.json");
+            for path in cache.list {
+                info!(target: "app","Start caching srs and pk files: {:?}",path);
+                let arbitration_data_file = File::open(path).unwrap();
+                let data_reader = BufReader::new(arbitration_data_file);
+                let proof_str: Value = serde_json::from_reader(data_reader).unwrap();
 
-            // let arbitration_data_file =
-            //     File::open("test_data/from_zksync_era_to_ethereum_source.json").unwrap();
-
-            // let arbitration_data_file =
-            //     File::open("test_data/from_zksync_era_to_ethereum_dest.json").unwrap();
-
-            let data_reader = BufReader::new(arbitration_data_file);
-            let proof_str: Value = serde_json::from_reader(data_reader).unwrap();
-
-            let op = OriginalProof { task_id: H256::zero(), proof: proof_str.to_string() };
-            let constructor = op.clone().get_constructor_by_parse_proof();
-            scheduler_cache_srs_pk.lock().unwrap().update(constructor, 1);
-            scheduler_cache_srs_pk.lock().unwrap().cache_srs_pk_files();
+                let op = OriginalProof { task_id: H256::zero(), proof: proof_str.to_string() };
+                let constructor = op.clone().get_constructor_by_parse_proof();
+                scheduler_cache_srs_pk.lock().unwrap().update(constructor, 1);
+                scheduler_cache_srs_pk.lock().unwrap().cache_srs_pk_files();
+                info!(target: "app","Caching of srs and pk files has ended: {:?}",path);
+            }
         })
         .await
         .expect("cache srs pk should success");

@@ -14,7 +14,6 @@ use halo2_base::{
 #[cfg(feature = "halo2-axiom")]
 use snark_verifier_sdk::halo2::read_snark;
 use snark_verifier_sdk::Snark;
-use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::{
     collections::HashMap,

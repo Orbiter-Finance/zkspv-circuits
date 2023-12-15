@@ -4,7 +4,7 @@ use ethers_core::{
     types::{Address, H256, U256},
     utils::keccak256,
 };
-use halo2_base::QuantumCell::{Existing, self};
+use halo2_base::QuantumCell::{self, Existing};
 use halo2_base::{
     gates::{
         builder::{FlexGateConfigParams, MultiPhaseThreadBreakPoints},
@@ -34,6 +34,7 @@ pub mod helpers;
 #[cfg(feature = "aggregation")]
 pub mod scheduler;
 
+pub mod cache;
 pub mod errors;
 pub mod zk_provider;
 
@@ -43,12 +44,12 @@ pub type AssignedH256<F> = [AssignedValue<F>; 2]; // H256 as hi-lo (u128, u128)
 
 pub fn is_leaf_zero_pad(bytes: &Vec<u8>) -> bool {
     let zero_pad = vec![0u8; 32];
-    return bytes == &zero_pad; 
+    return bytes == &zero_pad;
 }
 
 pub fn get_zero_pad() -> Vec<u8> {
     let zero_pad = vec![0u8; 32];
-    return zero_pad; 
+    return zero_pad;
 }
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
@@ -214,15 +215,18 @@ pub fn get_merkle_mountain_range(leaves: &[H256], max_depth: usize) -> Vec<H256>
 
 // proof_leaf_index is the index of the leaf in `leaves` for which we want to generate a proof
 // leaves: [leaf_0, leaf_1,leaf_2,leaf_3], if we want the leaf_2 merkle proof, then the proof_leaf_index is 2
-// return 
+// return
 //      - root: the top root of the merkle tree
-//      - proof: the merkle proof from bottom to top, each element is the sibling of the leaf in the tree 
+//      - proof: the merkle proof from bottom to top, each element is the sibling of the leaf in the tree
 //      - proof_path: Vec<bool> from bottom to top, in each tree layer, if the leaf is on the left, then push false, otherwise push true
-pub fn keccak_tree_root_and_proof(mut leaves: Vec<Vec<u8>>, proof_leaf_index: u32) -> (Vec<u8>, Vec<Vec<u8>>, Vec<bool>) {
+pub fn keccak_tree_root_and_proof(
+    mut leaves: Vec<Vec<u8>>,
+    proof_leaf_index: u32,
+) -> (Vec<u8>, Vec<Vec<u8>>, Vec<bool>) {
     let depth = leaves.len().ilog2();
     assert_eq!(leaves.len(), 1 << depth);
     assert_eq!((leaves.len() >= (proof_leaf_index + 1).try_into().unwrap()), true);
-    let mut proof:Vec<Vec<u8>> = Vec::with_capacity(depth as usize);
+    let mut proof: Vec<Vec<u8>> = Vec::with_capacity(depth as usize);
     let mut proof_leaf_index = proof_leaf_index;
     let mut proof_path: Vec<bool> = Vec::with_capacity(depth as usize);
     for d in (0..depth).rev() {
@@ -239,16 +243,18 @@ pub fn keccak_tree_root_and_proof(mut leaves: Vec<Vec<u8>>, proof_leaf_index: u3
         }
     }
     (leaves[0].clone(), proof, proof_path)
-
 }
 
 // proof_leaf_index is the index of the leaf in `leaves` for which we want to generate a proof
 // when we constrcut the merkle tree, on each layer, when the number of leaves is odd, we will pad the leaves with zero leave, and hash with the last leaf, hash(leaf, zero_leaf) = leaf
-pub fn keccak_non_standard_merkle_tree_root_and_proof(mut leaves: Vec<Vec<u8>>, proof_leaf_index: u32) -> (Vec<u8>, Vec<Vec<u8>>, Vec<bool>){
+pub fn keccak_non_standard_merkle_tree_root_and_proof(
+    mut leaves: Vec<Vec<u8>>,
+    proof_leaf_index: u32,
+) -> (Vec<u8>, Vec<Vec<u8>>, Vec<bool>) {
     let mut proof: Vec<Vec<u8>> = Vec::new();
     let mut proof_path: Vec<bool> = Vec::new();
     let mut layer_length = leaves.len();
-    let mut track_proof_leave_index = proof_leaf_index.clone();    
+    let mut track_proof_leave_index = proof_leaf_index.clone();
     assert_eq!((leaves.len() >= (proof_leaf_index + 1).try_into().unwrap()), true);
 
     let pad_leaf = vec![0u8; 32];
@@ -265,13 +271,13 @@ pub fn keccak_non_standard_merkle_tree_root_and_proof(mut leaves: Vec<Vec<u8>>, 
                 proof_path.push(false);
                 push_flag += 1;
             } else if (i + 1 == track_proof_leave_index as usize) && (i + 1 < layer_length - 1) {
-                 // leaf_0, leaf_1, ... leaf_i, leaf_i+1, ... leaf_n
+                // leaf_0, leaf_1, ... leaf_i, leaf_i+1, ... leaf_n
                 // hash(leaf_i, leaf_i+1) path is right
                 proof.push(leaves[i].clone());
                 proof_path.push(true);
                 push_flag += 1;
             } else if (i + 1 == track_proof_leave_index as usize) && (i + 1 == layer_length - 1) {
-                // leaf_0, leaf_1, ... leaf_n-1, leaf_n 
+                // leaf_0, leaf_1, ... leaf_n-1, leaf_n
                 // hash(leaf_n-1, leaf_n) path is right
                 proof.push(leaves[i].clone());
                 proof_path.push(true);
@@ -284,12 +290,12 @@ pub fn keccak_non_standard_merkle_tree_root_and_proof(mut leaves: Vec<Vec<u8>>, 
                 push_flag += 1;
             } else if (i == track_proof_leave_index as usize) && (i == layer_length - 1) {
                 // leaf_0, leaf_1, ... leaf_n  i=n
-                // hash(leaf_n, leaf_n+1) path is left and pad zero leaf 
+                // hash(leaf_n, leaf_n+1) path is left and pad zero leaf
                 proof.push(get_zero_pad());
                 proof_path.push(false);
                 push_flag += 1;
             }
-            
+
             if i == layer_length - 1 {
                 // if the leaf is the last leaf, then we copy it to the top level
                 leaves[i / 2] = leaves[i].clone();
@@ -297,9 +303,9 @@ pub fn keccak_non_standard_merkle_tree_root_and_proof(mut leaves: Vec<Vec<u8>>, 
                 leaves[i / 2] = keccak256([(&leaves[i][..]), &leaves[i + 1][..]].concat()).to_vec();
             }
         }
-         // every layer can only push one proof
-         assert_eq!(push_flag, 1);
-         push_flag = 0;
+        // every layer can only push one proof
+        assert_eq!(push_flag, 1);
+        push_flag = 0;
         track_proof_leave_index = track_proof_leave_index / 2;
         layer_length = (layer_length + 1) / 2;
         if layer_length == 1 {
@@ -322,13 +328,13 @@ pub fn h256_tree_verify(root_hash: &H256, leaf: &H256, proof: &[H256], proof_pat
     assert_eq!(proof.len(), proof_path.len());
     for (proof, path) in proof.into_iter().zip(proof_path.into_iter()) {
         if *path == false {
-            if ! is_leaf_zero_pad(&proof) {
+            if !is_leaf_zero_pad(&proof) {
                 computed_root = keccak256([computed_root, proof].concat()).to_vec();
             } else {
                 computed_root = computed_root;
             }
         } else {
-            if ! is_leaf_zero_pad(&proof) {
+            if !is_leaf_zero_pad(&proof) {
                 computed_root = keccak256([proof, computed_root].concat()).to_vec();
             } else {
                 computed_root = computed_root;
@@ -338,18 +344,33 @@ pub fn h256_tree_verify(root_hash: &H256, leaf: &H256, proof: &[H256], proof_pat
     assert_eq!(root_hash, computed_root)
 }
 
-pub fn h256_non_standard_tree_root_and_proof(leaves: &[H256], proof_leaf_index: u32) -> (H256, Vec<H256>, Vec<bool>) {
+pub fn h256_non_standard_tree_root_and_proof(
+    leaves: &[H256],
+    proof_leaf_index: u32,
+) -> (H256, Vec<H256>, Vec<bool>) {
     assert!(!leaves.is_empty(), "leaves should not be empty");
-    assert!(proof_leaf_index <= (leaves.len() - 1).try_into().unwrap(), "proof_leaf_index should be less than leaves.len()");
-    let (root, proof, proof_path) = keccak_non_standard_merkle_tree_root_and_proof(leaves.iter().map(|leaf| leaf.as_bytes().to_vec()).collect() , proof_leaf_index);
+    assert!(
+        proof_leaf_index <= (leaves.len() - 1).try_into().unwrap(),
+        "proof_leaf_index should be less than leaves.len()"
+    );
+    let (root, proof, proof_path) = keccak_non_standard_merkle_tree_root_and_proof(
+        leaves.iter().map(|leaf| leaf.as_bytes().to_vec()).collect(),
+        proof_leaf_index,
+    );
     (H256::from_slice(&root), proof.iter().map(|p| H256::from_slice(&*p)).collect(), proof_path)
 }
 
-pub fn h256_tree_root_and_proof(leaves: &[H256], proof_leaf_index: u32) -> (H256, Vec<H256>, Vec<bool>) {
+pub fn h256_tree_root_and_proof(
+    leaves: &[H256],
+    proof_leaf_index: u32,
+) -> (H256, Vec<H256>, Vec<bool>) {
     assert!(!leaves.is_empty(), "leaves should not be empty");
     let depth = leaves.len().ilog2();
     assert_eq!(leaves.len(), 1 << depth);
-    let (root, proof, proof_path) = keccak_tree_root_and_proof(leaves.iter().map(|leaf| leaf.as_bytes().to_vec()).collect() , proof_leaf_index);
+    let (root, proof, proof_path) = keccak_tree_root_and_proof(
+        leaves.iter().map(|leaf| leaf.as_bytes().to_vec()).collect(),
+        proof_leaf_index,
+    );
     (H256::from_slice(&root), proof.iter().map(|p| H256::from_slice(&*p)).collect(), proof_path)
 }
 
@@ -401,7 +422,7 @@ pub fn encode_h256_to_field<F: Field>(hash: &H256) -> [F; 2] {
 pub fn dbg_merkle_layer(layer: &Vec<Vec<u8>>) {
     println!("merkle layer:");
     for i in 0..layer.len() {
-        println!("{}: {:?}", i,encode_u8_vec_to_h256(&layer[i]));
+        println!("{}: {:?}", i, encode_u8_vec_to_h256(&layer[i]));
     }
 }
 
@@ -417,8 +438,7 @@ pub fn encode_u8_vec_to_h256(bytes: &Vec<u8>) -> H256 {
     H256(repr)
 }
 
-
-// every leave containts 32 Fields, 
+// every leave containts 32 Fields,
 pub fn encode_merkle_tree_leaves_field_to_h256<F: Field>(fe: &[F]) -> H256 {
     assert_eq!(fe.len(), 32);
     let mut bytes = [0u8; 32];
@@ -426,9 +446,8 @@ pub fn encode_merkle_tree_leaves_field_to_h256<F: Field>(fe: &[F]) -> H256 {
     bytes[16..].copy_from_slice(&fe[1].to_bytes_le()[..16]);
     bytes.reverse();
     H256(bytes)
-
 }
- 
+
 pub fn decode_field_to_h256<F: Field>(fe: &[F]) -> H256 {
     assert_eq!(fe.len(), 2);
     let mut bytes = [0u8; 32];
@@ -449,12 +468,14 @@ pub fn encode_h256_to_bytes_field<F: Field>(input: H256) -> Vec<F> {
     let mut bytes = input.as_bytes().to_vec();
     let mut repr = [0u8; 32];
     repr.copy_from_slice(&bytes);
-    bytes.into_iter().map(|b| {
-        let mut repr = [0u8; 32];
-        repr[0] = b;
-        F::from_bytes_le(&repr)
-    }).collect()
-   
+    bytes
+        .into_iter()
+        .map(|b| {
+            let mut repr = [0u8; 32];
+            repr[0] = b;
+            F::from_bytes_le(&repr)
+        })
+        .collect()
 }
 
 pub fn encode_merkle_path_to_field<F: Field>(input: &[bool]) -> Vec<F> {
@@ -744,7 +765,7 @@ pub fn concat_two_hash_bytes_string_to_one<F: ScalarField>(
     // range: &RangeChip<F>,
     bytes_a: &[AssignedValue<F>],
     bytes_b: &[AssignedValue<F>],
-) -> Vec<AssignedValue<F>>{
+) -> Vec<AssignedValue<F>> {
     // let total_len = bytes_a.len() + bytes_b.len();
     // let a_len = bytes_a.len();
     // let b_len = bytes_a.len();
