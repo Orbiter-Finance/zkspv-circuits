@@ -4,7 +4,7 @@
     "num_rlc_columns": 1,
     "num_range_advice": [
       2,
-      1,
+      2,
       0
     ],
     "num_lookup_advice": [
@@ -22,7 +22,9 @@
       [
         1048466
       ],
-      [],
+      [
+        1048466
+      ],
       []
     ],
     "rlc": []

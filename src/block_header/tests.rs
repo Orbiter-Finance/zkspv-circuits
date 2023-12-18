@@ -5,8 +5,11 @@ use crate::{
 };
 
 use super::*;
+use crate::providers::get_block_rlp;
+use crate::util::helpers::get_provider;
 use ark_std::{end_timer, start_timer};
 use ethers_core::utils::hex::FromHex;
+use ethers_providers::Middleware;
 use halo2_base::{
     halo2_proofs::{
         dev::MockProver,
@@ -31,6 +34,7 @@ use std::{
     fs::File,
 };
 use test_log::test;
+use tokio::runtime::Runtime;
 
 fn block_header_test_circuit<F: Field>(
     mut builder: RlcThreadBuilder<F>,
@@ -356,6 +360,26 @@ mod aggregation {
             true,
         );
     }
+}
+
+#[test]
+pub fn test_sepolia_header_mock() {
+    let params = EthConfigPinning::from_path("configs/tests/one_block.json").params;
+    set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
+    let network = Network::Ethereum(EthereumNetwork::Sepolia);
+    let provider = get_provider(&network);
+    let rt = Runtime::new().unwrap();
+    let block_element = rt.block_on(provider.get_block(0x4ae7b8)).unwrap().unwrap();
+    let mut input_bytes = get_block_rlp(&block_element);
+    println!("len:{:?}", input_bytes.len());
+    let config = get_block_header_config(&network);
+    let k = params.degree;
+    input_bytes.resize(config.block_header_rlp_max_bytes, 0);
+    println!("len:{:?}", input_bytes.len());
+
+    let circuit =
+        block_header_test_circuit::<Fr>(RlcThreadBuilder::mock(), vec![input_bytes], network, None);
+    MockProver::run(k, &circuit, vec![vec![]]).unwrap().assert_satisfied();
 }
 
 #[test]

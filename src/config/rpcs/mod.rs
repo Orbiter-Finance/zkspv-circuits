@@ -4,6 +4,7 @@ use crate::config::setting::Settings;
 pub struct Ethereum {
     pub mainnet: String,
     pub goerli: String,
+    pub sepolia: String,
 }
 
 #[derive(Clone, Debug)]
@@ -22,6 +23,7 @@ pub struct Optimism {
 pub struct ZksyncEra {
     pub mainnet: String,
     pub goerli: String,
+    pub sepolia: String,
 }
 
 #[derive(Clone, Debug)]
@@ -38,6 +40,7 @@ pub fn get_rpcs_config() -> RPCS {
         ethereum: Ethereum {
             mainnet: setting.rpcs.mainnet.clone(),
             goerli: setting.rpcs.goerli.clone(),
+            sepolia: setting.rpcs.sepolia.clone(),
         },
         arbitrum: Arbitrum {
             mainnet: setting.rpcs.arbitrum_mainnet.clone(),
@@ -50,6 +53,7 @@ pub fn get_rpcs_config() -> RPCS {
         zksync_era: ZksyncEra {
             mainnet: setting.rpcs.zksync_mainnet.clone(),
             goerli: setting.rpcs.zksync_goerli.clone(),
+            sepolia: setting.rpcs.zksync_sepolia.clone(),
         },
     }
 }

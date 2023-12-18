@@ -17,6 +17,7 @@ pub struct Api {
 pub struct Rpcs {
     pub mainnet: String,
     pub goerli: String,
+    pub sepolia: String,
 
     pub arbitrum_mainnet: String,
     pub arbitrum_goerli: String,
@@ -26,6 +27,7 @@ pub struct Rpcs {
 
     pub zksync_mainnet: String,
     pub zksync_goerli: String,
+    pub zksync_sepolia: String,
 }
 #[derive(Clone, Debug, Deserialize)]
 pub struct Settings {

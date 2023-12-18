@@ -32,7 +32,7 @@ const RECEIPT_FIELDS_NUM: usize = 4;
 const RECEIPT_LOGS_BLOOM_MAX_LEN: usize = 256;
 
 const RECEIPT_DATA_MAX_BYTES: usize = 128;
-const RECEIPT_LOG_MAX_NUM: usize = 6;
+const RECEIPT_LOG_MAX_NUM: usize = 15;
 const RECEIPT_TOPIC_MAX_NUM: usize = 4;
 const RECEIPT_LOG_MAX_LEN: usize =
     3 + 21 + 3 + 33 * RECEIPT_TOPIC_MAX_NUM + 3 + RECEIPT_DATA_MAX_BYTES + 1;

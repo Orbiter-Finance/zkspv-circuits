@@ -157,6 +157,33 @@ pub fn get_block_header_config(network: &Network) -> BlockHeaderConfig {
                     header_fields_max_bytes,
                 ))
             }
+            EthereumNetwork::Sepolia => {
+                let extra_data_max_bytes = 32;
+                let header_fields_max_bytes = vec![
+                    32,
+                    32,
+                    20,
+                    32,
+                    32,
+                    32,
+                    256,
+                    7,
+                    4,
+                    4,
+                    4,
+                    4,
+                    extra_data_max_bytes,
+                    32,
+                    8,
+                    6,
+                    32,
+                ];
+                Ok(BlockHeaderConfig::new(
+                    extra_data_max_bytes,
+                    block_header_rlp_min_bytes,
+                    header_fields_max_bytes,
+                ))
+            }
         },
         Network::Arbitrum(network) => match network {
             ArbitrumNetwork::Mainnet => {
