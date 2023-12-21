@@ -25,4 +25,21 @@ impl ChallengesStorage {
     pub fn get_proof_by_challenge_id(&self, challenge_id: H256) -> Result<Option<Vec<u8>>, Error> {
         self.storage.get(challenge_id)
     }
+
+    /// if key is exist,but the value is empty, return true;
+    ///
+    /// if key is exist,but the value isn't empty, return false;
+    ///
+    /// if key isn't exist,return false;
+    pub fn proof_is_empty(&self, challenge_id: H256) -> bool {
+        let challenge_proof = self.get_proof_by_challenge_id(challenge_id);
+        match challenge_proof {
+            Ok(Some(value)) => return if value.is_empty() { true } else { false },
+            Ok(None) => return false,
+            Err(e) => {
+                error!(target: "app","Database logic problem: {:?}",e)
+            }
+        }
+        return false;
+    }
 }

@@ -47,13 +47,15 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
         H256::from_str("0x2ec2e18fd25dbf51e0962f9097d0a484bc24e566e48463eecd2eafea6cb62363")
             .unwrap();
     let ebc_current_rule_root =
-        H256::from_str("0xb463b593a4a1543b637326d0a5673c8432aaa127f9bbf7e3088ef6ae041097c3")
+        H256::from_str("0x2a8970e9042e59a9aeb9f533b3350295c4ecacd8087acc69ba0dd5271264ca2b")
             .unwrap(); // should be consistent with the value corresponding to the slot
-    let ebc_current_rule_value = Vec::from_hex("f84005820118010180808502540be4008502540be40089056bc75e2d6310000089056bc75e2d631000008502540be4008504a817c800010183093a8083093a80201f").unwrap();
+    let ebc_current_rule_value = Vec::from_hex("f83d05820118010180808504a817c8008504a817c80089056bc75e2d6310000089056bc75e2d63100000839896808401312d00010183093a8083093a802a31").unwrap();
 
-    let pre_proof_one_bytes = Vec::from_hex("f866a1202ec2e18fd25dbf51e0962f9097d0a484bc24e566e48463eecd2eafea6cb62363b842f84005820118010180808502540be4008502540be40089056bc75e2d6310000089056bc75e2d631000008502540be4008504a817c800010183093a8083093a80201f").unwrap();
+    let pre_proof_one_bytes = Vec::from_hex("f8518080a088620f0de6bec9c69bf686f518a9f8ea09a72470662e5436c6d412c12724798e808080808080a0b7018740411e5c20612639587dd1f7072d3002b76dbdba3426247f63c310cd1880808080808080").unwrap();
+    let pre_proof_two_bytes = Vec::from_hex("f862a03ec2e18fd25dbf51e0962f9097d0a484bc24e566e48463eecd2eafea6cb62363b83ff83d05820118010180808504a817c8008504a817c80089056bc75e2d6310000089056bc75e2d63100000839896808401312d00010183093a8083093a802a31").unwrap();
 
-    let ebc_current_rule_merkle_proof = vec![Bytes::from(pre_proof_one_bytes)];
+    let ebc_current_rule_merkle_proof =
+        vec![Bytes::from(pre_proof_one_bytes), Bytes::from(pre_proof_two_bytes)];
 
     let ebc_current_rule_params = EbcRuleParams {
         ebc_rule_key: ebc_current_rule_key,
@@ -64,13 +66,13 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
     };
 
     //slots:
-    let mdc_contract_address = "0xbe81b9b0f280a51765e2be5aac4f8c1e83a7328f".parse().unwrap();
-    let manage_contract_address = "0xd7fc431bb74bd1c4c5493719f290f53d65142c1e".parse().unwrap();
+    let mdc_contract_address = "0xea5b70509e5bcbd021749db8edecfd14114bcab5".parse().unwrap();
+    let manage_contract_address = "0x76fc39362ef66dad742791bde738b9b050c3cbf5".parse().unwrap();
     let mdc_rule_root_slot =
-        H256::from_str("0x0a6b7347e59a23833f26d008b8a4d5849480313e50796a6eb192a53cda2fc7d5")
+        H256::from_str("0x0477bf5c04c1a0a0050cfce51bcc843c625b57d17a704397e1c68b51eb610fe0")
             .unwrap();
     let mdc_rule_version_slot =
-        H256::from_str("0x0a6b7347e59a23833f26d008b8a4d5849480313e50796a6eb192a53cda2fc7d6")
+        H256::from_str("0x0477bf5c04c1a0a0050cfce51bcc843c625b57d17a704397e1c68b51eb610fe1")
             .unwrap();
     let mdc_rule_enable_time_slot =
         H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000000")
@@ -97,13 +99,13 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
     };
 
     let manage_source_chain_info_slot =
-        H256::from_str("0xb98b78633099fa36ed8b8680c4f8092689e1e04080eb9cbb077ca38a14d7e385")
+        H256::from_str("0xe11a92942536b845da9a1f431f37793176a4b22e5871c079dbb83bc320163351")
             .unwrap();
     let manage_source_chain_mainnet_token_info_slot =
-        H256::from_str("0x820eca3b68a924cd1c2962e3cd26e478c5e43b85c63554221c513ac78ff3a5f1")
+        H256::from_str("0xb7622ec464467933e9d8ba1aabad45f27773c64c309a64506e09f254c7298cda")
             .unwrap();
     let manage_dest_chain_mainnet_token_slot =
-        H256::from_str("0xf928a0ed87ea37f2e28392f64f84061cd2e9765b0aab413688e1386541db1a94")
+        H256::from_str("0xd6f07bc56892673add0a9596d9aa3acbe2c203735629965b8e871dfd748c940e")
             .unwrap();
     let manage_challenge_user_ratio_slot =
         H256::from_str("0x0000000000000000000000000000000000000000000000000000000000000006")
@@ -123,7 +125,7 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
     };
     let current_single_block_contracts_storage_constructor =
         SingleBlockContractsStorageConstructor {
-            block_number: 10092192,
+            block_number: 4915533,
             block_contracts_storage: vec![
                 current_mdc_contract_storage_constructor,
                 current_manage_contract_storage_constructor,
@@ -138,7 +140,7 @@ pub fn get_test_circuit(network: Network, block_number: u32) -> ObContractsStora
         storage_pf_max_depth: 8,
     };
     let next_single_block_contracts_storage_constructor = SingleBlockContractsStorageConstructor {
-        block_number: 10092468,
+        block_number: 4915535,
         block_contracts_storage: vec![next_mdc_contract_storage_constructor],
     };
 
@@ -159,7 +161,7 @@ pub fn test_contract_mdc_storage() -> Result<(), Box<dyn std::error::Error>> {
     set_var("ETH_CONFIG_PARAMS", serde_json::to_string(&params).unwrap());
     let k = params.degree;
 
-    let input = get_test_circuit(Network::Ethereum(EthereumNetwork::Goerli), 9927633);
+    let input = get_test_circuit(Network::Ethereum(EthereumNetwork::Sepolia), 9927633);
     let circuit = input.create_circuit(RlcThreadBuilder::mock(), None);
     MockProver::run(k, &circuit, vec![circuit.instance()]).unwrap().assert_satisfied();
     Ok(())

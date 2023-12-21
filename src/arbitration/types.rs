@@ -4,7 +4,7 @@ use crate::server::OriginalProof;
 use crate::storage::contract_storage::util::ObContractStorageConstructor;
 
 use crate::arbitration::network_pairs::NetworkPairs;
-use crate::{get_network_from_chain_id, Network};
+use crate::get_network_from_chain_id;
 use ethers_core::types::{Address, Bytes, H256};
 use hex::FromHex;
 use serde::{Deserialize, Serialize};
