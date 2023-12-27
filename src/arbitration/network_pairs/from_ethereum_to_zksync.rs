@@ -66,13 +66,6 @@ pub fn parse_from_ethereum_to_zksync(
             STORAGE_PF_MAX_DEPTH,
         );
 
-        let manage_contract_storage_current_constructor = ObContractStorageConstructor::new(
-            storage_input.manage_address,
-            storage_input.contracts_slots_hash[5..].to_vec(),
-            ACCOUNT_PF_MAX_DEPTH,
-            STORAGE_PF_MAX_DEPTH,
-        );
-
         let mdc_contract_storage_next_constructor = ObContractStorageConstructor::new(
             storage_input.mdc_address,
             storage_input.contracts_slots_hash[1..3].to_vec(),
@@ -80,23 +73,48 @@ pub fn parse_from_ethereum_to_zksync(
             STORAGE_PF_MAX_DEPTH,
         );
 
-        let single_block_contracts_storage_constructor_current =
+        let manage_contract_storage_current_constructor = ObContractStorageConstructor::new(
+            storage_input.manage_address,
+            storage_input.contracts_slots_hash[5..].to_vec(),
+            ACCOUNT_PF_MAX_DEPTH,
+            STORAGE_PF_MAX_DEPTH,
+        );
+
+        let manager_contract_storage_next_constructor = ObContractStorageConstructor::new(
+            storage_input.manage_address,
+            storage_input.contracts_slots_hash[5..6].to_vec(),
+            ACCOUNT_PF_MAX_DEPTH,
+            STORAGE_PF_MAX_DEPTH,
+        );
+
+        let mdc_single_block_contracts_storage_constructor_current =
             SingleBlockContractsStorageConstructor::new(
                 storage_input.mdc_current_enable_time_block_number as u32,
-                vec![
-                    mdc_contract_storage_current_constructor,
-                    manage_contract_storage_current_constructor,
-                ],
+                vec![mdc_contract_storage_current_constructor],
             );
-        let single_block_contracts_storage_constructor_next =
+        let mdc_single_block_contracts_storage_constructor_next =
             SingleBlockContractsStorageConstructor::new(
                 storage_input.mdc_next_enable_time_block_number as u32,
                 vec![mdc_contract_storage_next_constructor],
             );
+
+        let manager_single_block_contracts_storage_constructor_current =
+            SingleBlockContractsStorageConstructor::new(
+                storage_input.manager_current_enable_time_block_number as u32,
+                vec![manage_contract_storage_current_constructor],
+            );
+        let manager_single_block_contracts_storage_constructor_next =
+            SingleBlockContractsStorageConstructor::new(
+                storage_input.manager_next_enable_time_block_number as u32,
+                vec![manager_contract_storage_next_constructor],
+            );
+
         let ob_contracts_constructor = MultiBlocksContractsStorageConstructor::new(
             vec![
-                single_block_contracts_storage_constructor_current,
-                single_block_contracts_storage_constructor_next,
+                mdc_single_block_contracts_storage_constructor_current,
+                mdc_single_block_contracts_storage_constructor_next,
+                manager_single_block_contracts_storage_constructor_current,
+                manager_single_block_contracts_storage_constructor_next,
             ],
             EbcRuleParams::new(
                 H256::from_slice(&*storage_input.mdc_current_rule.key.clone()),

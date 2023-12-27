@@ -156,15 +156,22 @@ impl EthPreCircuit for ObContractsStorageCircuit {
             input,
             &self.block_header_config,
         );
+        // digests[current mdc,next mdc,current manage]
 
-        let only_one_digest = digests.multi_blocks_contracts_digest[0].clone();
+        let current_mdc_digest = digests.multi_blocks_contracts_digest[0].clone();
+        let current_manager_digest = digests.multi_blocks_contracts_digest[2].clone();
 
-        let slots_key = only_one_digest
-            .clone()
-            .slots_values
-            .into_iter()
-            .map(|(slot, value)| slot)
-            .collect_vec();
+        // let mut slots_key = current_mdc_digest
+        //     .clone()
+        //     .slots_values
+        //     .into_iter()
+        //     .map(|(slot, value)| slot)
+        //     .collect_vec();
+        //
+        // // load manager contract slots
+        // slots_key.extend(
+        //     current_manager_digest.slots_values.into_iter().map(|(slot, value)| slot).collect_vec(),
+        // );
 
         /**
         1. mdc_current_rule_root,
@@ -172,15 +179,21 @@ impl EthPreCircuit for ObContractsStorageCircuit {
         3. mdc_current_rule_enable_time,
         4. mdc_current_column_array_hash,
         5. mdc_current_response_makers_hash,
-        6. manage_current_source_chain_info,
-        7. manage_current_source_chain_mainnet_token_info,
-        8. manage_current_dest_chain_mainnet_token,
-        9. manage_current_challenge_user_ratio,
-        10. mdc_next_rule_version,
-        11. mdc_next_rule_enable_time
+        6. mdc_next_rule_version,
+        7. mdc_next_rule_enable_time
+        8. manager_current_version_and_enable_time,
+        9. manager_current_source_chain_info,
+        10. manager_current_source_chain_mainnet_token_info,
+        11. manager_current_dest_chain_mainnet_token,
+        12. manager_current_challenge_user_ratio,
+        13. manager_next_version_and_enable_time,
         */
-        let slots_value_into_public =
-            vec![vec![true, false, true, true, true, true, true, true, true], vec![false, true]];
+        let slots_value_into_public = vec![
+            vec![true, false, true, true, true],
+            vec![false, true],
+            vec![true, true, true, true, true],
+            vec![true],
+        ];
 
         let slots_values_public = digests
             .multi_blocks_contracts_digest
@@ -211,10 +224,11 @@ impl EthPreCircuit for ObContractsStorageCircuit {
             .collect_vec();
 
         // load contract address and slots value
-        let assigned_instances: Vec<_> = only_one_digest
+        let assigned_instances: Vec<_> = current_mdc_digest
             .contracts_address
             .into_iter()
-            .chain(slots_key.into_iter().flat_map(|slot| slot.into_iter()))
+            .chain(current_manager_digest.contracts_address.into_iter())
+            // .chain(slots_key.into_iter().flat_map(|slot| slot.into_iter()))
             .chain(slots_value.into_iter().flat_map(|value| value))
             .chain(digests.ebc_rule_hash.clone().into_iter())
             // Todo: Since the current track block circuit and this circuit are separated, it is necessary to compare the blockhash temporarily.
@@ -230,26 +244,25 @@ impl EthPreCircuit for ObContractsStorageCircuit {
         // For now this circuit is going to constrain that all slots are occupied. We can also create a circuit that exposes the bitmap of slot_is_empty
         {
             let ctx = builder.gate_builder.main(FIRST_PHASE);
-            assert_eq!(digests.multi_blocks_contracts_digest.len(), 2);
+            assert_eq!(digests.multi_blocks_contracts_digest.len(), 4);
 
-            for (current_single_block_contracts_digest, next_single_block_contracts_digest) in
-                digests
-                    .multi_blocks_contracts_digest
-                    .iter()
-                    .zip(digests.multi_blocks_contracts_digest.iter().skip(1))
+            // Check mdc config
             {
+                let current_mdc_contract_digest = digests.multi_blocks_contracts_digest[0].clone();
+                let next_mdc_contract_digest = digests.multi_blocks_contracts_digest[1].clone();
+
                 // Check mdc_current_rule_block_number and mdc_next_rule_block_number, that is, mdc_current_rule_block_number must be less than mdc_next_rule_block_number.
                 range.check_less_than(
                     ctx,
-                    current_single_block_contracts_digest.block_number,
-                    next_single_block_contracts_digest.block_number,
+                    current_mdc_contract_digest.block_number,
+                    next_mdc_contract_digest.block_number,
                     8 * 4,
                 );
 
                 // Check mdc_current_rule_version and mdc_next_rule_version, that is, the difference between mdc_next_rule_version - mdc_current_rule_version must be less than or equal to 1.
-                let current_version = current_single_block_contracts_digest.slots_values[1].1;
+                let current_version = current_mdc_contract_digest.slots_values[1].1;
                 let current_version = current_version.as_slice()[1];
-                let next_version = next_single_block_contracts_digest.slots_values[0].1;
+                let next_version = next_mdc_contract_digest.slots_values[0].1;
                 let next_version = next_version.as_slice()[1];
 
                 let diff_version = chip.gate().sub(ctx, next_version, current_version);
@@ -258,12 +271,34 @@ impl EthPreCircuit for ObContractsStorageCircuit {
                 range.check_less_than(ctx, diff_version, Constant(Fr::from(2)), 8);
             }
 
+            // Check manager config
+
+            // {
+            //     let current_manage_contract_digest =
+            //         digests.multi_blocks_contracts_digest[2].clone();
+            //     let next_manage_contract_digest = digests.multi_blocks_contracts_digest[3].clone();
+            //
+            //     let current_version = current_manage_contract_digest.slots_values[0].1;
+            //     let current_version = current_version.as_slice()[1];
+            //     let next_version = next_manage_contract_digest.slots_values[0].1;
+            //     let next_version = next_version.as_slice()[1];
+            //     println!("current_version:{:?}", current_version);
+            //     println!("next_version:{:?}", next_version);
+            //
+            //     let diff_version = chip.gate().sub(ctx, next_version, current_version);
+            //
+            //     println!("diff_version:{:?}", diff_version);
+            //
+            //     // diff_version <= 1
+            //     range.check_less_than(ctx, diff_version, Constant(Fr::from(2)), 8);
+            // }
+
             for digest in digests.multi_blocks_contracts_digest {
                 for address_is_empty in digest.address_is_empty {
                     range.gate.assert_is_const(ctx, &address_is_empty, &Fr::zero());
                 }
 
-                // For Mdc and Mange contracts, some values can be empty, so it is not determined whether the slot is already occupied.
+                // For Mdc and Manger contracts, some values can be empty, so it is not determined whether the slot is already occupied.
 
                 // for slots_is_empty in digest.slots_is_empty {
                 //     for slot_is_empty in slots_is_empty {

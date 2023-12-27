@@ -1,15 +1,15 @@
 {
   "params": {
-    "degree": 22,
+    "degree": 18,
     "num_rlc_columns": 1,
     "num_range_advice": [
-      4,
-      2,
+      1,
+      0,
       0
     ],
     "num_lookup_advice": [
-      1,
-      1,
+      0,
+      0,
       0
     ],
     "num_fixed": 1,
@@ -19,14 +19,8 @@
   },
   "break_points": {
     "gate": [
-      [
-        4194192,
-        4194194,
-        4194194
-      ],
-      [
-        4194193
-      ],
+      [],
+      [],
       []
     ],
     "rlc": []
