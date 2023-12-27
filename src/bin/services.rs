@@ -34,7 +34,7 @@ async fn main() {
             let cache = CacheConfig::from_reader("configs/cache/cache.json");
             for path in cache.list {
                 info!(target: "app","Start caching srs and pk files: {:?}",path);
-                let arbitration_data_file = File::open(path).unwrap();
+                let arbitration_data_file = File::open(path.clone()).unwrap();
                 let data_reader = BufReader::new(arbitration_data_file);
                 let proof_str: Value = serde_json::from_reader(data_reader).unwrap();
 

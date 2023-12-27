@@ -6,13 +6,13 @@ internal_host = "0.0.0.0"
 internal_port = 3030
 
 [rpcs]
-mainnet = "https://eth-mainnet.g.alchemy.com/v2/y0S4FG_c5sVLGgF0ny14hNjw0c6DDySz"
-goerli = "https://eth-goerli.g.alchemy.com/v2/HOfCWPxkquxmcROM7XqLmREJIRZSK8lf"
+mainnet = "https://eth-mainnet.g.alchemy.com/v2/W2N6WVmiWkn9GFAMA_7jiPMSEZpy03z2"
+goerli = "https://eth-goerli.g.alchemy.com/v2/PI7xh9fOozyT_emdiXibGDCi6M4QU6fv"
 
-arbitrum_mainnet = "https://arb-mainnet.g.alchemy.com/v2/zGs7et8HqZ7gY35zI1CbIwYmhqTkcwUX"
+arbitrum_mainnet = "https://arb-mainnet.g.alchemy.com/v2/HPr7VZ5qSQ5JvZQ7N8goM7s01tUTx9_J"
 arbitrum_goerli = "https://arb-goerli.g.alchemy.com/v2/yKCEaSWa9llIeVNAp6NYivWNCD5suKU7"
 
-optimism_mainnet = "https://opt-mainnet.g.alchemy.com/v2/WXDL9aUj8ii5SZYdFIzoTCQnGMtMwbWJ"
+optimism_mainnet = "https://opt-mainnet.g.alchemy.com/v2/aqgrBJtQr7hIAJIRufiWRsZETHjoHdih"
 optimism_goerli = "https://opt-goerli.g.alchemy.com/v2/ChkRlZzMrEsYeffOEqPaA2lIuL7SMbTv"
 
 zksync_mainnet = "https://mainnet.era.zksync.io"
