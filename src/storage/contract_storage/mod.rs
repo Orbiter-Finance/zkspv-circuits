@@ -161,13 +161,15 @@ impl EthPreCircuit for ObContractsStorageCircuit {
         let current_mdc_digest = digests.multi_blocks_contracts_digest[0].clone();
         let current_manager_digest = digests.multi_blocks_contracts_digest[2].clone();
 
-        // let mut slots_key = current_mdc_digest
-        //     .clone()
-        //     .slots_values
-        //     .into_iter()
-        //     .map(|(slot, value)| slot)
-        //     .collect_vec();
-        //
+        let slots_key = current_mdc_digest
+            .clone()
+            .slots_values
+            .into_iter()
+            .map(|(slot, value)| slot)
+            .collect_vec();
+
+        let public_slot = slots_key[0];
+
         // // load manager contract slots
         // slots_key.extend(
         //     current_manager_digest.slots_values.into_iter().map(|(slot, value)| slot).collect_vec(),
@@ -228,7 +230,7 @@ impl EthPreCircuit for ObContractsStorageCircuit {
             .contracts_address
             .into_iter()
             .chain(current_manager_digest.contracts_address.into_iter())
-            // .chain(slots_key.into_iter().flat_map(|slot| slot.into_iter()))
+            .chain(public_slot.into_iter())
             .chain(slots_value.into_iter().flat_map(|value| value))
             .chain(digests.ebc_rule_hash.clone().into_iter())
             // Todo: Since the current track block circuit and this circuit are separated, it is necessary to compare the blockhash temporarily.
