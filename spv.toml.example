@@ -8,6 +8,7 @@ internal_port = 3030
 [rpcs]
 mainnet = ""
 goerli = ""
+sepolia = ""
 
 arbitrum_mainnet = ""
 arbitrum_goerli = ""
@@ -17,3 +18,4 @@ optimism_goerli = ""
 
 zksync_mainnet = ""
 zksync_goerli = ""
+zksync_sepolia = ""

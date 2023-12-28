@@ -598,7 +598,7 @@ impl<'chip, F: Field> EthBlockTransactionChip<F> for EthChip<'chip, F> {
             for i in 0..CALLDATA_BYTES_LEN - 1 {
                 let val_byte = self.gate().select(ctx, calldata[i + 1], calldata[i], zero);
 
-                if i >= 0 && i <= FUNCTION_SELECTOR_BYTES_LEN - 1 {
+                if i <= FUNCTION_SELECTOR_BYTES_LEN - 1 {
                     let byte_is_equal =
                         self.gate().is_equal(ctx, calldata[i], function_selector[i]);
                     is_function_selector =

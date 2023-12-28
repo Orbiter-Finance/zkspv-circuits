@@ -26,10 +26,10 @@ async fn main() {
     init_log();
     let args = Cli::parse();
     let integration = Integration::new();
-    let scheduler_cache_srs_pk = integration.scheduler.clone();
-    let scheduler_running = integration.scheduler.clone();
     if args.cache_srs_pk {
         info!(target: "app","Start caching srs and pk files");
+
+        let scheduler_cache_srs_pk = integration.scheduler.clone();
         task::spawn_blocking(move || {
             let cache = CacheConfig::from_reader("configs/cache/cache.json");
             for path in cache.list {
@@ -40,8 +40,12 @@ async fn main() {
 
                 let op = OriginalProof { task_id: H256::zero(), proof: proof_str.to_string() };
                 let constructor = op.clone().get_constructor_by_parse_proof();
-                scheduler_cache_srs_pk.lock().unwrap().update(constructor, 1);
-                scheduler_cache_srs_pk.lock().unwrap().cache_srs_pk_files();
+                {
+                    let mut scheduler = scheduler_cache_srs_pk.lock().unwrap();
+                    scheduler.update(constructor, 1);
+                    scheduler.cache_srs_pk_files();
+                    scheduler.get_calldata(args.generate_smart_contract);
+                }
                 info!(target: "app","Caching of srs and pk files has ended: {:?}",path);
             }
         })
@@ -60,13 +64,16 @@ async fn main() {
 
     let execute_tasks = task::spawn(async move {
         while let original_proof = rx.recv().await {
-            let scheduler_running = scheduler_running.clone();
-            let challenge_storage_clone = integration.storage.clone();
+            let scheduler_running = integration.scheduler.clone();
+            let challenge_storage = integration.storage.clone();
             let challenge = Arc::new(Mutex::new(Challenge::default()));
             let challenge_scheduler = challenge.clone();
             let scheduler_result = task::spawn_blocking(move || {
-                challenge_scheduler.lock().unwrap().update_challenge_id(original_proof.clone().unwrap().task_id);
-                info!(target: "app","Start generating proof for Challenge: {:?}",original_proof.clone().unwrap().task_id);
+                let challenge_id = original_proof.clone().unwrap().task_id;
+                {
+                    challenge_scheduler.lock().unwrap().update_challenge_id(challenge_id);
+                }
+                info!(target: "app","Start generating proof for Challenge: {:?}",challenge_id);
 
                 // clear
                 let mut clear = Command::new("sh")
@@ -75,8 +82,11 @@ async fn main() {
                     .expect("Failed to execute command");
                 let _ = clear.wait();
                 let constructor = original_proof.clone().unwrap().get_constructor_by_parse_proof();
-                scheduler_running.lock().unwrap().update(constructor, 1);
-                scheduler_running.lock().unwrap().get_calldata(args.generate_smart_contract)
+                {
+                    let mut scheduler = scheduler_running.lock().unwrap();
+                    scheduler.update(constructor, 1);
+                    scheduler.get_calldata(args.generate_smart_contract)
+                }
             })
             .await;
 
@@ -93,13 +103,16 @@ async fn main() {
                 }
             }
 
-            let storage = challenge_storage_clone.lock().unwrap();
-            let challenge = challenge.lock().unwrap();
+            {
+                let storage = challenge_storage.lock().unwrap();
+                let challenge = challenge.lock().unwrap();
 
-            storage
-                .storage_challenge_proof(challenge.challenge_id, challenge.proof.clone())
-                .expect("save success");
-            info!(target: "app","Storage Challenge Prove Success: {:?}",challenge.challenge_id);
+                storage
+                    .storage_challenge_proof(challenge.challenge_id, challenge.proof.clone())
+                    .expect("save success");
+
+                info!(target: "app","Storage Challenge Prove Success: {:?}",challenge.challenge_id);
+            }
         }
     });
 

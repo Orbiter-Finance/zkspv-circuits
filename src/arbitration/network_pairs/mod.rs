@@ -2,7 +2,6 @@ use crate::arbitration::helper::FinalAssemblyConstructor;
 use crate::arbitration::network_pairs::from_ethereum_to_zksync::parse_from_ethereum_to_zksync;
 use crate::arbitration::network_pairs::from_zksync_to_ethereum::parse_from_zksync_to_ethereum;
 use crate::arbitration::types::{BatchBlocksInput, ObContractStorageInput, TransactionInput};
-use crate::util::errors::{ErrorType, COMMIT_TRANSACTION_IS_EMPTY};
 use crate::Network;
 use serde::{Deserialize, Serialize};
 
@@ -57,10 +56,10 @@ impl NetworkPairs {
     pub fn get_details(&self) -> (Network, Network, bool) {
         match self {
             NetworkPairs::FromEthereumToZkSync(from_network, to_network, is_source) => {
-                (from_network.clone(), to_network.clone(), *is_source)
+                (from_network.clone(), to_network.clone(), is_source.clone())
             }
             NetworkPairs::FromZkSyncToEthereum(from_network, to_network, is_source) => {
-                (from_network.clone(), to_network.clone(), *is_source)
+                (from_network.clone(), to_network.clone(), is_source.clone())
             }
         }
     }

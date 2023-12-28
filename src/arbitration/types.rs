@@ -4,7 +4,7 @@ use crate::server::OriginalProof;
 use crate::storage::contract_storage::util::ObContractStorageConstructor;
 
 use crate::arbitration::network_pairs::NetworkPairs;
-use crate::{get_network_from_chain_id, Network};
+use crate::get_network_from_chain_id;
 use ethers_core::types::{Address, Bytes, H256};
 use hex::FromHex;
 use serde::{Deserialize, Serialize};
@@ -48,9 +48,13 @@ pub struct ObContractStorageInput {
     pub mdc_next_enable_time_block_number: u64,
     #[serde(rename(deserialize = "mdcCurrentRuleProof"), skip)]
     pub mdc_current_rule: MerkleProof,
+    #[serde(rename(deserialize = "managerCurrentEnableTimeBlockNumber"))]
+    pub manager_current_enable_time_block_number: u64,
+    #[serde(rename(deserialize = "managerNextEnableTimeBlockNumber"))]
+    pub manager_next_enable_time_block_number: u64,
     /// see [`ObContractStorageConstructor`]
     #[serde(rename(deserialize = "contractsSlotsHash"))]
-    pub contracts_slots_hash: [H256; 9],
+    pub contracts_slots_hash: [H256; 10],
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -36,6 +36,7 @@ pub fn get_provider(network: &Network) -> Provider<RetryClient<Http>> {
         Network::Ethereum(ethereum_network) => match ethereum_network {
             EthereumNetwork::Mainnet => rpcs.ethereum.mainnet,
             EthereumNetwork::Goerli => rpcs.ethereum.goerli,
+            EthereumNetwork::Sepolia => rpcs.ethereum.sepolia,
         },
         Network::Arbitrum(arbitrum_network) => match arbitrum_network {
             ArbitrumNetwork::Mainnet => rpcs.arbitrum.mainnet,
@@ -48,6 +49,7 @@ pub fn get_provider(network: &Network) -> Provider<RetryClient<Http>> {
         Network::ZkSync(zksync_network) => match zksync_network {
             ZkSyncEraNetwork::Mainnet => rpcs.zksync_era.mainnet,
             ZkSyncEraNetwork::Goerli => rpcs.zksync_era.goerli,
+            ZkSyncEraNetwork::Sepolia => rpcs.zksync_era.sepolia,
         },
     };
     let provider = Provider::new_client(provider_url.as_str(), 10, 1)

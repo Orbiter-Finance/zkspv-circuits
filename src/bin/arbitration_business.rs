@@ -12,7 +12,6 @@ fn main() {
         File::open("test_data/from_ethereum_to_zksync_era_source.json").unwrap();
     // let arbitration_data_file =
     //     File::open("test_data/from_ethereum_to_zksync_era_dest.json").unwrap();
-    log::info!("start mock challenge");
 
     // let arbitration_data_file =
     //     File::open("test_data/from_zksync_era_to_ethereum_source.json").unwrap();

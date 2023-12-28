@@ -8,6 +8,7 @@ internal_port = 3030
 [rpcs]
 mainnet = "https://eth-mainnet.g.alchemy.com/v2/W2N6WVmiWkn9GFAMA_7jiPMSEZpy03z2"
 goerli = "https://eth-goerli.g.alchemy.com/v2/PI7xh9fOozyT_emdiXibGDCi6M4QU6fv"
+sepolia = "https://eth-sepolia.g.alchemy.com/v2/6sHdA14duhUT9RA9LjWRH7CHJNjsZkS8"
 
 arbitrum_mainnet = "https://arb-mainnet.g.alchemy.com/v2/HPr7VZ5qSQ5JvZQ7N8goM7s01tUTx9_J"
 arbitrum_goerli = "https://arb-goerli.g.alchemy.com/v2/yKCEaSWa9llIeVNAp6NYivWNCD5suKU7"
@@ -17,3 +18,4 @@ optimism_goerli = "https://opt-goerli.g.alchemy.com/v2/ChkRlZzMrEsYeffOEqPaA2lIu
 
 zksync_mainnet = "https://mainnet.era.zksync.io"
 zksync_goerli = "https://testnet.era.zksync.dev"
+zksync_sepolia = "https://sepolia.era.zksync.dev"

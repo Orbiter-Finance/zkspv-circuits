@@ -77,6 +77,7 @@ pub(crate) const ETH_NUM_LIMBS: usize = 3;
 pub enum EthereumNetwork {
     Mainnet = 1,
     Goerli = 5,
+    Sepolia = 11155111,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -98,6 +99,7 @@ pub enum OptimismNetwork {
 pub enum ZkSyncEraNetwork {
     Mainnet = 324,
     Goerli = 280,
+    Sepolia = 300,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -130,12 +132,14 @@ pub fn get_network_from_chain_id(chain_id: u64) -> Result<Network, ErrorType> {
     match chain_id {
         1 => Ok(Ethereum(EthereumNetwork::Mainnet)),
         5 => Ok(Ethereum(EthereumNetwork::Goerli)),
+        11155111 => Ok(Ethereum(EthereumNetwork::Sepolia)),
         42161 => Ok(Arbitrum(ArbitrumNetwork::Mainnet)),
         421613 => Ok(Arbitrum(ArbitrumNetwork::Goerli)),
         10 => Ok(Optimism(OptimismNetwork::Mainnet)),
         420 => Ok(Optimism(OptimismNetwork::Goerli)),
         324 => Ok(ZkSync(ZkSyncEraNetwork::Mainnet)),
         280 => Ok(ZkSync(ZkSyncEraNetwork::Goerli)),
+        300 => Ok(ZkSync(ZkSyncEraNetwork::Sepolia)),
         _ => Err(ErrorType::NetworkNotSupported),
     }
 }
