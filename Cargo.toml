@@ -28,8 +28,8 @@ log = "0.4"
 env_logger = "0.10"
 log4rs = "1.2.0"
 ark-std = { version = "0.3.0", features = ["print-trace"], optional = true }
-clap = { version = "4.0.13", features = ["derive"], optional = true }
-clap-num = { version = "1.0.2", optional = true }
+clap = { version = "^4.0.13", features = ["derive"], optional = true }
+clap-num = { version = "^1.0.2", optional = true }
 bincode = { version = "1.3.3", optional = true }
 base64 = { version = "0.21", optional = true }
 serde_with = { version = "2.2", optional = true }
@@ -45,7 +45,7 @@ zkevm-keccak = { git = "https://github.com/Orbiter-Finance/halo2-lib.git",  bran
 
 # crypto
 rlp = "0.5.2"
-ethers-core = { version = "2.0.10" } # used by halo2-mpt already
+ethers-core = { version = "^2.0.10" } # used by halo2-mpt already
 rand_core = { version = "0.6", default-features = false, features = ["getrandom"] }
 rand = "*"
 rand_chacha = "0.3.1"
@@ -56,11 +56,9 @@ snark-verifier = { git = "https://github.com/Orbiter-Finance/snark-verifier.git"
 snark-verifier-sdk = { git = "https://github.com/Orbiter-Finance/snark-verifier.git", branch = "community-edition-performance", default-features = false, features = ["loader_halo2"], optional = true }
 
 halo2_solidity_verifier = { git = "https://github.com/privacy-scaling-explorations/halo2-solidity-verifier" }
-# For feature = "evm"
-revm = { version = "3.3.0", optional = true }
 # generating circuit inputs from blockchain
-ethers-providers = { version = "^2.0.6", optional = true }
-zksync-web3-rs = "0.1.1"
+ethers-providers = { version = "^2.0.10", optional = true }
+zksync-web3-rs = "^0.1.1"
 tokio = { version = "1.26", default-features = false, features = ["full"], optional = true }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures = { version = "=0.3", optional = true }
@@ -97,7 +95,7 @@ test-case = "3.1.0"
 [features]
 default = ["halo2-axiom", "jemallocator", "display", "aggregation", "clap", "evm"]
 aggregation = ["dep:snark-verifier", "snark-verifier-sdk", "providers","dep:circuit_derive"]
-evm = ["snark-verifier-sdk?/loader_evm", "aggregation","dep:revm"]
+evm = ["snark-verifier-sdk?/loader_evm", "aggregation"]
 providers = ["dep:ethers-providers", "dep:tokio", "dep:bincode", "dep:base64", "dep:serde_with","dep:futures"]
 display = ["zkevm-keccak/display", "snark-verifier-sdk?/display", "dep:ark-std"]
 clap = ["dep:clap", "dep:clap-num"]
