@@ -2,7 +2,7 @@
 Cargo.lock
 **/*.rs.bk
 *~
-./spv.toml
+spv.toml
 params/
 *.srs
 data/
