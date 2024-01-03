@@ -26,9 +26,13 @@ The function of this zero-knowledge proof circuit library is to enable us to hav
    sh scripts/download_setup.sh
    ```
 
+2. In order to successfully run the service in a user environment in a certain and stable way, please execute the following command.
 
+   ```bash
+   cp release_Cargo.lock Cargo.lock
+   ```
 
-2. Please ensure that the Rust version in use is on the nightly version, then execute the `services` script to start the service.
+3. Please ensure that the Rust version in use is on the nightly version, then execute the `services` script to start the service.
 
    ```bash
    sh scripts/services.sh
