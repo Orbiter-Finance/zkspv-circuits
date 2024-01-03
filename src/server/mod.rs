@@ -5,10 +5,11 @@ use crate::db::ChallengesStorage;
 use ethers_core::types::H256;
 use hyper::Method;
 use jsonrpsee::server::{RpcModule, Server};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::signal::ctrl_c;
 use tokio::sync::mpsc::UnboundedSender;
 use tower_http::cors::{Any, CorsLayer};
@@ -73,7 +74,7 @@ pub async fn init_server(
     module
         .register_method("get_challenge_proof", move |params, c| {
             let challenges_storage = challenges_storage.clone();
-            let mut storage = challenges_storage.lock().unwrap();
+            let mut storage = challenges_storage.lock();
 
             let query_challenge: QueryChallenge = params.parse().unwrap();
             let challenge_proof = storage.get_proof_by_challenge_id(query_challenge.challenge_id);

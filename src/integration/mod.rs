@@ -1,7 +1,8 @@
 use crate::arbitration::router::SchedulerRouter;
 use crate::db::ChallengesStorage;
 use crate::server::OriginalProof;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 

@@ -1,11 +1,12 @@
 use clap::Parser;
 use ethers_core::types::H256;
 use log::{info, warn};
+use parking_lot::Mutex;
 use serde_json::Value;
 use std::fs::File;
 use std::io::BufReader;
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::task;
 use zkspv_circuits::config::log::init_log;
 use zkspv_circuits::integration::Integration;
@@ -41,7 +42,7 @@ async fn main() {
                 let op = OriginalProof { task_id: H256::zero(), proof: proof_str.to_string() };
                 let constructor = op.clone().get_constructor_by_parse_proof();
                 {
-                    let mut scheduler = scheduler_cache_srs_pk.lock().unwrap();
+                    let mut scheduler = scheduler_cache_srs_pk.lock();
                     scheduler.update(constructor, 1);
                     scheduler.cache_srs_pk_files();
                     scheduler.get_calldata(args.generate_smart_contract);
@@ -71,7 +72,7 @@ async fn main() {
             let scheduler_result = task::spawn_blocking(move || {
                 let challenge_id = original_proof.clone().unwrap().task_id;
                 {
-                    challenge_scheduler.lock().unwrap().update_challenge_id(challenge_id);
+                    challenge_scheduler.lock().update_challenge_id(challenge_id);
                 }
                 info!(target: "app","Start generating proof for Challenge: {:?}",challenge_id);
 
@@ -83,7 +84,7 @@ async fn main() {
                 let _ = clear.wait();
                 let constructor = original_proof.clone().unwrap().get_constructor_by_parse_proof();
                 {
-                    let mut scheduler = scheduler_running.lock().unwrap();
+                    let mut scheduler = scheduler_running.lock();
                     scheduler.update(constructor, 1);
                     scheduler.get_calldata(args.generate_smart_contract)
                 }
@@ -92,20 +93,20 @@ async fn main() {
 
             match scheduler_result {
                 Ok(proof) => {
-                    challenge.lock().unwrap().update_proof(proof);
-                    info!(target: "app","Successfully generated proof for Challenge: {:?}",challenge.lock().unwrap().challenge_id);
+                    challenge.lock().update_proof(proof);
+                    info!(target: "app","Successfully generated proof for Challenge: {:?}",challenge.lock().challenge_id);
 
                     println!("prove success")
                 }
                 Err(err) => {
-                    warn!(target: "app","Failed to generate proof for Challenge: {:?},err: {}",challenge.lock().unwrap().challenge_id,err);
+                    warn!(target: "app","Failed to generate proof for Challenge: {:?},err: {}",challenge.lock().challenge_id,err);
                     eprintln!("prove error: {}", err)
                 }
             }
 
             {
-                let storage = challenge_storage.lock().unwrap();
-                let challenge = challenge.lock().unwrap();
+                let storage = challenge_storage.lock();
+                let challenge = challenge.lock();
 
                 storage
                     .storage_challenge_proof(challenge.challenge_id, challenge.proof.clone())
