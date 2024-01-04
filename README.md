@@ -9,14 +9,14 @@ The function of this zero-knowledge proof circuit library is to enable us to hav
 ### Prerequisites
 
 1. system requirements:
-   1. 64-core CPU
-   2. Minimum 3080 Nvidia GPU(which supports CUDA Toolkit version 12.0 or above).
-   3. Minimum 350GB RAM
-   4. Minimum 500GB ROM
+   - Minimum 64-core CPU
+   - Minimum 3080 Nvidia GPU(which supports CUDA Toolkit version 12.0 or above).
+   - Minimum 350GB RAM
+   - Minimum 500GB ROM
 2. software requirements:
-   1. [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) version 12.0 or newer.
-   2. CMake, version 3.24.3 and above. Latest version is recommended.
-   3. Solc, version 0.8.19.
+   - [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) version 12.0 or newer.
+   - CMake, version 3.24.3 and above. Latest version is recommended.
+   - Solc, version 0.8.19.
 
 ### Build systems
 
