@@ -104,7 +104,7 @@ pub fn get_block_header_config(network: &Network) -> BlockHeaderConfig {
     let block_header_config = match network {
         Network::Ethereum(network) => match network {
             EthereumNetwork::Mainnet => {
-                let extra_data_max_bytes = 97;
+                let extra_data_max_bytes = 32;
                 let header_fields_max_bytes = vec![
                     32,
                     32,

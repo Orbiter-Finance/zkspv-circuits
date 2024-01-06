@@ -3,7 +3,7 @@
     "degree": 19,
     "num_rlc_columns": 1,
     "num_range_advice": [
-      2,
+      3,
       1,
       0
     ],
@@ -20,6 +20,7 @@
   "break_points": {
     "gate": [
       [
+        524176,
         524178
       ],
       [],

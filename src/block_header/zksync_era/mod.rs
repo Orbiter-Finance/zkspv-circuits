@@ -27,7 +27,7 @@ use zkevm_keccak::util::eth_types::Field;
 const NUM_BLOCK_HEADER_FIELDS: usize = 3;
 const BLOCK_HEADER_MAX_FIELD_LENS: [usize; NUM_BLOCK_HEADER_FIELDS] = [4, 8, 32];
 pub(crate) const BLOCK_HEADER_RLP_MAX_BYTES: usize = 5 + 9 + 33;
-pub(crate) const BLOCK_INCLUDE_TXS_MAX_NUMBER: u64 = 50;
+pub(crate) const BLOCK_INCLUDE_TXS_MAX_NUMBER: u64 = 350;
 
 #[derive(Clone, Debug)]
 pub struct ZkSyncEraBlockHeaderInput {
